@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "ms-vscode.powershell",
+        "editorconfig.editorconfig",
+        "redhat.vscode-xml",
+        "github.vscode-pull-request-github"
+    ]
+}
