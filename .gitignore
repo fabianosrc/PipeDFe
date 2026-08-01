@@ -1,0 +1,42 @@
+# Build
+dist/
+build/
+output/
+publish/
+artifacts/
+*.zip
+*.nupkg
+
+# Tests (Pester)
+TestResults.xml
+coverage.xml
+TestResults/
+coverage/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.ps1~
+
+# PipeDFe local data
+.pipe/
+data/
+storage/
+
+# VSCode
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Security
+*.pfx
+*.p12
+*.cer
+*.crt
+*.key
