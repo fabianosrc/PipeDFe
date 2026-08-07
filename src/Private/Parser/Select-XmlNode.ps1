@@ -71,7 +71,7 @@ function Select-XmlNode {
     $localName = Get-XPathLocalName -XPath $XPath
 
     if ($null -eq $localName) {
-        return $null
+        return
     }
 
     return Find-XmlNodeByTraversal -XmlNode $XmlNode -LocalName $localName

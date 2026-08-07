@@ -29,7 +29,7 @@ function Read-XmlText {
 
     process {
         if ($null -eq $XmlNode) {
-            return $null
+            return
         }
 
         $innerText = $XmlNode.InnerText

@@ -62,6 +62,6 @@ function Find-XmlNodeByTraversal {
             }
         }
 
-        return $null
+        return
     }
 }

@@ -48,7 +48,7 @@ function Get-XPathLocalName {
     )
 
     if ([string]::IsNullOrWhiteSpace($localName)) {
-        return $null
+        return
     }
 
     return $localName
