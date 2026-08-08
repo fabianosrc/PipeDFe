@@ -32,11 +32,7 @@ BeforeDiscovery {
 
 Describe 'Find-XmlNodeByTraversal' {
 
-    AfterAll {
-        Remove-Module PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         BeforeEach {
 
@@ -234,5 +230,9 @@ Describe 'Find-XmlNodeByTraversal' {
                     Should -Not -BeNullOrEmpty
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }

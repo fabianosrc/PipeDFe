@@ -15,6 +15,11 @@ Contexts:
   Result contract           - XmlNode and null results
   Input validation          - mandatory parameters
 #>
+
+# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+# because that's when Context/It are executed to register the test tree. If the
+# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+# BeforeEach ever runs.
 BeforeDiscovery {
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
@@ -23,7 +28,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-InModuleScope PipeDFe {
+InModuleScope -ModuleName PipeDFe {
 
     Describe 'Select-XmlNode' {
 
@@ -210,5 +215,9 @@ InModuleScope PipeDFe {
                 { Select-XmlNode -XmlNode $xml -XPath '' } | Should -Throw
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }

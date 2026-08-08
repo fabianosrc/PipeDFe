@@ -33,11 +33,7 @@ BeforeDiscovery {
 
 Describe 'Import-DFeXml' {
 
-    AfterAll {
-        Remove-Module PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         BeforeEach {
 
@@ -282,5 +278,9 @@ Describe 'Import-DFeXml' {
                 $after | Should -Be $before
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }

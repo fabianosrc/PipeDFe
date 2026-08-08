@@ -32,11 +32,7 @@ BeforeDiscovery {
 
 Describe 'Get-DFeAccessKey' {
 
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
             #region Helpers
@@ -350,5 +346,9 @@ Describe 'Get-DFeAccessKey' {
                 { Get-DFeAccessKey -Node $node -Prefix '   ' } | Should -Throw
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }

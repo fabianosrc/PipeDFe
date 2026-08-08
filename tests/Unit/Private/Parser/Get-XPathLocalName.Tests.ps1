@@ -16,6 +16,11 @@ Contexts:
   Function metadata  - CmdletBinding, OutputType and help metadata
   Parameter metadata - parameter attributes and validation
 #>
+
+# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+# because that's when Context/It are executed to register the test tree. If the
+# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+# BeforeEach ever runs.
 BeforeDiscovery {
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
@@ -26,11 +31,7 @@ BeforeDiscovery {
 
 Describe 'Get-XPathLocalName' {
 
-    AfterAll {
-        Remove-Module PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         Context 'Happy path' {
 
@@ -175,5 +176,9 @@ Describe 'Get-XPathLocalName' {
                     Should -Not -BeNullOrEmpty
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }

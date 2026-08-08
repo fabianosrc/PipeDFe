@@ -33,11 +33,7 @@ BeforeDiscovery {
 
 Describe 'Get-DFeDocumentInfo' {
 
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         Context 'Document resolution' {
 
@@ -337,5 +333,9 @@ Describe 'Get-DFeDocumentInfo' {
                 { Get-DFeDocumentInfo -Xml $null } | Should -Throw
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }

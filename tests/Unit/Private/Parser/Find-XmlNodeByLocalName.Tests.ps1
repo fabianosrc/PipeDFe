@@ -31,10 +31,6 @@ BeforeDiscovery {
 
 Describe 'Find-XmlNodeByLocalName' {
 
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
     InModuleScope -ModuleName PipeDFe {
 
         BeforeEach {
@@ -226,5 +222,9 @@ Describe 'Find-XmlNodeByLocalName' {
                 $result | Should -BeNullOrEmpty
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }

@@ -32,10 +32,6 @@ BeforeDiscovery {
 
 Describe 'Find-XmlNodeByNamespace' {
 
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
     InModuleScope -ModuleName PipeDFe {
 
         BeforeEach {
@@ -368,6 +364,10 @@ Describe 'Find-XmlNodeByNamespace' {
                     Should -Not -BeNullOrEmpty
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }
 

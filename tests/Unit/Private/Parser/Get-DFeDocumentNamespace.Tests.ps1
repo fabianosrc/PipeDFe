@@ -33,11 +33,7 @@ BeforeDiscovery {
 
 Describe 'Get-DFeDocumentNamespace' {
 
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
-    }
-
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         Context 'Document namespace' {
 
@@ -198,5 +194,9 @@ Describe 'Get-DFeDocumentNamespace' {
                 { Get-DFeDocumentNamespace -Xml $null } | Should -Throw
             }
         }
+    }
+
+    AfterAll {
+        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }
