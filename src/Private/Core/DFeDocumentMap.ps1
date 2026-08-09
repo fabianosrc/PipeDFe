@@ -91,6 +91,11 @@ $Script:DFeDocumentMap = @{
         Modelo = [ModeloDFe]::NFe
     }
 
+    retInutNFe = @{
+        Tipo   = [TipoXmlDFe]::Inutilizacao
+        Modelo = [ModeloDFe]::NFe
+    }
+
     procInutNFe = @{
         Tipo   = [TipoXmlDFe]::Inutilizacao
         Modelo = [ModeloDFe]::NFe
