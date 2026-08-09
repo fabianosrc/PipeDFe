@@ -57,12 +57,12 @@ $Script:DFeDocumentMap = @{
     }
 
     NFCom = @{
-        Tipo = [TipoXmlDFe]::Documento
+        Tipo   = [TipoXmlDFe]::Documento
         Modelo = [ModeloDFe]::NFCom
     }
 
-    infNFCom = @{
-        Tipo = [TipoXmlDFe]::Documento
+    nfcomProc = @{
+        Tipo   = [TipoXmlDFe]::Documento
         Modelo = [ModeloDFe]::NFCom
     }
 
@@ -81,12 +81,17 @@ $Script:DFeDocumentMap = @{
         Modelo = [ModeloDFe]::MDFe
     }
 
+    procEventoNFCom = @{
+        Tipo   = [TipoXmlDFe]::Evento
+        Modelo = [ModeloDFe]::NFCom
+    }
+
     inutNFe = @{
         Tipo   = [TipoXmlDFe]::Inutilizacao
         Modelo = [ModeloDFe]::NFe
     }
 
-    retInutNFe = @{
+    procInutNFe = @{
         Tipo   = [TipoXmlDFe]::Inutilizacao
         Modelo = [ModeloDFe]::NFe
     }
