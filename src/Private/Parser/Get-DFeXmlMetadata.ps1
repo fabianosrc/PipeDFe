@@ -57,6 +57,7 @@ PSCustomObject
   Serie      [string]             - serie (Documento and Inutilizacao)
   NNFIni     [string]             - first number in inutilized range (Inutilizacao only)
   NNFFin     [string]             - last number in inutilized range (Inutilizacao only)
+  IdInut     [string]             - inutilizacao identifier from infInut/@Id (Inutilizacao only)
   cStat      [string]             - SEFAZ status code (procInutNFe only)
   xMotivo    [string]             - SEFAZ status description (procInutNFe only)
 
@@ -76,14 +77,15 @@ Extracts metadata from all XML files in a folder, discarding unrecognized files.
 
 .NOTES
 Private dependencies:
-    Import-DFeXml
-    Get-DFeDocumentInfo
-    Get-DFeDocumentNamespace
-    Get-DFeAccessKey
-    Resolve-DFeEvento
-    Select-XmlNode
-    DFeDocumentMap   (classification)
-    DFeExtractionMap (InfoNode + IdPrefix per root)
+  Import-DFeXml
+  Get-DFeDocumentInfo
+  Get-DFeDocumentNamespace
+  Get-DFeAccessKey
+  Resolve-DFeEvento
+  Select-XmlNode
+  DFeDocumentMap   (classification)
+  DFeExtractionMap (InfoNode + IdPrefix for Documento roots)
+  DFeEventoMap     (event code resolution used by Resolve-DFeEvento)
 
 If a root is classified as Documento in DFeDocumentMap but has no entry in
 DFeExtractionMap, the function emits a warning and returns $null. This is a
@@ -105,7 +107,7 @@ function Get-DFeXmlMetadata {
 
     process {
         $file = Get-Item -LiteralPath $Path -ErrorAction Stop
-        $xml  = Import-DFeXml -Path $file.FullName
+        $xml = Import-DFeXml -Path $file.FullName
 
         $docInfo = Get-DFeDocumentInfo -Xml $xml
 
@@ -195,6 +197,10 @@ function Get-DFeXmlMetadata {
                 $null
             }
 
+            # Explicit return: without it, execution falls through to the
+            # Documento branch below, which fails to find $root in
+            # DFeExtractionMap and emits a false 'configuration bug' warning
+            # for every single Evento processed.
             return [PSCustomObject]@{
                 File       = $file
                 Tipo       = $docInfo.Tipo
@@ -211,6 +217,7 @@ function Get-DFeXmlMetadata {
                 Serie      = $null
                 NNFIni     = $null
                 NNFFin     = $null
+                IdInut     = $null
                 cStat      = $null
                 xMotivo    = $null
             }
@@ -218,6 +225,28 @@ function Get-DFeXmlMetadata {
 
         # Inutilizacao
         if ($docInfo.Tipo -eq [TipoXmlDFe]::Inutilizacao) {
+            # Id lives only in inutNFe/infInut/@Id - retInutNFe/infInut has no @Id.
+            # This is a structured identifier (cUF+ano+CNPJ+mod+serie+nNFIni+nNFFin),
+            # not a chave de acesso in the NFe/NFCe sense - kept as a distinct field.
+            $nodeParams = @{
+                XmlNode      = $xml
+                XPath        = '//dfe:inutNFe/dfe:infInut'
+                XmlNsManager = $nsm
+            }
+
+            $infInutNode = Select-XmlNode @nodeParams
+
+            $idInut = $null
+
+            if ($null -ne $infInutNode) {
+                $idAttr = $infInutNode.Attributes.GetNamedItem('Id')
+
+                if ($null -ne $idAttr -and -not [string]::IsNullOrWhiteSpace($idAttr.Value)) {
+                    $idInut = $idAttr.Value.Trim()
+                }
+            }
+
+            # Explicit return: same fallthrough hazard as the Evento branch above.
             return [PSCustomObject]@{
                 File       = $file
                 Tipo       = $docInfo.Tipo
@@ -234,6 +263,7 @@ function Get-DFeXmlMetadata {
                 Serie      = & $getText '//dfe:infInut/dfe:serie'
                 NNFIni     = & $getText '//dfe:infInut/dfe:nNFIni'
                 NNFFin     = & $getText '//dfe:infInut/dfe:nNFFin'
+                IdInut     = $idInut
                 cStat      = & $getText '//dfe:retInutNFe/dfe:infInut/dfe:cStat'
                 xMotivo    = & $getText '//dfe:retInutNFe/dfe:infInut/dfe:xMotivo'
             }
@@ -249,7 +279,6 @@ function Get-DFeXmlMetadata {
                 "[$($file.Name)] Root '$root' is classified as Documento but has " +
                 'no entry in DFeExtractionMap. This is a configuration bug.'
             )
-
             return
         }
 
@@ -290,6 +319,7 @@ function Get-DFeXmlMetadata {
             Serie      = & $getText '//dfe:serie'
             NNFIni     = $null
             NNFFin     = $null
+            IdInut     = $null
             cStat      = $null
             xMotivo    = $null
         }

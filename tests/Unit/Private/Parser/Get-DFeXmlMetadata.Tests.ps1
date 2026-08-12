@@ -97,7 +97,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $Metadata | Should -Not -BeNullOrEmpty
                 $Metadata | Should -BeOfType [PSCustomObject]
 
-                $Metadata.PSObject.Properties.Name | Should -HaveCount 17
+                $Metadata.PSObject.Properties.Name | Should -HaveCount 18
 
                 $Metadata.File | Should -BeOfType [System.IO.FileInfo]
                 $Metadata.Tipo | Should -BeOfType [TipoXmlDFe]
@@ -122,6 +122,7 @@ Describe 'Get-DFeXmlMetadata' {
                         'Serie',
                         'NNFIni',
                         'NNFFin',
+                        'IdInut',
                         'cStat',
                         'xMotivo'
                     )) {
@@ -460,6 +461,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.DescEvento | Should -BeNullOrEmpty
                 $result.NNFIni     | Should -BeNullOrEmpty
                 $result.NNFFin     | Should -BeNullOrEmpty
+                $result.IdInut     | Should -BeNullOrEmpty
                 $result.cStat      | Should -BeNullOrEmpty
                 $result.xMotivo    | Should -BeNullOrEmpty
             }
@@ -741,6 +743,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.Serie   | Should -BeNullOrEmpty
                 $result.NNFIni  | Should -BeNullOrEmpty
                 $result.NNFFin  | Should -BeNullOrEmpty
+                $result.IdInut  | Should -BeNullOrEmpty
                 $result.cStat   | Should -BeNullOrEmpty
                 $result.xMotivo | Should -BeNullOrEmpty
             }
@@ -1008,6 +1011,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.Serie  | Should -Be '1'
                 $result.NNFIni | Should -Be '2528'
                 $result.NNFFin | Should -Be '2528'
+                $result.IdInut | Should -Be 'ID...'
             }
 
             It 'Sets cStat and xMotivo to null when not processed' {
@@ -1145,6 +1149,7 @@ Describe 'Get-DFeXmlMetadata' {
                     'Serie',
                     'NNFIni',
                     'NNFFin',
+                    'IdInut',
                     'cStat',
                     'xMotivo'
                 )
@@ -1201,6 +1206,7 @@ Describe 'Get-DFeXmlMetadata' {
                     'Serie',
                     'NNFIni',
                     'NNFFin',
+                    'IdInut',
                     'cStat',
                     'xMotivo'
                 )
