@@ -53,7 +53,7 @@ PSCustomObject
   TpEvento   [string]             - raw tpEvento code from XML (Evento only)
   DescEvento [string]             - descEvento from XML (Evento only)
   DhEmi      [string]             - emission datetime (Documento only)
-  NNF        [string]             - document number (Documento only)
+  Ndoc       [string]             - document number (Documento only)
   Serie      [string]             - serie (Documento and Inutilizacao)
   NNFIni     [string]             - first number in inutilized range (Inutilizacao only)
   NNFFin     [string]             - last number in inutilized range (Inutilizacao only)
@@ -213,7 +213,7 @@ function Get-DFeXmlMetadata {
                 TpEvento   = $tpEvento
                 DescEvento = $descEvento
                 DhEmi      = $null
-                NNF        = $null
+                Ndoc       = $null
                 Serie      = $null
                 NNFIni     = $null
                 NNFFin     = $null
@@ -259,7 +259,7 @@ function Get-DFeXmlMetadata {
                 TpEvento   = $null
                 DescEvento = $null
                 DhEmi      = $null
-                NNF        = $null
+                Ndoc       = $null
                 Serie      = & $getText '//dfe:infInut/dfe:serie'
                 NNFIni     = & $getText '//dfe:infInut/dfe:nNFIni'
                 NNFFin     = & $getText '//dfe:infInut/dfe:nNFFin'
@@ -315,7 +315,7 @@ function Get-DFeXmlMetadata {
             TpEvento   = $null
             DescEvento = $null
             DhEmi      = & $getText '//dfe:dhEmi'
-            NNF        = & $getText '//dfe:nNF'
+            Ndoc       = & $getText '//dfe:nNF'
             Serie      = & $getText '//dfe:serie'
             NNFIni     = $null
             NNFFin     = $null

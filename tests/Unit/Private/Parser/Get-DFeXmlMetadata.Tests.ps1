@@ -118,7 +118,7 @@ Describe 'Get-DFeXmlMetadata' {
                         'TpEvento',
                         'DescEvento',
                         'DhEmi',
-                        'NNF',
+                        'Ndoc',
                         'Serie',
                         'NNFIni',
                         'NNFFin',
@@ -442,7 +442,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.IsProc | Should -BeTrue
                 $result.Chave  | Should -Be $chNFe
                 $result.DhEmi  | Should -Be '2026-08-03T09:28:36-03:00'
-                $result.NNF    | Should -Be '3917'
+                $result.Ndoc   | Should -Be '3917'
                 $result.Serie  | Should -Be '1'
             }
 
@@ -506,7 +506,7 @@ Describe 'Get-DFeXmlMetadata' {
             It 'Extracts the document number, series and emission date' {
                 $result = Get-DFeXmlMetadata -Path 'test.xml'
 
-                $result.NNF    | Should -Be '3917'
+                $result.Ndoc   | Should -Be '3917'
                 $result.Serie  | Should -Be '1'
                 $result.DhEmi  | Should -Be '2026-08-03T09:28:36-03:00'
             }
@@ -540,13 +540,13 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.IsProc | Should -BeTrue
                 $result.Chave  | Should -Be $chCTe
                 $result.DhEmi  | Should -Be '2026-08-03T09:28:36-03:00'
-                $result.NNF    | Should -BeNullOrEmpty
+                $result.Ndoc   | Should -BeNullOrEmpty
                 $result.Serie  | Should -Be '1'
             }
 
-            It 'Does not confuse nCT with NNF' {
+            It 'Does not confuse nCT with Ndoc' {
                 $result = Get-DFeXmlMetadata -Path 'test.xml'
-                $result.NNF | Should -BeNullOrEmpty
+                $result.Ndoc | Should -BeNullOrEmpty
             }
         }
 
@@ -576,7 +576,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.IsProc | Should -BeTrue
                 $result.Chave  | Should -Be $chCTe
                 $result.DhEmi  | Should -Be '2026-08-03T09:28:36-03:00'
-                $result.NNF    | Should -BeNullOrEmpty
+                $result.Ndoc   | Should -BeNullOrEmpty
                 $result.Serie  | Should -Be '1'
             }
         }
@@ -609,13 +609,13 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.IsProc | Should -BeTrue
                 $result.Chave  | Should -Be $chMDFe
                 $result.DhEmi  | Should -Be '2026-08-03T09:28:36-03:00'
-                $result.NNF    | Should -BeNullOrEmpty
+                $result.Ndoc   | Should -BeNullOrEmpty
                 $result.Serie  | Should -Be '1'
             }
 
-            It 'Does not confuse nMDF with NNF' {
+            It 'Does not confuse nMDF with Ndoc' {
                 $result = Get-DFeXmlMetadata -Path 'test.xml'
-                $result.NNF | Should -BeNullOrEmpty
+                $result.Ndoc | Should -BeNullOrEmpty
             }
         }
         #endregion
@@ -646,7 +646,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.Root   | Should -Be 'nfcomProc'
                 $result.IsProc | Should -BeTrue
                 $result.Chave  | Should -Be $chNFCom
-                $result.NNF    | Should -Be '1768'
+                $result.Ndoc   | Should -Be '1768'
                 $result.Serie  | Should -Be '1'
                 $result.DhEmi  | Should -Be '2026-06-25T17:43:20+00:00'
             }
@@ -680,7 +680,7 @@ Describe 'Get-DFeXmlMetadata' {
             It 'Extracts NFCom number, series and emission date' {
                 $result = Get-DFeXmlMetadata -Path 'test.xml'
 
-                $result.NNF   | Should -Be '1768'
+                $result.Ndoc  | Should -Be '1768'
                 $result.Serie | Should -Be '1'
                 $result.DhEmi | Should -Be '2026-06-25T17:43:20+00:00'
             }
@@ -739,7 +739,7 @@ Describe 'Get-DFeXmlMetadata' {
 
                 $result.Chave   | Should -BeNullOrEmpty
                 $result.DhEmi   | Should -BeNullOrEmpty
-                $result.NNF     | Should -BeNullOrEmpty
+                $result.Ndoc    | Should -BeNullOrEmpty
                 $result.Serie   | Should -BeNullOrEmpty
                 $result.NNFIni  | Should -BeNullOrEmpty
                 $result.NNFFin  | Should -BeNullOrEmpty
@@ -1026,7 +1026,7 @@ Describe 'Get-DFeXmlMetadata' {
 
                 $result.Chave      | Should -BeNullOrEmpty
                 $result.DhEmi      | Should -BeNullOrEmpty
-                $result.NNF        | Should -BeNullOrEmpty
+                $result.Ndoc       | Should -BeNullOrEmpty
                 $result.ChavePai   | Should -BeNullOrEmpty
                 $result.EventoTipo | Should -BeNullOrEmpty
                 $result.TpEvento   | Should -BeNullOrEmpty
@@ -1079,7 +1079,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $result.TpEvento   | Should -BeNullOrEmpty
                 $result.DescEvento | Should -BeNullOrEmpty
                 $result.DhEmi      | Should -BeNullOrEmpty
-                $result.NNF        | Should -BeNullOrEmpty
+                $result.Ndoc       | Should -BeNullOrEmpty
             }
         }
         #endregion
@@ -1115,7 +1115,7 @@ Describe 'Get-DFeXmlMetadata' {
                 'TpEvento',
                 'DescEvento',
                 'DhEmi',
-                'NNF',
+                'Ndoc',
                 'Serie',
                 'NNFIni',
                 'NNFFin',
@@ -1145,7 +1145,7 @@ Describe 'Get-DFeXmlMetadata' {
                     'TpEvento',
                     'DescEvento',
                     'DhEmi',
-                    'NNF',
+                    'Ndoc',
                     'Serie',
                     'NNFIni',
                     'NNFFin',
@@ -1202,7 +1202,7 @@ Describe 'Get-DFeXmlMetadata' {
                     'TpEvento',
                     'DescEvento',
                     'DhEmi',
-                    'NNF',
+                    'Ndoc',
                     'Serie',
                     'NNFIni',
                     'NNFFin',
