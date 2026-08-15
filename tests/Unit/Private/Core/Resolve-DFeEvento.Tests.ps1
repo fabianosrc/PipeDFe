@@ -33,6 +33,11 @@ Describe 'Resolve-DFeEvento' {
 
     InModuleScope PipeDFe {
 
+        AfterAll {
+
+            Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
+        }
+
         Context 'NF-e events' {
 
             It 'Resolves CartaCorrecao' {
@@ -277,9 +282,5 @@ Describe 'Resolve-DFeEvento' {
                 $results | Should -HaveCount 0
             }
         }
-    }
-
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }
