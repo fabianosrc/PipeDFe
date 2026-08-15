@@ -38,42 +38,40 @@ System.String
 Full path to the index.db file.
 
 .EXAMPLE
-PS C:\> $dbPath = Initialize-DFeIndex -Cnpj '12345678000199'
+PS C:\> $databasePath = Initialize-DFeIndex -Cnpj '12345678000199'
 #>
 function Initialize-DFeIndex {
     [CmdletBinding()]
     [OutputType([string])]
     param (
         [Parameter(Mandatory)]
-        # [ValidatePattern('^\d{14}$')]
         [ValidateNotNullOrEmpty()]
+        [ValidatePattern('^\d{14}$')]
         [string]$Cnpj
     )
 
-    $dbPath  = Get-StorePath -Scope 'Index' -Cnpj $Cnpj
-    $dataDir = [System.IO.Path]::GetDirectoryName($dbPath)
+    $databasePath = Get-StorePath -Scope 'Index' -Cnpj $Cnpj
+    $databaseDir  = [System.IO.Path]::GetDirectoryName($databasePath)
 
-    if (-not (Test-Path -LiteralPath $dataDir -PathType Container)) {
+    if (-not (Test-Path -LiteralPath $databaseDir -PathType Container)) {
         try {
-            New-Item -ItemType Directory -Path $dataDir -Force -ErrorAction Stop | Out-Null
+            New-Item -Path $databaseDir -ItemType Directory -Force | Out-Null
         } catch {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     $_.Exception,
                     'IndexDirectoryCreateFailed',
                     [System.Management.Automation.ErrorCategory]::WriteError,
-                    $dataDir
+                    $databaseDir
                 )
             )
         }
     }
 
-    $connection = [System.Data.SQLite.SQLiteConnection]::new(
-        "Data Source=$dbPath;Version=3;"
-    )
+    $connection = $null
 
     try {
-        $connection.Open()
+        $connection = Open-SqliteConnection -Path $databasePath
 
         # Execute PRAGMAs individually for provider compatibility.
         $pragmaStatements = @(
@@ -98,6 +96,7 @@ function Initialize-DFeIndex {
         try {
             $command = $connection.CreateCommand()
             $command.Transaction = $transaction
+
             try {
                 $command.CommandText = 'PRAGMA user_version;'
                 $currentVersion = [int]$command.ExecuteScalar()
@@ -107,7 +106,11 @@ function Initialize-DFeIndex {
 
             switch ($currentVersion) {
                 0 {
-                    $schema = @'
+                    $command = $connection.CreateCommand()
+                    $command.Transaction = $transaction
+
+                    try {
+                        $command.CommandText = @'
 CREATE TABLE IF NOT EXISTS dfe_document (
     chave_acesso TEXT    NOT NULL PRIMARY KEY,
     modelo       INTEGER NOT NULL,
@@ -142,7 +145,7 @@ CREATE TABLE IF NOT EXISTS dfe_inutilizacao (
     modelo     INTEGER NOT NULL,
     serie      TEXT    NOT NULL,
     nnf_ini    INTEGER NOT NULL,
-    nnf_fin    INTEGER NOT NULL,
+    nnf_fin    INTEGER NOT NULL CHECK (nnf_fin >= nnf_ini),
     file_path  TEXT    NOT NULL,
     sha256     TEXT    NOT NULL,
     indexed_at TEXT    NOT NULL
@@ -150,22 +153,9 @@ CREATE TABLE IF NOT EXISTS dfe_inutilizacao (
 
 CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_modelo_serie
     ON dfe_inutilizacao (modelo, serie);
+
+PRAGMA user_version = 1;
 '@
-
-                    $command = $connection.CreateCommand()
-                    $command.Transaction = $transaction
-
-                    try {
-                        $command.CommandText = $schema
-                        $command.ExecuteNonQuery() | Out-Null
-                    } finally {
-                        $command.Dispose()
-                    }
-
-                    $command = $connection.CreateCommand()
-                    $command.Transaction = $transaction
-                    try {
-                        $command.CommandText = 'PRAGMA user_version = 1;'
                         $command.ExecuteNonQuery() | Out-Null
                     } finally {
                         $command.Dispose()
@@ -194,6 +184,8 @@ CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_modelo_serie
             }
 
             throw
+        } finally {
+            $transaction.Dispose()
         }
     } catch {
         $PSCmdlet.ThrowTerminatingError(
@@ -201,12 +193,14 @@ CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_modelo_serie
                 $_.Exception,
                 'IndexSchemaInitFailed',
                 [System.Management.Automation.ErrorCategory]::WriteError,
-                $dbPath
+                $databasePath
             )
         )
     } finally {
-        $connection.Dispose()
+        if ($null -ne $connection) {
+            $connection.Dispose()
+        }
     }
 
-    $dbPath
+    $databasePath
 }
