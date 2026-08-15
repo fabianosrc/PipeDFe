@@ -15,7 +15,13 @@ Full or relative path to the SQLite database file.
 System.Data.SQLite.SQLiteConnection
 
 .EXAMPLE
-PS C:\> $connection = Open-SqliteConnection -Path 'C:\data\index.db'
+$connection = Open-SqliteConnection -Path 'C:\data\index.db'
+
+try {
+    # Use connection
+} finally {
+    $connection.Dispose()
+}
 #>
 function Open-SqliteConnection {
     [CmdletBinding()]
@@ -34,11 +40,12 @@ function Open-SqliteConnection {
         # SQLite may legitimately create a new database file.
         $databasePath = [System.IO.Path]::GetFullPath($Path)
 
-        $builder            = [System.Data.SQLite.SQLiteConnectionStringBuilder]::new()
-        $builder.DataSource = $databasePath
-        $builder.Version    = 3
+        $builder             = [System.Data.SQLite.SQLiteConnectionStringBuilder]::new()
+        $builder.DataSource  = $databasePath
+        $builder.Version     = 3
+        $builder.BusyTimeout = 5000
 
-        $connectionString   = $builder.ConnectionString
+        $connectionString    = $builder.ConnectionString
 
         $connection = [System.Data.SQLite.SQLiteConnection]::new($connectionString)
 
