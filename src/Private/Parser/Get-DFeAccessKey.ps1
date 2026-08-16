@@ -40,12 +40,12 @@ System.String
 Returns the 44-digit access key for valid input.
 
 .EXAMPLE
-PS C:> Get-DFeAccessKey -Node $infNFe -Prefix 'NFe'
+PS C:\>  Get-DFeAccessKey -Node $infNFe -Prefix 'NFe'
 
 Extracts the access key from an NF-e information element.
 
 .EXAMPLE
-PS C:> Get-DFeAccessKey -Node $infCte -Prefix 'CTe'
+PS C:\>  Get-DFeAccessKey -Node $infCte -Prefix 'CTe'
 
 Extracts the access key from a CT-e information element.
 

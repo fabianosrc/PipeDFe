@@ -18,18 +18,18 @@ multiple documents to be processed in a single call.
 PSCustomObject
 
 .EXAMPLE
-PS C:> $xml | Get-DFeDocumentInfo
+PS C:\>  $xml | Get-DFeDocumentInfo
 
 Returns the document type and fiscal model of the XML document.
 
 .EXAMPLE
-PS C:> $documents | Get-DFeDocumentInfo
+PS C:\>  $documents | Get-DFeDocumentInfo
 
 Processes multiple XML documents from the pipeline.
 
 .EXAMPLE
-PS C:> $info = Get-DFeDocumentInfo -Xml $xml
-PS C:> $info.Modelo
+PS C:\>  $info = Get-DFeDocumentInfo -Xml $xml
+PS C:\>  $info.Modelo
 
 Returns the fiscal model of the document.
 #>

@@ -26,10 +26,12 @@ The storage location to resolve:
 
 .EXAMPLE
 PS C:\> Get-StorePath -Scope Index -Cnpj '12345678000199'
+
 Returns: C:\Users\user\AppData\Local\PipeDFe\12345678000199\data\index.db
 
 .EXAMPLE
 PS C:\> Get-StorePath -Scope Output -Cnpj '12345678000199'
+
 Returns: C:\Users\user\PipeDFe\12345678000199\output
 
 .OUTPUTS
