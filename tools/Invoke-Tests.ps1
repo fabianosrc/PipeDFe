@@ -3,13 +3,17 @@
 
 <#
 .SYNOPSIS
-Runs the PipeDFe test suite using Pester 5.
+Runs the PipeDFe test suite using Pester 5 or 6.
 
 .DESCRIPTION
 Discovers and executes all Pester tests under the tests/ directory.
 Optionally collects code coverage and writes a JaCoCo-compatible XML
 report to output/coverage/ for use in CI pipelines (GitHub Actions,
 Azure DevOps, etc.).
+
+When -Coverage is used, prints a detailed report of uncovered commands
+grouped by file, including line numbers, so you know exactly what to
+test to reach 100% coverage. Compatible with Pester 5.x and 6.x.
 
 Exit codes:
     0 - all tests passed
@@ -33,6 +37,14 @@ Runs only tests with the specified Pester tag(s).
 .PARAMETER ExcludeTag
 Excludes tests with the specified Pester tag(s).
 
+.PARAMETER CoverageTarget
+Minimum coverage percentage to consider a success. Defaults to 80.
+
+.PARAMETER ShowMissedLines
+When -Coverage is active, prints the individual line numbers of every
+uncovered command, in addition to the per-file summary. Useful when
+you are close to 100% and want to pinpoint the exact gaps.
+
 .PARAMETER PassThru
 Returns the Pester result object to the caller instead of exiting.
 
@@ -43,7 +55,10 @@ PS C:\> .\tools\Invoke-Tests.ps1
 PS C:\> .\tools\Invoke-Tests.ps1 -Coverage
 
 .EXAMPLE
-PS C:\> .\tools\Invoke-Tests.ps1 -Coverage -Tag Unit
+PS C:\> .\tools\Invoke-Tests.ps1 -Coverage -ShowMissedLines
+
+.EXAMPLE
+PS C:\> .\tools\Invoke-Tests.ps1 -Coverage -CoverageTarget 95 -Tag Unit
 
 .EXAMPLE
 PS C:\> .\tools\Invoke-Tests.ps1 -PassThru | Select-Object -ExpandProperty FailedCount
@@ -71,13 +86,93 @@ param (
     [string[]]$ExcludeTag = @(),
 
     [Parameter()]
+    [ValidateRange(0, 100)]
+    [double]$CoverageTarget = 80,
+
+    [Parameter()]
+    [switch]$ShowMissedLines,
+
+    [Parameter()]
     [switch]$PassThru
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+#region Helpers
+
+<#
+.SYNOPSIS
+Safely unwraps a Pester option value whether it is a plain [string]
+(Pester 6) or a [Pester.StringOption] / [Pester.Option] object (Pester 5)
+that exposes a .Value property.
+#>
+function Get-StringValue {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param (
+        [Parameter()]
+        [object]$Option
+    )
+
+    if ($null -eq $Option) {
+        return ''
+    }
+
+    if ($Option -is [string]) {
+        return $Option
+    }
+
+    if ($Option.PSObject.Properties.Name -contains 'Value') {
+        return $Option.Value
+    }
+
+    return $Option.ToString()
+}
+
+<#
+.SYNOPSIS
+Returns the list of commands not executed, regardless of Pester version.
+
+Instead of branching on version number, we probe the actual properties
+present on the CodeCoverage object - whichever name exists is used.
+This is safer under Set-StrictMode -Version Latest and resilient to
+naming changes across Pester releases.
+
+Known property names by version:
+  Pester 5 : CommandsMissed
+  Pester 6 : MissedCommands  (unconfirmed - falls back gracefully)
+  Legacy   : CommandsNotExecuted
+#>
+function Get-MissedCommand {
+    [CmdletBinding()]
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter()]
+        [object]$CodeCoverage
+    )
+
+    $props = $CodeCoverage.PSObject.Properties.Name
+
+    if ($props -contains 'CommandsMissed') {
+        return $CodeCoverage.CommandsMissed
+    }
+
+    if ($props -contains 'MissedCommands') {
+        return $CodeCoverage.MissedCommands
+    }
+
+    if ($props -contains 'CommandsNotExecuted') {
+        return $CodeCoverage.CommandsNotExecuted
+    }
+
+    return @()
+}
+
+#endregion
+
 #region Resolve paths
+
 $root             = Resolve-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '..')
 $srcPath          = Join-Path -Path $root -ChildPath 'src'
 $outputPath       = Join-Path -Path $root -ChildPath 'output'
@@ -99,9 +194,11 @@ foreach ($dir in $resultsDir, $coverageDir) {
         New-Item -ItemType Directory -Path $dir | Out-Null
     }
 }
+
 #endregion
 
 #region Banner
+
 $pesterVersion = (
     Get-Module -Name Pester -ListAvailable |
         Sort-Object Version -Descending |
@@ -113,9 +210,11 @@ Write-Host '━━━━━━━━━━━━━━━━━━━━━━�
 Write-Host "  PipeDFe - Test Runner  (Pester $pesterVersion)" -ForegroundColor Cyan
 Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
 Write-Host ''
+
 #endregion
 
 #region Pester configuration
+
 $config = New-PesterConfiguration
 
 $config.Run.Path                = $resolvedTestPath
@@ -128,6 +227,7 @@ $config.TestResult.OutputFormat = $OutputFormat
 if ($Tag.Count -gt 0) {
     $config.Filter.Tag = $Tag
 }
+
 if ($ExcludeTag.Count -gt 0) {
     $config.Filter.ExcludeTag = $ExcludeTag
 }
@@ -137,74 +237,172 @@ if ($Coverage) {
         Select-Object -ExpandProperty FullName
 
     if ($coveredFiles.Count -eq 0) {
-        Write-Warning "No .ps1 files found under '$srcPath' - coverage will be empty."
+        Write-Warning "No .ps1 files found under '$srcPath' — coverage will be empty."
     }
 
     $config.CodeCoverage.Enabled               = $true
     $config.CodeCoverage.Path                  = $coveredFiles
     $config.CodeCoverage.OutputPath            = Join-Path -Path $coverageDir -ChildPath 'coverage.xml'
     $config.CodeCoverage.OutputFormat          = 'JaCoCo'
-    $config.CodeCoverage.CoveragePercentTarget = 80
+    $config.CodeCoverage.CoveragePercentTarget = $CoverageTarget
 }
+
 #endregion
 
 #region Run
+
 $result = Invoke-Pester -Configuration $config
+
 #endregion
 
 #region Coverage report
+
 if ($Coverage -and $null -ne $result.CodeCoverage) {
-    $cc            = $result.CodeCoverage
-    $totalCmds     = $cc.CommandsAnalyzed
-    $missedCmds    = $cc.CommandsMissed
-    $executedCmds  = $totalCmds - $missedCmds
-    $pct           = if ($totalCmds -gt 0) { [Math]::Round(($executedCmds / $totalCmds) * 100, 1) } else { 0 }
-    $coverageColor = if ($pct -ge 80) { 'Green' } elseif ($pct -ge 60) { 'Yellow' } else { 'Red' }
+    $cc = $result.CodeCoverage
+
+    # Overall percentage (compatible with Pester 5 and 6)
+    $pct      = 0.0
+    $ccProps  = $cc.PSObject.Properties.Name
+
+    if ($ccProps -contains 'CoveragePercent' -and $cc.CoveragePercent -gt 0) {
+        # Pester 6 exposes CoveragePercent directly
+        $pct = [System.Math]::Round([double]$cc.CoveragePercent, 2)
+    } else {
+        # Pester 5: calculate from CommandsAnalyzed / CommandsMissed
+        $totalCmds  = if ($ccProps -contains 'CommandsAnalyzed') {
+            [int]$cc.CommandsAnalyzed
+        } else {
+            0
+        }
+
+        $missedCmds = if ($ccProps -contains 'CommandsMissed') {
+            [int]$cc.CommandsMissed
+        } else {
+            0
+        }
+
+        if ($totalCmds -gt 0) {
+            $pct = [System.Math]::Round((($totalCmds - $missedCmds) / $totalCmds) * 100, 2)
+        }
+    }
+
+    $coverageColor = if ($pct -ge $CoverageTarget) {
+        'Green'
+    } elseif ($pct -ge 60) {
+        'Yellow'
+    } else {
+        'Red'
+    }
+
+    # Missed commands (Pester 5: CommandsNotExecuted | Pester 6: MissedCommands)
+    $missed = Get-MissedCommand -CodeCoverage $cc
 
     Write-Host ''
     Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
     Write-Host '  Code Coverage' -ForegroundColor Cyan
     Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
     Write-Host ''
-    Write-Host ("  Overall : {0,6}%  ({1} / {2} commands)" -f $pct, $executedCmds, $totalCmds) -ForegroundColor $coverageColor
+    Write-Host ("  Overall  : {0,6}%  (target: {1}%)" -f $pct, $CoverageTarget) -ForegroundColor $coverageColor
 
-    if ($cc.CommandsNotExecuted.Count -gt 0) {
+    # Missed commands breakdown
+    if ($null -ne $missed -and $missed.Count -gt 0) {
+
+        # Group by file path, keeping the full path for line-level detail
+        $byFile = $missed | Group-Object -Property { $_.File } | Sort-Object Count -Descending
+
         Write-Host ''
-        Write-Host '  Missed commands by file:' -ForegroundColor DarkGray
+        Write-Host ("  {0} uncovered command(s) across {1} file(s):" -f $missed.Count, $byFile.Count) -ForegroundColor Yellow
         Write-Host ''
 
-        $cc.CommandsNotExecuted |
-            Group-Object { Split-Path $_.File -Leaf } |
-            Sort-Object Count -Descending |
-            ForEach-Object {
-                Write-Host ("    {0,-45} {1,3} missed" -f $_.Name, $_.Count) -ForegroundColor Yellow
+        foreach ($fileGroup in $byFile) {
+            $fileName  = Split-Path -Leaf $fileGroup.Name
+            $fileLabel = "    ► $fileName"
+            $countLabel = ("{0,3} missed" -f $fileGroup.Count)
+
+            Write-Host "$fileLabel" -NoNewline -ForegroundColor Yellow
+            Write-Host (' ' * [Math]::Max(1, 48 - $fileLabel.Length)) -NoNewline
+            Write-Host $countLabel -ForegroundColor Red
+
+            if ($ShowMissedLines) {
+                # Sort and deduplicate line numbers; show command text for context
+                $lines = $fileGroup.Group |
+                    Sort-Object -Property StartLine |
+                    Select-Object -Property StartLine,
+                    @{
+                        Name       = 'Text'
+                        Expression = {
+                            if ($_.PSObject.Properties.Name -contains 'Command') {
+                                # Pester 5: .Command property
+                                ($_.Command -replace '\s+', ' ').Trim()
+                            } elseif ($_.PSObject.Properties.Name -contains 'Text') {
+                                # Pester 6: .Text property
+                                ($_.Text -replace '\s+', ' ').Trim()
+                            } else {
+                                ''
+                            }
+                        }
+                    }
+
+                foreach ($line in $lines) {
+                    $lineNum = if ($null -ne $line.StartLine) {
+                        $line.StartLine
+                    } else {
+                        '?'
+                    }
+
+                    $lineText = if ($line.Text.Length -gt 60) {
+                        $line.Text.Substring(0, 57) + '...'
+                    } else {
+                        $line.Text
+                    }
+
+                    Write-Host ("      Line {0,-6} {1}" -f $lineNum, $lineText) -ForegroundColor DarkYellow
+                }
+
+                Write-Host ''
             }
+        }
+
+        if (-not $ShowMissedLines) {
+            Write-Host ''
+            Write-Host '  Tip: run with -ShowMissedLines to see exact line numbers.' -ForegroundColor DarkGray
+        }
+
+    } else {
+        Write-Host ''
+        Write-Host '  All commands covered — 100% coverage!' -ForegroundColor Green
     }
 
     Write-Host ''
-    Write-Host "  Report  : $($config.CodeCoverage.OutputPath.Value)" -ForegroundColor Gray
+    Write-Host "  Report   : $(Get-StringValue $config.CodeCoverage.OutputPath)" -ForegroundColor Gray
     Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
     Write-Host ''
 }
+
 #endregion
 
 #region Test results summary
+
 Write-Host ''
+Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
+Write-Host '  Test Results' -ForegroundColor Cyan
 Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
 
 $passColor = if ($result.FailedCount -eq 0) { 'Green' } else { 'Red' }
-Write-Host ("  Passed  : {0}" -f $result.PassedCount)  -ForegroundColor Green
-Write-Host ("  Failed  : {0}" -f $result.FailedCount)  -ForegroundColor $passColor
-Write-Host ("  Skipped : {0}" -f $result.SkippedCount) -ForegroundColor DarkGray
-Write-Host ("  Total   : {0}" -f $result.TotalCount)   -ForegroundColor Cyan
-Write-Host ("  Duration: {0:n2}s" -f $result.Duration.TotalSeconds) -ForegroundColor DarkGray
+Write-Host ("  Passed   : {0}" -f $result.PassedCount)  -ForegroundColor Green
+Write-Host ("  Failed   : {0}" -f $result.FailedCount)  -ForegroundColor $passColor
+Write-Host ("  Skipped  : {0}" -f $result.SkippedCount) -ForegroundColor DarkGray
+Write-Host ("  Total    : {0}" -f $result.TotalCount)   -ForegroundColor Cyan
+Write-Host ("  Duration : {0:n2}s" -f $result.Duration.TotalSeconds) -ForegroundColor DarkGray
 Write-Host ''
-Write-Host "  Results : $($config.TestResult.OutputPath.Value)" -ForegroundColor Gray
+Write-Host "  Results  : $(Get-StringValue $config.TestResult.OutputPath)" -ForegroundColor Gray
 Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
 Write-Host ''
+
 #endregion
 
 #region Exit code
+
 if ($PassThru) {
     return $result
 }
@@ -215,4 +413,5 @@ if ($result.TotalCount -eq 0) {
 }
 
 exit $(if ($result.FailedCount -gt 0) { 1 } else { 0 })
+
 #endregion
