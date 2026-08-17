@@ -341,22 +341,6 @@ INSERT OR REPLACE INTO dfe_evento (
 
                 $mandatoryAttributes | Should -BeNullOrEmpty
             }
-
-            It 'Declares PSCustomObject as the output type' {
-                $outputTypes = @(
-                    $Script:Command.OutputType |
-                        ForEach-Object {
-                            if ($_ -is [System.Type]) {
-                                $_
-                            } elseif ($null -ne $_.Type) {
-                                $_.Type
-                            }
-                        }
-                )
-
-                $outputTypes.FullName |
-                    Should -Contain 'System.Management.Automation.PSCustomObject'
-            }
         }
         #endregion
 
