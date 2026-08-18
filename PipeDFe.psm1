@@ -4,7 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 #region Module State
-$Script:NativeDllDirectoryCookie = [System.IntPtr]::Zero
+$Script:NativeDllDirectoryInitialized = $false
+$Script:NativeDllDirectoryCookie      = [System.IntPtr]::Zero
 #endregion
 
 #region Configuration
@@ -42,14 +43,21 @@ $Script:SQLiteNativePath = Join-Path -Path $Script:ModuleRoot -ChildPath (
 #region NativeDllLoader
 $interopPath = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Interop'
 
-Get-ChildItem -LiteralPath $interopPath -Filter '*.ps1' -File |
-    Sort-Object FullName |
-    ForEach-Object { . $_.FullName }
+$nativeDllLoaderScripts = @(
+    'Invoke-NativeSetDefaultDllDirectory.ps1'
+    'Invoke-NativeAddDllDirectory.ps1'
+    'Invoke-NativeSetDllDirectory.ps1'
+    'Initialize-NativeDllLoader.ps1'
+)
+
+foreach ($scriptName in $nativeDllLoaderScripts) {
+    . (Join-Path -Path $interopPath -ChildPath $scriptName)
+}
+
 #
 # Native SQLite provider
 #
 # Required for native SQLite runtime resolution.
-#
 if (-not (Test-Path -LiteralPath $Script:SQLiteNativePath -PathType Container)) {
     throw [System.IO.DirectoryNotFoundException]::new(
         "SQLite native library directory not found: '$($Script:SQLiteNativePath)'."
