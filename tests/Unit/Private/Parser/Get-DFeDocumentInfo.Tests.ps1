@@ -295,7 +295,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $results = @($xml1, $xml2) | Get-DFeDocumentInfo
 
-                $results.Count | Should -Be 1
+                $results | Should -HaveCount 1
 
                 $results[0].Modelo | Should -Be ([ModeloDFe]::NFe)
             }
