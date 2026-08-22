@@ -25,6 +25,14 @@ Validates the public behavior of Test-HasValue, including:
 The tests validate observable behavior rather than implementation details.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    'Value',
+    Justification = 'Required by the Func[int, bool] delegate signature.'
+)]
+
+param ()
+
 # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
 # because that is when Context/It are executed to register the test tree.
 # If the module isn't loaded at that point, InModuleScope fails before any
@@ -81,7 +89,17 @@ Describe 'Test-HasValue' {
             }
 
             It 'Returns false for an empty generic enumerable' {
-                $enumerable = [System.Linq.Enumerable]::Empty[int]()
+                $enumerable = [System.Linq.Enumerable]::Where(
+                    [System.Linq.Enumerable]::Range(1, 3),
+                    [Func[int, bool]] {
+                        param (
+                            [Parameter()]
+                            [int]$value
+                        )
+
+                        $false
+                    }
+                )
 
                 Test-HasValue -InputObject $enumerable | Should -BeFalse
             }
