@@ -115,6 +115,10 @@ Describe 'Initialize-NativeDllLoader' -Tag 'Integration' -Skip:(-not (Test-Windo
             }
 
             It 'Stores a non-zero AddDllDirectory cookie after a real call' {
+                $fakeCookie = [System.IntPtr]::new(12345)
+
+                Mock -CommandName Invoke-NativeAddDllDirectory -MockWith { $fakeCookie }
+
                 Initialize-NativeDllLoader -LiteralPath $Script:TestRoot
 
                 $Script:NativeDllDirectoryCookie | Should -Not -Be ([System.IntPtr]::Zero)
