@@ -195,18 +195,40 @@ Describe 'Save-SmtpConfig' {
 
                 Save-SmtpConfig -Config $config
 
-                $firstWrite = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
+                $firstWriteRaw = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
                     ConvertFrom-Json
 
-                $Script:FirstCreatedAt = [string]$firstWrite.CreatedAt
+                $Script:FirstCreatedAt = if ($firstWriteRaw.CreatedAt -is [datetime]) {
+                    $firstWriteRaw.CreatedAt.ToUniversalTime().ToString('o')
+                } else {
+                    [string]$firstWriteRaw.CreatedAt
+                }
+
+                $Script:FirstUpdatedAt = if ($firstWriteRaw.UpdatedAt -is [datetime]) {
+                    $firstWriteRaw.UpdatedAt.ToUniversalTime().ToString('o')
+                } else {
+                    [string]$firstWriteRaw.UpdatedAt
+                }
 
                 $configWithCreatedAt = New-ValidSmtpConfig
                 $configWithCreatedAt.CreatedAt = $Script:FirstCreatedAt
 
                 Save-SmtpConfig -Config $configWithCreatedAt
 
-                $Script:SecondWrite = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
+                $secondWriteRaw = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
                     ConvertFrom-Json
+
+                $Script:SecondWriteCreatedAt = if ($secondWriteRaw.CreatedAt -is [datetime]) {
+                    $secondWriteRaw.CreatedAt.ToUniversalTime().ToString('o')
+                } else {
+                    [string]$secondWriteRaw.CreatedAt
+                }
+
+                $Script:SecondWriteUpdatedAt = if ($secondWriteRaw.UpdatedAt -is [datetime]) {
+                    $secondWriteRaw.UpdatedAt.ToUniversalTime().ToString('o')
+                } else {
+                    [string]$secondWriteRaw.UpdatedAt
+                }
             }
 
             AfterAll {
@@ -215,11 +237,11 @@ Describe 'Save-SmtpConfig' {
             }
 
             It 'Preserves CreatedAt on subsequent writes' {
-                [string]$Script:SecondWrite.CreatedAt | Should -Be $Script:FirstCreatedAt
+                $Script:SecondWriteCreatedAt | Should -Be $Script:FirstCreatedAt
             }
 
             It 'Updates UpdatedAt on subsequent writes' {
-                [string]$Script:SecondWrite.UpdatedAt | Should -Not -Be $Script:FirstCreatedAt
+                $Script:SecondWriteUpdatedAt | Should -Not -Be $Script:FirstUpdatedAt
             }
         }
         #endregion

@@ -91,18 +91,30 @@ function Get-SmtpConfig {
         )
     }
 
+    $createdAt = if ($raw.CreatedAt -is [datetime]) {
+        $raw.CreatedAt.ToUniversalTime().ToString('o')
+    } else {
+        [string]$raw.CreatedAt
+    }
+
+    $updatedAt = if ($raw.UpdatedAt -is [datetime]) {
+        $raw.UpdatedAt.ToUniversalTime().ToString('o')
+    } else {
+        [string]$raw.UpdatedAt
+    }
+
     [PSCustomObject]@{
-        SchemaVersion = $raw.SchemaVersion
-        Server        = $raw.Server
-        Port          = $raw.Port
-        Ssl           = $raw.Ssl
-        Username      = $raw.Username
-        Password      = $raw.Password
+        SchemaVersion = [int]$raw.SchemaVersion
+        Server        = [string]$raw.Server
+        Port          = [int]$raw.Port
+        Ssl           = [bool]$raw.Ssl
+        Username      = [string]$raw.Username
+        Password      = [string]$raw.Password
         From          = $raw.From
         SenderAddress = $raw.SenderAddress
         ReplyTo       = $raw.ReplyTo
-        Timeout       = $raw.Timeout
-        CreatedAt     = $raw.CreatedAt
-        UpdatedAt     = $raw.UpdatedAt
+        Timeout       = [int]$raw.Timeout
+        CreatedAt     = $createdAt
+        UpdatedAt     = $updatedAt
     }
 }

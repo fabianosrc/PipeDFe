@@ -69,8 +69,8 @@ Describe 'Get-SmtpConfig' {
                 SenderAddress = $null
                 ReplyTo       = $null
                 Timeout       = 30
-                CreatedAt     = '2026-08-01T00:00:00+00:00'
-                UpdatedAt     = '2026-08-01T00:00:00+00:00'
+                CreatedAt     = '2026-08-01T00:00:00.0000000Z'
+                UpdatedAt     = '2026-08-01T00:00:00.0000000Z'
             }
 
             function Write-SmtpFixture {
