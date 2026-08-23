@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 #region Module State
 $Script:NativeDllDirectoryInitialized = $false
 $Script:NativeDllDirectoryCookie      = [System.IntPtr]::Zero
+
+$Script:SmtpSchemaVersion             = 1
 #endregion
 
 #region Configuration
