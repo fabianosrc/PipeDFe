@@ -34,6 +34,14 @@ Coverage includes:
   - Leaves no unreplaced {{...}} tokens in the output.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSUseShouldProcessForStateChangingFunctions',
+    '',
+    Justification = 'ShouldProcess would add no value here.'
+)]
+
+param()
+
 # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
 # because that's when Context/It are executed to register the test tree. If the
 # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
@@ -48,7 +56,7 @@ BeforeDiscovery {
 
 Describe 'Build-MailBody' {
 
-        InModuleScope PipeDFe {
+    InModuleScope PipeDFe {
 
         BeforeAll {
 
@@ -92,6 +100,7 @@ Describe 'Build-MailBody' {
 '@
 
             $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
             [System.IO.File]::WriteAllText($Script:TemplatePath, $templateContent, $utf8NoBom)
 
             $Script:ModuleRoot = $Script:TempRoot
