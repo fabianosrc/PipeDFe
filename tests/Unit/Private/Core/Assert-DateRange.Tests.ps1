@@ -311,5 +311,58 @@ Describe 'Assert-DateRange' {
             }
         }
         #endregion
+
+        #region End before Start
+        Context 'End before Start' {
+
+            It 'Throws DateRangeEndBeforeStart when End is earlier than Start' {
+
+                $dateRange = [PSCustomObject]@{
+                    Start = [System.DateTimeOffset]::new(2026, 8, 31, 0, 0, 0, [System.TimeSpan]::Zero)
+                    End   = [System.DateTimeOffset]::new(2026, 8,  1, 0, 0, 0, [System.TimeSpan]::Zero)
+                }
+
+                $errorRecord = Get-TestAssertDateRangeError -DateRange $dateRange
+                $errorRecord | Should -Not -BeNullOrEmpty
+
+                $errorRecord.FullyQualifiedErrorId | Should -BeLike 'DateRangeEndBeforeStart*'
+            }
+
+            It 'Uses InvalidArgument category for EndBeforeStart' {
+
+                $dateRange = [PSCustomObject]@{
+                    Start = [System.DateTimeOffset]::new(2026, 8, 31, 0, 0, 0, [System.TimeSpan]::Zero)
+                    End   = [System.DateTimeOffset]::new(2026, 8,  1, 0, 0, 0, [System.TimeSpan]::Zero)
+                }
+
+                $errorRecord = Get-TestAssertDateRangeError -DateRange $dateRange
+                $errorRecord.CategoryInfo.Category |
+                    Should -Be ([System.Management.Automation.ErrorCategory]::InvalidArgument)
+            }
+
+            It 'Uses DateRange as TargetObject for EndBeforeStart' {
+
+                $dateRange = [PSCustomObject]@{
+                    Start = [System.DateTimeOffset]::new(2026, 8, 31, 0, 0, 0, [System.TimeSpan]::Zero)
+                    End   = [System.DateTimeOffset]::new(2026, 8,  1, 0, 0, 0, [System.TimeSpan]::Zero)
+                }
+
+                $errorRecord = Get-TestAssertDateRangeError -DateRange $dateRange
+                $errorRecord.TargetObject | Should -BeExactly $dateRange
+            }
+
+            It 'Does not throw when Start equals End' {
+
+                $now = [System.DateTimeOffset]::UtcNow
+
+                $dateRange = [PSCustomObject]@{
+                    Start = $now
+                    End   = $now
+                }
+
+                { Invoke-TestAssertDateRange -DateRange $dateRange } | Should -Not -Throw
+            }
+        }
+        #endregion
     }
 }

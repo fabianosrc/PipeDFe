@@ -3,8 +3,8 @@
 Validates a DateRange object.
 
 .DESCRIPTION
-Ensures that DateRange exposes Start and End properties and that both
-values are DateTimeOffset instances.
+Ensures that DateRange exposes Start and End properties, that both
+values are DateTimeOffset instances, and that End is not earlier than Start.
 
 Throws a terminating error on the calling command when validation fails.
 
@@ -74,5 +74,21 @@ function Assert-DateRange {
                 )
             )
         }
+    }
+
+    if ($DateRange.End -lt $DateRange.Start) {
+        $startRange = $DateRange.Start.ToString('yyyy-MM-dd')
+        $endRange   = $DateRange.End.ToString('yyyy-MM-dd')
+
+        $errorMessage = "DateRange.End ($endRange) must not be earlier than DateRange.Start ($startRange)."
+
+        $CallerPSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.ArgumentException]::new($errorMessage),
+                'DateRangeEndBeforeStart',
+                [System.Management.Automation.ErrorCategory]::InvalidArgument,
+                $DateRange
+            )
+        )
     }
 }
