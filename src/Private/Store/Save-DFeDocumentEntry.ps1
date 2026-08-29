@@ -61,7 +61,7 @@ function Save-DFeDocumentEntry {
     [OutputType([void])]
     param (
         [Parameter(Mandatory)]
-        [ValidatePattern('^\d{14}$')]
+        [ValidatePattern('^[A-Z0-9]{14}$')]
         [string]$Cnpj,
 
         [Parameter(Mandatory)]

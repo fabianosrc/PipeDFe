@@ -218,7 +218,7 @@ Describe 'Open-DFeIndexConnection' {
 
                     Select-Object -First 1
 
-                $validationAttribute.RegexPattern | Should -Be '^\d{14}$'
+                $validationAttribute.RegexPattern | Should -Be '^[A-Z0-9]{14}$'
             }
 
             It 'Declares SQLiteConnection as the output type' {
@@ -259,8 +259,8 @@ Describe 'Open-DFeIndexConnection' {
                     Should -Throw
             }
 
-            It 'Rejects alphabetic characters' {
-                { Open-DFeIndexConnection -Cnpj '1234567800019A' -ErrorAction Stop } |
+            It 'Rejects invalid characters' {
+                { Open-DFeIndexConnection -Cnpj '1234567800019!' -ErrorAction Stop } |
                     Should -Throw
             }
 

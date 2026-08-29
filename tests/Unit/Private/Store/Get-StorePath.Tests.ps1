@@ -182,8 +182,8 @@ Describe 'Get-StorePath' {
                 { Get-StorePath -Scope Index -Cnpj '123456780001990' } | Should -Throw
             }
 
-            It 'Throws when CNPJ contains non-numeric characters' {
-                { Get-StorePath -Scope Index -Cnpj '1234567800019X' } | Should -Throw
+            It 'Throws when CNPJ contains invalid characters' {
+                { Get-StorePath -Scope Index -Cnpj '12345678000!9X' } | Should -Throw
             }
 
             It 'Throws with MissingCnpj error id when CNPJ is absent' {

@@ -46,7 +46,7 @@ function Get-StorePath {
         [string]$Scope,
 
         [Parameter()]
-        [ValidatePattern('^\d{14}$')]
+        [ValidatePattern('^[A-Z0-9]{14}$')]
         [string]$Cnpj
     )
 

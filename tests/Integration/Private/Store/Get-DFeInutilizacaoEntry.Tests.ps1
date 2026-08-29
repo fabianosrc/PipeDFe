@@ -459,7 +459,7 @@ INSERT OR REPLACE INTO dfe_inutilizacao (
             }
 
             It 'Rejects a CNPJ containing non-numeric characters' {
-                { Get-DFeInutilizacaoEntry -Cnpj '1234567800019X' } |Should -Throw
+                { Get-DFeInutilizacaoEntry -Cnpj '12345678000!9' } |Should -Throw
             }
         }
         #endregion

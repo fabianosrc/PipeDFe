@@ -287,7 +287,7 @@ INSERT OR REPLACE INTO dfe_evento (
                     Select-Object -First 1
 
                 $validationAttribute | Should -Not -BeNullOrEmpty
-                $validationAttribute.RegexPattern | Should -Be '^\d{14}$'
+                $validationAttribute.RegexPattern | Should -Be '^[A-Z0-9]{14}$'
             }
 
             It 'Exposes the ChavePai parameter' {

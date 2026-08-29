@@ -424,7 +424,7 @@ INSERT INTO dfe_document (
 
                     Select-Object -First 1
 
-                $attribute.RegexPattern | Should -Be '^\d{14}$'
+                $attribute.RegexPattern | Should -Be '^[A-Z0-9]{14}$'
             }
 
             It 'Exposes StartDate as a string' {
@@ -517,7 +517,7 @@ INSERT INTO dfe_document (
             }
 
             It 'Rejects alphabetic characters' {
-                { Get-DFeDocumentEntry -Cnpj '1234567800019A' -ErrorAction Stop } |
+                { Get-DFeDocumentEntry -Cnpj '1234567800019!' -ErrorAction Stop } |
                     Should -Throw
             }
 

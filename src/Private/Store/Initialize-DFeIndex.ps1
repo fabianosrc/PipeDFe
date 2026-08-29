@@ -46,7 +46,7 @@ function Initialize-DFeIndex {
     param (
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [ValidatePattern('^\d{14}$')]
+        [ValidatePattern('^[A-Z0-9]{14}$')]
         [string]$Cnpj
     )
 

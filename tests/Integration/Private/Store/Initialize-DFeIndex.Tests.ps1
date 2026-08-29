@@ -1145,7 +1145,7 @@ INSERT INTO dfe_document (
             }
 
             It 'rejects a CNPJ containing non-numeric characters' {
-                { Initialize-DFeIndex -Cnpj '1234567800019A' } | Should -Throw
+                { Initialize-DFeIndex -Cnpj '12345678000!9' } | Should -Throw
             }
 
             It 'rejects an empty CNPJ' {

@@ -200,9 +200,9 @@ Describe 'Invoke-DFeXmlScan' {
                 { Invoke-DFeXmlScan @scanParams } | Should -Throw
             }
 
-            It 'Rejects a Cnpj with non-numeric characters' {
+            It 'Rejects a Cnpj with invalid characters' {
                 $scanParams = @{
-                    Cnpj    = '1234567800019X'
+                    Cnpj    = '12345678000!9X'
                     XmlPath = $Script:XmlDir
                 }
 
