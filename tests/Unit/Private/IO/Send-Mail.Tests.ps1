@@ -8,7 +8,9 @@ Unit tests for Send-Mail.
 Covers parameter validation, result contract, recipient filtering,
 optional SMTP metadata, attachments and runtime error handling.
 
-No real SMTP connection is performed by these tests.
+No real SMTP connection is performed by these tests. The success path
+(Success = true, EmailsSent populated) requires a live SMTP connection
+and is covered by integration tests only.
 
 Coverage includes:
   - Mandatory parameters reject null and empty values.
@@ -327,6 +329,126 @@ Describe 'Send-Mail' {
                 }
 
                 { Send-Mail @sendParams } | Should -Not -Throw
+            }
+        }
+        #endregion
+
+        #region SenderAddress
+        Context 'SenderAddress in SmtpConfig' {
+
+            It 'Does not throw when SenderAddress has a valid email' {
+                $smtpWithSender = [PSCustomObject]@{
+                    Server        = $Script:ValidSmtp.Server
+                    Port          = $Script:ValidSmtp.Port
+                    Ssl           = $Script:ValidSmtp.Ssl
+                    Username      = $Script:ValidSmtp.Username
+                    Password      = $Script:ValidSmtp.Password
+                    Timeout       = $Script:ValidSmtp.Timeout
+                    From          = $Script:ValidSmtp.From
+                    SenderAddress = [PSCustomObject]@{
+                        Email = 'sender@example.com'
+                        Name  = 'Sender'
+                    }
+                }
+
+                $sendParams = @{
+                    SmtpConfig = $smtpWithSender
+                    To         = $Script:ValidTo
+                    Subject    = $Script:ValidSubject
+                    Body       = $Script:ValidBody
+                }
+
+                { Send-Mail @sendParams } | Should -Not -Throw
+            }
+
+            It 'Emits a warning when SenderAddress email is invalid' {
+                $smtpWithBadSender = [PSCustomObject]@{
+                    Server        = $Script:ValidSmtp.Server
+                    Port          = $Script:ValidSmtp.Port
+                    Ssl           = $Script:ValidSmtp.Ssl
+                    Username      = $Script:ValidSmtp.Username
+                    Password      = $Script:ValidSmtp.Password
+                    Timeout       = $Script:ValidSmtp.Timeout
+                    From          = $Script:ValidSmtp.From
+                    SenderAddress = [PSCustomObject]@{
+                        Email = 'not-an-email'
+                        Name  = 'Bad'
+                    }
+                }
+
+                $sendParams = @{
+                    SmtpConfig = $smtpWithBadSender
+                    To         = $Script:ValidTo
+                    Subject    = $Script:ValidSubject
+                    Body       = $Script:ValidBody
+                }
+
+                $warnings = @(
+                    Send-Mail @sendParams 3>&1 |
+                        Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+                )
+
+                $warnings | Should -Not -BeNullOrEmpty
+            }
+        }
+        #endregion
+
+        #region ReplyTo
+        Context 'ReplyTo in SmtpConfig' {
+
+            It 'Does not throw when ReplyTo has a valid email' {
+                $smtpWithReplyTo = [PSCustomObject]@{
+                    Server  = $Script:ValidSmtp.Server
+                    Port    = $Script:ValidSmtp.Port
+                    Ssl     = $Script:ValidSmtp.Ssl
+                    Username = $Script:ValidSmtp.Username
+                    Password = $Script:ValidSmtp.Password
+                    Timeout = $Script:ValidSmtp.Timeout
+                    From    = $Script:ValidSmtp.From
+                    ReplyTo = [PSCustomObject]@{
+                        Email = 'reply@example.com'
+                        Name  = 'Reply'
+                    }
+                }
+
+                $sendParams = @{
+                    SmtpConfig = $smtpWithReplyTo
+                    To         = $Script:ValidTo
+                    Subject    = $Script:ValidSubject
+                    Body       = $Script:ValidBody
+                }
+
+                { Send-Mail @sendParams } | Should -Not -Throw
+            }
+
+            It 'Emits a warning when ReplyTo email is invalid' {
+                $smtpWithBadReplyTo = [PSCustomObject]@{
+                    Server   = $Script:ValidSmtp.Server
+                    Port     = $Script:ValidSmtp.Port
+                    Ssl      = $Script:ValidSmtp.Ssl
+                    Username = $Script:ValidSmtp.Username
+                    Password = $Script:ValidSmtp.Password
+                    Timeout  = $Script:ValidSmtp.Timeout
+                    From     = $Script:ValidSmtp.From
+                    ReplyTo  = [PSCustomObject]@{
+                        Email = 'not-an-email'
+                        Name  = 'Bad'
+                    }
+                }
+
+                $sendParams = @{
+                    SmtpConfig = $smtpWithBadReplyTo
+                    To         = $Script:ValidTo
+                    Subject    = $Script:ValidSubject
+                    Body       = $Script:ValidBody
+                }
+
+                $warnings = @(
+                    Send-Mail @sendParams 3>&1 |
+                        Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+                )
+
+                $warnings | Should -Not -BeNullOrEmpty
             }
         }
         #endregion
