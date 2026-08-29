@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $Script:NativeDllDirectoryInitialized = $false
 $Script:NativeDllDirectoryCookie      = [System.IntPtr]::Zero
 
+$Script:JsonSchemaVersion             = 1
 $Script:SmtpSchemaVersion             = 1
 #endregion
 
@@ -128,6 +129,7 @@ if ($assemblyName.Version -lt $Script:SQLite.MinimumVersion) {
 # alphabetically to ensure deterministic initialization.
 $dotSourceLayers = [ordered]@{
     Enum    = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Enum'
+    Company = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Company'
     Core    = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Core'
     Crypt   = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Crypt'
     IO      = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/IO'
