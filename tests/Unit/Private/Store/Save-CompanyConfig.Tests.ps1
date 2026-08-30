@@ -78,7 +78,7 @@ Describe 'Save-CompanyConfig' {
 
                 $null = $Scope
 
-                Join-Path -Path $TestDrive -ChildPath $Cnpj 'config'
+                [System.IO.Path]::Combine($TestDrive, $Cnpj, 'config')
             } -ParameterFilter {
                 $Scope -eq 'Config'
             }
@@ -131,22 +131,20 @@ Describe 'Save-CompanyConfig' {
             }
 
             It 'Creates the config directory when it does not exist' {
-                $configPath = Join-Path -Path $TestDrive -ChildPath $Script:Cnpj 'config'
+                $configPath = [System.IO.Path]::Combine($TestDrive, $Script:Cnpj, 'config')
 
                 Test-Path -LiteralPath $configPath -PathType Container | Should -BeTrue
             }
 
             It 'Writes the JSON file to the config directory' {
-                $configPath  = Join-Path -Path $TestDrive -ChildPath $Script:Cnpj 'config'
-
+                $configPath  = [System.IO.Path]::Combine($TestDrive, $Script:Cnpj, 'config')
                 $companyFile = Join-Path -Path $configPath -ChildPath "$Script:Cnpj.json"
 
                 Test-Path -LiteralPath $companyFile -PathType Leaf | Should -BeTrue
             }
 
             It 'Does not leave a .tmp file after successful write' {
-                $configPath = Join-Path -Path $TestDrive -ChildPath $Script:Cnpj 'config'
-
+                $configPath = [System.IO.Path]::Combine($TestDrive, $Script:Cnpj, 'config')
                 $tmpFile    = Join-Path -Path $configPath -ChildPath "$Script:Cnpj.json.tmp"
 
                 Test-Path -LiteralPath $tmpFile | Should -BeFalse
@@ -177,8 +175,7 @@ Describe 'Save-CompanyConfig' {
 
                 Save-CompanyConfig -Company $company2 -AsUpdate
 
-                $configPath  = Join-Path -Path $TestDrive -ChildPath $cnpj2 'config'
-
+                $configPath  = [System.IO.Path]::Combine($TestDrive, $cnpj2, 'config')
                 $companyFile = Join-Path -Path $configPath -ChildPath "$cnpj2.json"
 
                 $saved = Get-Content -LiteralPath $companyFile -Raw | ConvertFrom-Json
@@ -189,8 +186,7 @@ Describe 'Save-CompanyConfig' {
             It 'Does not stamp UpdatedAt when AsUpdate is not specified' {
                 Save-CompanyConfig -Company $Script:ValidCompany
 
-                $configPath  = Join-Path -Path $TestDrive -ChildPath $Script:Cnpj 'config'
-
+                $configPath  = [System.IO.Path]::Combine($TestDrive, $Script:Cnpj, 'config')
                 $companyFile = Join-Path -Path $configPath -ChildPath "$Script:Cnpj.json"
 
                 $saved = Get-Content -LiteralPath $companyFile -Raw | ConvertFrom-Json
@@ -224,10 +220,8 @@ Describe 'Save-CompanyConfig' {
 
                 Save-CompanyConfig -Company $Script:ValidCompany
 
-                $configPath  = Join-Path -Path $TestDrive -ChildPath $Script:Cnpj 'config'
-
-                $companyFile = Join-Path -Path $configPath -ChildPath "$Script:Cnpj.json"
-
+                $configPath   = [System.IO.Path]::Combine($TestDrive, $Script:Cnpj, 'config')
+                $companyFile  = Join-Path -Path $configPath -ChildPath "$Script:Cnpj.json"
                 $Script:Saved = Get-Content -LiteralPath $companyFile -Raw | ConvertFrom-Json
             }
 
