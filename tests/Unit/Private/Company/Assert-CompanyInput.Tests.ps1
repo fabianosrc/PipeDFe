@@ -209,7 +209,7 @@ Describe 'Assert-CompanyInput' {
                 }
 
                 $configPath  = Join-Path @joinParams
-                $companyFile = Join-Path -Path $configPath -ChildPath 'company.json'
+                $companyFile = Join-Path -Path $configPath -ChildPath "$Script:ValidCnpj.json"
 
                 New-Item -Path $configPath -ItemType Directory -Force | Out-Null
 
