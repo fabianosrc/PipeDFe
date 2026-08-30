@@ -255,7 +255,7 @@ function Assert-CompanyInput {
         }
 
         $configPath  = Get-StorePath @storeParams
-        $companyFile = Join-Path -Path $configPath -ChildPath 'company.json'
+        $companyFile = Join-Path -Path $configPath -ChildPath ('{0}.json' -f $Cnpj)
 
         if (Test-Path -LiteralPath $companyFile -PathType Leaf) {
             $PSCmdlet.ThrowTerminatingError(
