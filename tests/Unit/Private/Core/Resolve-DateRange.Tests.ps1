@@ -199,8 +199,8 @@ Describe 'Resolve-DateRange' {
 
             BeforeAll {
                 $resolveParams = @{
-                    StartDate = '01/08/2026'
-                    EndDate   = '31/08/2026'
+                    StartDate = '01/07/2026'
+                    EndDate   = '31/07/2026'
                 }
 
                 $Script:RangeResult = Resolve-DateRange @resolveParams
@@ -208,7 +208,7 @@ Describe 'Resolve-DateRange' {
 
             It 'Normalizes Start to the first moment of StartDate' {
                 $Script:RangeResult.Start.Day    | Should -Be 1
-                $Script:RangeResult.Start.Month  | Should -Be 8
+                $Script:RangeResult.Start.Month  | Should -Be 7
                 $Script:RangeResult.Start.Year   | Should -Be 2026
                 $Script:RangeResult.Start.Hour   | Should -Be 0
                 $Script:RangeResult.Start.Minute | Should -Be 0
@@ -217,7 +217,7 @@ Describe 'Resolve-DateRange' {
 
             It 'Normalizes End to the last second of EndDate' {
                 $Script:RangeResult.End.Day    | Should -Be 31
-                $Script:RangeResult.End.Month  | Should -Be 8
+                $Script:RangeResult.End.Month  | Should -Be 7
                 $Script:RangeResult.End.Year   | Should -Be 2026
                 $Script:RangeResult.End.Hour   | Should -Be 23
                 $Script:RangeResult.End.Minute | Should -Be 59
@@ -227,7 +227,7 @@ Describe 'Resolve-DateRange' {
             It 'Applies the local timezone offset to Start' {
                 $localDate = [System.DateTime]::new(
                     2026,
-                    8,
+                    7,
                     1,
                     0,
                     0,
@@ -243,7 +243,7 @@ Describe 'Resolve-DateRange' {
             It 'Applies the local timezone offset to End' {
                 $localDate = [System.DateTime]::new(
                     2026,
-                    8,
+                    7,
                     31,
                     0,
                     0,
@@ -382,7 +382,7 @@ Describe 'Resolve-DateRange' {
 
             BeforeAll {
 
-                $Script:OutputResult = Resolve-DateRange -StartDate '01/08/2026' -EndDate '31/08/2026'
+                $Script:OutputResult = Resolve-DateRange -StartDate '01/07/2026' -EndDate '31/07/2026'
             }
 
             It 'Returns a PSCustomObject' {
