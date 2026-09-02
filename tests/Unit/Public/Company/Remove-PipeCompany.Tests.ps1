@@ -1,7 +1,5 @@
 ﻿#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
-#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
-
 <#
 .SYNOPSIS
 Unit tests for Remove-PipeCompany.
@@ -971,6 +969,8 @@ Describe 'Remove-PipeCompany' {
         Context 'ShouldProcess' {
 
             BeforeAll {
+
+                $Script:command = Get-Command -Name Remove-PipeCompany
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:cnpjNormalized
