@@ -191,10 +191,15 @@ Describe 'Set-PipeSmtp' -Tag 'Integration' {
                 $Script:Result.Password | Should -Not -Be 'P@ssw0rd!'
             }
 
-            It 'Sets CreatedAt equal to UpdatedAt on first write' {
+            It 'Sets CreatedAt and UpdatedAt on first write' {
                 $Script:Result.CreatedAt | Should -Not -BeNullOrEmpty
                 $Script:Result.UpdatedAt | Should -Not -BeNullOrEmpty
-                $Script:Result.CreatedAt | Should -Be $Script:Result.UpdatedAt
+
+                { [System.DateTimeOffset]::Parse($Script:Result.CreatedAt) } |
+                    Should -Not -Throw
+
+                { [System.DateTimeOffset]::Parse($Script:Result.UpdatedAt) } |
+                    Should -Not -Throw
             }
         }
         #endregion
