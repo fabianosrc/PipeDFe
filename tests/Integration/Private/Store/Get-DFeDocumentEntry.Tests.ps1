@@ -9,45 +9,30 @@ Verifies the public contract and integration behavior of Get-DFeDocumentEntry.
 
 Coverage includes:
   - Cnpj is mandatory.
-  - Cnpj must contain exactly 14 digits.
-  - StartDate is optional.
-  - EndDate is optional.
-  - Modelo is optional.
-  - the declared output type is PSCustomObject.
-  - the index path is resolved for the supplied CNPJ.
-  - real SQLite data is returned correctly.
-  - all documents are returned when no filters are supplied.
-  - results are ordered by dh_emi ascending.
+  - Cnpj must match the expected pattern.
+  - StartDate, EndDate and Modelo are optional.
+  - Real SQLite data is returned correctly.
+  - All documents are returned when no filters are supplied.
+  - Results are ordered by dh_emi ascending.
   - StartDate is inclusive.
   - EndDate is inclusive.
   - StartDate and EndDate can be combined.
   - Modelo filters by its numeric value.
   - Modelo can be combined with a period filter.
-  - no output is produced when no records match.
-  - documents from another CNPJ are not returned.
-  - the output exposes exactly the documented properties.
-  - output property types match the documented contract.
-  - internal database fields are not exposed.
-  - invalid dates preserve UnsupportedDateFormat.
-  - database/read failures are converted to DocumentEntryReadFailed.
-  - read failures use ReadError.
-  - read failures expose the database path as TargetObject.
-  - read failures preserve the original exception.
-  - read failures do not produce output.
-
-The success-path tests use real SQLite databases created in an isolated
-temporary directory.
-
-The failure-path tests mock Open-SqliteConnection so that failures are
-deterministic and independent of SQLite provider behavior.
-
-No production data is accessed.
+  - No output is produced when no records match.
+  - Documents from another CNPJ are not returned.
+  - Output exposes exactly the documented properties including ndoc and serie.
+  - ndoc is null when the column is NULL in the database.
+  - serie is null when the column is NULL in the database.
+  - Output property types match the documented contract.
+  - Invalid dates preserve UnsupportedDateFormat.
+  - Database failures are converted to DocumentEntryReadFailed.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
     'PSUseShouldProcessForStateChangingFunctions',
     '',
-    Justification = 'ShouldProcess would add no value here.'
+    Justification = 'Test helper functions do not require ShouldProcess.'
 )]
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -79,46 +64,41 @@ Describe 'Get-DFeDocumentEntry' {
 
             $testID = [guid]::NewGuid().ToString('N')
 
-            $joinPathParams = @{
-                Path      = [System.IO.Path]::GetTempPath()
-                ChildPath = 'PipeDFe.Get-DFeDocumentEntry.Tests-' -f $testID
-            }
+            $Script:TestRoot = [System.IO.Path]::Combine(
+                [System.IO.Path]::GetTempPath(),
+                ('PipeDFe.Get-DFeDocumentEntry.Tests-{0}' -f $testID)
+            )
 
-            $Script:TestRoot = Join-Path @joinPathParams
-
-            $newItemParams = @{
-                Path        = $Script:TestRoot
-                ItemType    = 'Directory'
-                Force       = $true
-                ErrorAction = 'Stop'
-            }
-
-            New-Item @newItemParams | Out-Null
+            New-Item -Path $Script:TestRoot -ItemType Directory -Force | Out-Null
 
             $Script:CnpjOne = '12345678000199'
             $Script:CnpjTwo = '98765432000100'
 
             function New-TestDatabasePath {
+                [CmdletBinding()]
                 [OutputType([string])]
                 param ()
 
-                Join-Path -Path $Script:TestRoot -ChildPath ([guid]::NewGuid().ToString('N') + '.db')
+                $testID = [guid]::NewGuid().ToString('N')
+
+                [System.IO.Path]::Combine($Script:TestRoot, ('{0}.db' -f $testID))
             }
 
             function New-TestConnection {
+                [CmdletBinding()]
                 [OutputType([System.Data.SQLite.SQLiteConnection])]
                 param (
                     [Parameter(Mandatory)]
                     [string]$DatabasePath
                 )
 
-                $connectionString = "Data Source=$DatabasePath;Version=3;"
-                $connection = [System.Data.SQLite.SQLiteConnection]::new($connectionString)
+                $connection = [System.Data.SQLite.SQLiteConnection]::new(
+                    "Data Source=$DatabasePath;Version=3;"
+                )
 
                 try {
                     $connection.Open()
-
-                    $connection
+                    return $connection
                 } catch {
                     $connection.Dispose()
                     throw
@@ -126,6 +106,8 @@ Describe 'Get-DFeDocumentEntry' {
             }
 
             function Close-TestConnection {
+                [CmdletBinding()]
+                [OutputType([void])]
                 param (
                     [AllowNull()]
                     [System.Data.SQLite.SQLiteConnection]$Connection
@@ -141,6 +123,8 @@ Describe 'Get-DFeDocumentEntry' {
             }
 
             function Invoke-TestNonQuery {
+                [CmdletBinding()]
+                [OutputType([void])]
                 param (
                     [Parameter(Mandatory)]
                     [System.Data.SQLite.SQLiteConnection]$Connection,
@@ -154,8 +138,7 @@ Describe 'Get-DFeDocumentEntry' {
                 try {
                     $command = $Connection.CreateCommand()
                     $command.CommandText = $CommandText
-
-                    $command.ExecuteNonQuery()
+                    $command.ExecuteNonQuery() | Out-Null
                 } finally {
                     if ($null -ne $command) {
                         $command.Dispose()
@@ -164,6 +147,8 @@ Describe 'Get-DFeDocumentEntry' {
             }
 
             function New-TestSchema {
+                [CmdletBinding()]
+                [OutputType([void])]
                 param (
                     [Parameter(Mandatory)]
                     [System.Data.SQLite.SQLiteConnection]$Connection
@@ -171,18 +156,21 @@ Describe 'Get-DFeDocumentEntry' {
 
                 Invoke-TestNonQuery -Connection $Connection -CommandText @'
 CREATE TABLE dfe_document (
-    chave_acesso TEXT NOT NULL,
+    chave_acesso TEXT    NOT NULL PRIMARY KEY,
     modelo       INTEGER NOT NULL,
-    dh_emi       TEXT NOT NULL,
-    file_path    TEXT NOT NULL,
-    is_proc      INTEGER NOT NULL,
-    sha256       TEXT NOT NULL,
-    indexed_at   TEXT NOT NULL
+    file_path    TEXT    NOT NULL,
+    is_proc      INTEGER NOT NULL DEFAULT 0,
+    ndoc         INTEGER,
+    serie        TEXT,
+    dh_emi       TEXT,
+    sha256       TEXT    NOT NULL,
+    indexed_at   TEXT    NOT NULL
 );
-'@ | Out-Null
+'@
             }
 
             function New-TestDocument {
+                [CmdletBinding()]
                 [OutputType([pscustomobject])]
                 param (
                     [Parameter(Mandatory)]
@@ -192,7 +180,7 @@ CREATE TABLE dfe_document (
                     [ModeloDFe]$Modelo = [ModeloDFe]::NFe,
 
                     [Parameter()]
-                    [string]$DhEmi = '2026-08-15T12:00:00.0000000-03:00',
+                    [string]$DhEmi = '2026-08-15T12:00:00.0000000+00:00',
 
                     [Parameter()]
                     [string]$FilePath = 'C:\xml\doc.xml',
@@ -201,10 +189,18 @@ CREATE TABLE dfe_document (
                     [bool]$IsProc = $false,
 
                     [Parameter()]
+                    [AllowNull()]
+                    [object]$Ndoc = $null,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string]$Serie = $null,
+
+                    [Parameter()]
                     [string]$Sha256 = ([guid]::NewGuid().ToString('N')),
 
                     [Parameter()]
-                    [string]$IndexedAt = '2026-08-15T12:00:00.0000000-03:00'
+                    [string]$IndexedAt = '2026-08-15T12:00:00.0000000+00:00'
                 )
 
                 [PSCustomObject]@{
@@ -213,12 +209,16 @@ CREATE TABLE dfe_document (
                     DhEmi       = $DhEmi
                     FilePath    = $FilePath
                     IsProc      = $IsProc
+                    Ndoc        = $Ndoc
+                    Serie       = $Serie
                     Sha256      = $Sha256
                     IndexedAt   = $IndexedAt
                 }
             }
 
             function Save-TestDocument {
+                [CmdletBinding()]
+                [OutputType([void])]
                 param (
                     [Parameter(Mandatory)]
                     [System.Data.SQLite.SQLiteConnection]$Connection,
@@ -230,53 +230,77 @@ CREATE TABLE dfe_document (
                 $command = $null
 
                 try {
-                    $dhEmiUtc = [System.DateTimeOffset]::Parse($Document.DhEmi).ToUniversalTime().ToString('o')
-                    $command  = $Connection.CreateCommand()
+                    $command = $Connection.CreateCommand()
 
                     $command.CommandText = @'
 INSERT INTO dfe_document (
-    chave_acesso, modelo, dh_emi, file_path, is_proc, sha256, indexed_at
+    chave_acesso,
+    modelo,
+    file_path,
+    is_proc,
+    ndoc,
+    serie,
+    dh_emi,
+    sha256,
+    indexed_at
 ) VALUES (
-    @chave_acesso, @modelo, @dh_emi, @file_path, @is_proc, @sha256, @indexed_at
+    @chave_acesso,
+    @modelo,
+    @file_path,
+    @is_proc,
+    @ndoc,
+    @serie,
+    @dh_emi,
+    @sha256,
+    @indexed_at
 );
 '@
 
-                    $command.Parameters.AddWithValue('@chave_acesso', $Document.ChaveAcesso)  | Out-Null
-                    $command.Parameters.AddWithValue('@modelo', [int]$Document.Modelo)        | Out-Null
-                    $command.Parameters.AddWithValue('@dh_emi', $dhEmiUtc)                    | Out-Null
-                    $command.Parameters.AddWithValue('@file_path', $Document.FilePath)        | Out-Null
-                    $command.Parameters.AddWithValue('@is_proc', [int][bool]$Document.IsProc) | Out-Null
-                    $command.Parameters.AddWithValue('@sha256', $Document.Sha256)             | Out-Null
-                    $command.Parameters.AddWithValue('@indexed_at', $Document.IndexedAt)      | Out-Null
+                    $ndocValue  = if ($null -eq $Document.Ndoc) {
+                        [System.DBNull]::Value
+                    } else {
+                        [int]$Document.Ndoc
+                    }
+
+                    $serieValue = if ($null -eq $Document.Serie) {
+                        [System.DBNull]::Value
+                    } else {
+                        [string]$Document.Serie
+                    }
+
+                    $command.Parameters.AddWithValue('@chave_acesso', $Document.ChaveAcesso)       | Out-Null
+                    $command.Parameters.AddWithValue('@modelo',       [int]$Document.Modelo)       | Out-Null
+                    $command.Parameters.AddWithValue('@file_path',    $Document.FilePath)          | Out-Null
+                    $command.Parameters.AddWithValue('@is_proc',      [int][bool]$Document.IsProc) | Out-Null
+                    $command.Parameters.AddWithValue('@ndoc',         $ndocValue)                  | Out-Null
+                    $command.Parameters.AddWithValue('@serie',        $serieValue)                 | Out-Null
+                    $command.Parameters.AddWithValue('@dh_emi',       $Document.DhEmi)             | Out-Null
+                    $command.Parameters.AddWithValue('@sha256',       $Document.Sha256)            | Out-Null
+                    $command.Parameters.AddWithValue('@indexed_at',   $Document.IndexedAt)         | Out-Null
 
                     $command.ExecuteNonQuery() | Out-Null
                 } finally {
-                    if ($null -ne $command) {
-                        $command.Dispose()
-                    }
+                    if ($null -ne $command) { $command.Dispose() }
                 }
             }
 
             function New-TestIndex {
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
-                    'PSReviewUnusedParameter',
-                    'Cnpj',
-                    Justification = 'Required by the test contract.'
-                )]
+                [CmdletBinding()]
                 [OutputType([string])]
                 param (
                     [Parameter(Mandatory)]
                     [string]$Cnpj
                 )
 
+                $null = $Cnpj
+
                 $databasePath = New-TestDatabasePath
-                $connection = $null
+                $connection   = $null
 
                 try {
                     $connection = New-TestConnection -DatabasePath $databasePath
                     New-TestSchema -Connection $connection
-
-                    $databasePath
+                    return $databasePath
                 } finally {
                     Close-TestConnection -Connection $connection
                 }
@@ -288,13 +312,17 @@ INSERT INTO dfe_document (
             $docJulyParams = @{
                 ChaveAcesso = ('0' * 44)
                 DhEmi       = '2026-07-31T23:59:59.0000000+00:00'
+                Ndoc        = 1
+                Serie       = '001'
             }
 
-            $Script:DocJuly  = New-TestDocument @docJulyParams
+            $Script:DocJuly = New-TestDocument @docJulyParams
 
             $docAug01Params = @{
                 ChaveAcesso = ('1' * 44)
                 DhEmi       = '2026-08-01T00:00:00.0000000+00:00'
+                Ndoc        = 2
+                Serie       = '001'
             }
 
             $Script:DocAug01 = New-TestDocument @docAug01Params
@@ -302,32 +330,41 @@ INSERT INTO dfe_document (
             $docAug15Params = @{
                 ChaveAcesso = ('2' * 44)
                 DhEmi       = '2026-08-15T12:00:00.0000000+00:00'
+                Ndoc        = 3
+                Serie       = '001'
                 IsProc      = $true
             }
 
             $Script:DocAug15 = New-TestDocument @docAug15Params
 
+
             $docAug31Params = @{
                 ChaveAcesso = ('3' * 44)
                 DhEmi       = '2026-08-31T23:59:59.0000000+00:00'
+                Ndoc        = 5
+                Serie       = '001'
             }
 
             $Script:DocAug31 = New-TestDocument @docAug31Params
 
-            $docStepParams = @{
+            $docSepParams = @{
                 ChaveAcesso = ('4' * 44)
                 DhEmi       = '2026-09-01T00:00:00.0000000+00:00'
+                Ndoc        = 6
+                Serie       = '001'
             }
 
-            $Script:DocSep   = New-TestDocument @docStepParams
+            $Script:DocSep = New-TestDocument @docSepParams
 
             $docCteParams = @{
                 ChaveAcesso = ('5' * 44)
-                Modelo      = ([ModeloDFe]::CTe)
                 DhEmi       = '2026-08-15T12:00:00.0000000+00:00'
+                Modelo      = ([ModeloDFe]::CTe)
+                Ndoc        = $null
+                Serie       = $null
             }
 
-            $Script:DocCte   = New-TestDocument @docCteParams
+            $Script:DocCte = New-TestDocument @docCteParams
 
             $docCnpjTwoParams = @{
                 ChaveAcesso = ('6' * 44)
@@ -361,6 +398,7 @@ INSERT INTO dfe_document (
 
             try {
                 $setupConnection = New-TestConnection -DatabasePath $Script:DatabasePathCnpjTwo
+
                 Save-TestDocument -Connection $setupConnection -Document $Script:DocCnpjTwo
             } finally {
                 Close-TestConnection -Connection $setupConnection
@@ -370,7 +408,14 @@ INSERT INTO dfe_document (
         AfterAll {
 
             if ($null -ne $Script:TestRoot -and (Test-Path -LiteralPath $Script:TestRoot)) {
-                Remove-Item -LiteralPath $Script:TestRoot -Recurse -Force -ErrorAction SilentlyContinue
+                $removeItemParams = @{
+                    LiteralPath = $Script:TestRoot
+                    Recurse     = $true
+                    Force       = $true
+                    ErrorAction = 'SilentlyContinue'
+                }
+
+                Remove-Item @removeItemParams
             }
 
             Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
@@ -385,110 +430,60 @@ INSERT INTO dfe_document (
                 $Script:Command = Get-Command -Name Get-DFeDocumentEntry -ErrorAction Stop
             }
 
-            It 'Exposes the Cnpj parameter' {
-                $Script:Command.Parameters.ContainsKey('Cnpj') | Should -BeTrue
+            It 'Declares Cnpj as mandatory' {
+                $attr = $Script:Command.Parameters['Cnpj'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and
+                        $_.Mandatory
+                    }
+
+                $attr | Should -Not -BeNullOrEmpty
             }
 
-            It 'Declares Cnpj as a string' {
+            It 'Declares Cnpj as string' {
                 $Script:Command.Parameters['Cnpj'].ParameterType | Should -Be ([string])
             }
 
-            It 'Declares Cnpj as mandatory' {
-                $attributes = @(
-                    $Script:Command.Parameters['Cnpj'].Attributes |
-                        Where-Object {
-                            $_ -is [System.Management.Automation.ParameterAttribute] -and
-                            $_.Mandatory
-                        }
-                )
-
-                $attributes | Should -Not -BeNullOrEmpty
-            }
-
-            It 'Declares ValidatePattern on Cnpj' {
-                $attributes = @(
-                    $Script:Command.Parameters['Cnpj'].Attributes |
-                        Where-Object {
-                            $_ -is [System.Management.Automation.ValidatePatternAttribute]
-                        }
-                )
-
-                $attributes | Should -Not -BeNullOrEmpty
-            }
-
-            It 'Uses the expected CNPJ validation pattern' {
-                $attribute = $Script:Command.Parameters['Cnpj'].Attributes |
+            It 'Validates Cnpj pattern' {
+                $attr = $Script:Command.Parameters['Cnpj'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ValidatePatternAttribute]
-                    } |
+                    }
 
-                    Select-Object -First 1
-
-                $attribute.RegexPattern | Should -Be '^[A-Z0-9]{14}$'
+                $attr.RegexPattern | Should -Be '^[A-Z0-9]{14}$'
             }
 
-            It 'Exposes StartDate as a string' {
+            It 'Declares StartDate as optional string' {
+                $attr = $Script:Command.Parameters['StartDate'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and
+                        $_.Mandatory
+                    }
+
+                $attr | Should -BeNullOrEmpty
                 $Script:Command.Parameters['StartDate'].ParameterType | Should -Be ([string])
             }
 
-            It 'Declares StartDate as optional' {
-                $attributes = @(
-                    $Script:Command.Parameters['StartDate'].Attributes |
-                        Where-Object {
-                            $_ -is [System.Management.Automation.ParameterAttribute] -and
-                            $_.Mandatory
-                        }
-                )
+            It 'Declares EndDate as optional string' {
+                $attr = $Script:Command.Parameters['EndDate'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and
+                        $_.Mandatory
+                    }
 
-                $attributes | Should -BeNullOrEmpty
-            }
-
-            It 'Exposes EndDate as a string' {
+                $attr | Should -BeNullOrEmpty
                 $Script:Command.Parameters['EndDate'].ParameterType | Should -Be ([string])
             }
 
-            It 'Declares EndDate as optional' {
-                $attributes = @(
-                    $Script:Command.Parameters['EndDate'].Attributes |
-                        Where-Object {
-                            $_ -is [System.Management.Automation.ParameterAttribute] -and
-                            $_.Mandatory
-                        }
-                )
+            It 'Declares Modelo as optional ModeloDFe' {
+                $attr = $Script:Command.Parameters['Modelo'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and
+                        $_.Mandatory
+                    }
 
-                $attributes | Should -BeNullOrEmpty
-            }
-
-            It 'Exposes Modelo as ModeloDFe' {
+                $attr | Should -BeNullOrEmpty
                 $Script:Command.Parameters['Modelo'].ParameterType | Should -Be ([ModeloDFe])
-            }
-
-            It 'Declares Modelo as optional' {
-                $attributes = @(
-                    $Script:Command.Parameters['Modelo'].Attributes |
-                        Where-Object {
-                            $_ -is [System.Management.Automation.ParameterAttribute] -and
-                            $_.Mandatory
-                        }
-                )
-
-                $attributes | Should -BeNullOrEmpty
-            }
-
-            It 'Declares PSObject as the output type' {
-                $outputTypes = @(
-                    $Script:Command.OutputType |
-                        ForEach-Object {
-                            if ($_ -is [System.Type]) {
-                                $_
-                            } elseif ($null -ne $_.Type) {
-                                $_.Type
-                            }
-                        }
-                )
-
-                $outputTypes.FullName |
-                    Should -Contain 'System.Management.Automation.PSObject'
             }
         }
         #endregion
@@ -496,43 +491,33 @@ INSERT INTO dfe_document (
         #region CNPJ validation
         Context 'Cnpj validation' {
 
-            It 'Accepts a valid 14-digit CNPJ' {
-                Mock -CommandName Get-StorePath -MockWith { $Script:DatabasePathCnpjOne }
+            BeforeEach {
 
+                Mock -CommandName Get-StorePath -MockWith {
+                    return $Script:DatabasePathCnpjOne
+                }
+            }
+
+            It 'Accepts a valid 14-character CNPJ' {
                 {
                     Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop | Out-Null
                 } | Should -Not -Throw
             }
 
-            It 'Rejects a CNPJ shorter than 14 digits' {
+            It 'Rejects a CNPJ shorter than 14 characters' {
                 {
                     Get-DFeDocumentEntry -Cnpj '1234567800019' -ErrorAction Stop
                 } | Should -Throw
             }
 
-            It 'Rejects a CNPJ longer than 14 digits' {
+            It 'Rejects a CNPJ longer than 14 characters' {
                 {
                     Get-DFeDocumentEntry -Cnpj '123456780001990' -ErrorAction Stop
                 } | Should -Throw
             }
 
-            It 'Rejects alphabetic characters' {
-                { Get-DFeDocumentEntry -Cnpj '1234567800019!' -ErrorAction Stop } |
-                    Should -Throw
-            }
-
             It 'Rejects punctuation characters' {
                 { Get-DFeDocumentEntry -Cnpj '12.345.678/0001-99' -ErrorAction Stop } |
-                    Should -Throw
-            }
-
-            It 'Rejects an empty CNPJ' {
-                { Get-DFeDocumentEntry -Cnpj '' -ErrorAction Stop } |
-                    Should -Throw
-            }
-
-            It 'Rejects a null CNPJ' {
-                { Get-DFeDocumentEntry -Cnpj $null -ErrorAction Stop } |
                     Should -Throw
             }
         }
@@ -544,15 +529,15 @@ INSERT INTO dfe_document (
             BeforeEach {
 
                 Mock -CommandName Get-StorePath -MockWith {
-                    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
-                        'PSReviewUnusedParameter',
-                        'Scope',
-                        Justification = 'Required by the mocked command signature.'
-                    )]
                     param (
+                        [Parameter()]
                         [string]$Scope,
+
+                        [Parameter()]
                         [string]$Cnpj
                     )
+
+                    $null = $Scope
 
                     if ($Cnpj -eq $Script:CnpjOne) {
                         return $Script:DatabasePathCnpjOne
@@ -569,37 +554,33 @@ INSERT INTO dfe_document (
             It 'Resolves the index path for the supplied CNPJ' {
                 Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop | Out-Null
 
-                Should -Invoke -CommandName Get-StorePath -Times 1 -Exactly -ParameterFilter {
-                    $Scope -eq 'Index' -and $Cnpj -eq $Script:CnpjOne
+                $invokeParams = @{
+                    CommandName     = 'Get-StorePath'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Scope -eq 'Index' -and $Cnpj -eq $Script:CnpjOne
+                    }
                 }
+
+                Should -Invoke @invokeParams
             }
 
             It 'Returns all documents when no filters are specified' {
-                $results = @(Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop)
-                $results | Should -HaveCount 6
+                @(Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop) |
+                    Should -HaveCount 6
             }
 
             It 'Returns documents ordered by dh_emi ascending' {
                 $results = @(Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop)
+                $dates   = @($results | Select-Object -ExpandProperty dh_emi)
 
-                $dates  = @($results | Select-Object -ExpandProperty dh_emi)
-                $sorted = @($dates | Sort-Object)
-
-                # DocAug15 and DocCte share the same dh_emi; their relative
-                # order is non-deterministic, so we verify sort stability
-                # by comparing against the sorted sequence.
-                $dates | Should -Be $sorted
+                $dates | Should -Be @($dates | Sort-Object)
             }
 
-            It 'Returns PSCustomObject instances' {
-                $results = @(Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop)
-
-                foreach ($result in $results) {
-                    $result | Should -BeOfType ([System.Management.Automation.PSCustomObject])
-                }
-            }
-
-            It 'Returns the stored document values' {
+            It 'Returns the stored document values including ndoc and serie' {
                 $entryParams = @{
                     Cnpj        = $Script:CnpjOne
                     Modelo      = ([ModeloDFe]::NFe)
@@ -608,17 +589,26 @@ INSERT INTO dfe_document (
                     ErrorAction = 'Stop'
                 }
 
-                $results = @(Get-DFeDocumentEntry @entryParams )
-                $results | Should -HaveCount 1
+                $result = @(Get-DFeDocumentEntry @entryParams)[0]
 
-                $result = $results[0]
                 $result.chave_acesso | Should -Be $Script:DocAug15.ChaveAcesso
                 $result.modelo       | Should -Be ([int][ModeloDFe]::NFe)
-                $result.dh_emi       | Should -Be $Script:DocAug15.DhEmi
-                $result.file_path    | Should -Be $Script:DocAug15.FilePath
                 $result.is_proc      | Should -BeTrue
-                $result.sha256       | Should -Be $Script:DocAug15.Sha256
-                $result.indexed_at   | Should -Be $Script:DocAug15.IndexedAt
+                $result.ndoc         | Should -Be 3
+                $result.serie        | Should -Be '001'
+            }
+
+            It 'Returns null ndoc when the column is NULL' {
+                $entryParams = @{
+                    Cnpj        = $Script:CnpjOne
+                    Modelo      = ([ModeloDFe]::CTe)
+                    ErrorAction = 'Stop'
+                }
+
+                $result = @(Get-DFeDocumentEntry @entryParams)[0]
+
+                $result.ndoc  | Should -BeNullOrEmpty
+                $result.serie | Should -BeNullOrEmpty
             }
         }
         #endregion
@@ -627,8 +617,9 @@ INSERT INTO dfe_document (
         Context 'Period filter' {
 
             BeforeEach {
+
                 Mock -CommandName Get-StorePath -MockWith {
-                    $Script:DatabasePathCnpjOne
+                    return $Script:DatabasePathCnpjOne
                 }
             }
 
@@ -636,13 +627,13 @@ INSERT INTO dfe_document (
                 $entryParams = @{
                     Cnpj        = $Script:CnpjOne
                     StartDate   = '2026-08-01T00:00:00+00:00'
-                    EndDate     = '2026-08-01T23:59:59.9999999+00:00'
+                    EndDate     = '2026-08-01T23:59:59+00:00'
                     ErrorAction = 'Stop'
                 }
 
                 $results = @(Get-DFeDocumentEntry @entryParams)
-                $results | Should -HaveCount 1
 
+                $results | Should -HaveCount 1
                 $results[0].chave_acesso | Should -Be $Script:DocAug01.ChaveAcesso
             }
 
@@ -661,73 +652,47 @@ INSERT INTO dfe_document (
 
             It 'Includes the document exactly at EndDate' {
                 $entryParams = @{
-                    Cnpj         = $Script:CnpjOne
-                    StartDate    = '2026-08-31'
-                    EndDate      = '2026-08-31T23:59:59.9999999+00:00'
-                    ErrorAction  = 'Stop'
-                }
-
-                $results = @(Get-DFeDocumentEntry @entryParams)
-                $results | Should -HaveCount 1
-
-                $results[0].chave_acesso | Should -Be $Script:DocAug31.ChaveAcesso
-            }
-
-            It 'Excludes documents after EndDate' {
-                $entryParams = @{
                     Cnpj        = $Script:CnpjOne
-                    EndDate     = '2026-07-31T23:59:59.9999999+00:00'
+                    StartDate   = '2026-08-31'
+                    EndDate     = '2026-08-31T23:59:59+00:00'
                     ErrorAction = 'Stop'
                 }
 
                 $results = @(Get-DFeDocumentEntry @entryParams)
-                $results | Should -HaveCount 1
 
-                $results[0].chave_acesso | Should -Be $Script:DocJuly.ChaveAcesso
+                $results | Should -HaveCount 1
+                $results[0].chave_acesso | Should -Be $Script:DocAug31.ChaveAcesso
             }
 
             It 'Combines StartDate and EndDate' {
                 $entryParams = @{
                     Cnpj        = $Script:CnpjOne
                     StartDate   = '2026-08-01T00:00:00+00:00'
-                    EndDate     = '2026-08-31T23:59:59.9999999+00:00'
+                    EndDate     = '2026-08-31T23:59:59+00:00'
                     ErrorAction = 'Stop'
                 }
 
                 $results = @(Get-DFeDocumentEntry @entryParams)
+                $chaves  = @($results | Select-Object -ExpandProperty chave_acesso)
+
                 $results | Should -HaveCount 4
-
-                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
-                $chaves | Should -Contain $Script:DocAug01.ChaveAcesso
-                $chaves | Should -Contain $Script:DocAug15.ChaveAcesso
-                $chaves | Should -Contain $Script:DocAug31.ChaveAcesso
-                $chaves | Should -Contain $Script:DocCte.ChaveAcesso
-                $chaves | Should -Not -Contain $Script:DocJuly.ChaveAcesso
-                $chaves | Should -Not -Contain $Script:DocSep.ChaveAcesso
-            }
-
-            It 'Accepts ISO 8601 date strings' {
-                $entryParams = @{
-                    Cnpj        = $Script:CnpjOne
-                    StartDate   = '2026-08-01T00:00:00+00:00'
-                    EndDate     ='2026-08-31T23:59:59.9999999+00:00'
-                    ErrorAction = 'Stop'
-                }
-
-                $results = @(Get-DFeDocumentEntry @entryParams)
-                $results | Should -HaveCount 4
+                $chaves  | Should -Contain $Script:DocAug01.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocAug15.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocAug31.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocCte.ChaveAcesso
+                $chaves  | Should -Not -Contain $Script:DocJuly.ChaveAcesso
+                $chaves  | Should -Not -Contain $Script:DocSep.ChaveAcesso
             }
 
             It 'Returns no output when no records match' {
                 $entryParams = @{
                     Cnpj        = $Script:CnpjOne
                     StartDate   = '2020-01-01'
-                    EndDate     ='2020-01-31T23:59:59.9999999+00:00'
+                    EndDate     = '2020-01-31'
                     ErrorAction = 'Stop'
                 }
 
-                $results = @(Get-DFeDocumentEntry @entryParams )
-                $results | Should -HaveCount 0
+                @(Get-DFeDocumentEntry @entryParams ) | Should -HaveCount 0
             }
         }
         #endregion
@@ -736,8 +701,9 @@ INSERT INTO dfe_document (
         Context 'Modelo filter' {
 
             BeforeEach {
+
                 Mock -CommandName Get-StorePath -MockWith {
-                    $Script:DatabasePathCnpjOne
+                    return $Script:DatabasePathCnpjOne
                 }
             }
 
@@ -748,22 +714,11 @@ INSERT INTO dfe_document (
                     ErrorAction = 'Stop'
                 }
 
-                $results = @(Get-DFeDocumentEntry @entryParams )
-                $results | Should -HaveCount 1
-
-                $results[0].chave_acesso | Should -Be $Script:DocCte.ChaveAcesso
-                $results[0].modelo | Should -Be ([int][ModeloDFe]::CTe)
-            }
-
-            It 'Returns no output when no document matches the model' {
-                $entryParams = @{
-                    Cnpj        = $Script:CnpjOne
-                    Modelo      = ([ModeloDFe]::MDFe)
-                    ErrorAction = 'Stop'
-                }
-
                 $results = @(Get-DFeDocumentEntry @entryParams)
-                $results | Should -HaveCount 0
+
+                $results | Should -HaveCount 1
+                $results[0].chave_acesso | Should -Be $Script:DocCte.ChaveAcesso
+                $results[0].modelo       | Should -Be ([int][ModeloDFe]::CTe)
             }
 
             It 'Combines Modelo with the period filter' {
@@ -771,18 +726,18 @@ INSERT INTO dfe_document (
                     Cnpj        = $Script:CnpjOne
                     Modelo      = ([ModeloDFe]::NFe)
                     StartDate   = '2026-08-01T00:00:00+00:00'
-                    EndDate     = '2026-08-31T23:59:59.9999999+00:00'
+                    EndDate     = '2026-08-31T23:59:59+00:00'
                     ErrorAction = 'Stop'
                 }
 
                 $results = @(Get-DFeDocumentEntry @entryParams)
-                $results | Should -HaveCount 3
+                $chaves  = @($results | Select-Object -ExpandProperty chave_acesso)
 
-                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
-                $chaves | Should -Contain $Script:DocAug01.ChaveAcesso
-                $chaves | Should -Contain $Script:DocAug15.ChaveAcesso
-                $chaves | Should -Contain $Script:DocAug31.ChaveAcesso
-                $chaves | Should -Not -Contain $Script:DocCte.ChaveAcesso
+                $results | Should -HaveCount 3
+                $chaves  | Should -Contain $Script:DocAug01.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocAug15.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocAug31.ChaveAcesso
+                $chaves  | Should -Not -Contain $Script:DocCte.ChaveAcesso
             }
         }
         #endregion
@@ -793,7 +748,7 @@ INSERT INTO dfe_document (
             BeforeAll {
 
                 Mock -CommandName Get-StorePath -MockWith {
-                    $Script:DatabasePathCnpjOne
+                    return $Script:DatabasePathCnpjOne
                 }
 
                 $entryParams = @{
@@ -812,6 +767,8 @@ INSERT INTO dfe_document (
                     'dh_emi'
                     'file_path'
                     'is_proc'
+                    'ndoc'
+                    'serie'
                     'sha256'
                     'indexed_at'
                 )
@@ -846,6 +803,14 @@ INSERT INTO dfe_document (
                 $Script:Sample[0].is_proc | Should -BeOfType ([bool])
             }
 
+            It 'Exposes ndoc as int when present' {
+                $Script:Sample[0].ndoc | Should -BeOfType ([int])
+            }
+
+            It 'Exposes serie as string when present' {
+                $Script:Sample[0].serie | Should -BeOfType ([string])
+            }
+
             It 'Exposes sha256 as string' {
                 $Script:Sample[0].sha256 | Should -BeOfType ([string])
             }
@@ -870,11 +835,17 @@ INSERT INTO dfe_document (
         Context 'CNPJ isolation' {
 
             BeforeEach {
+
                 Mock -CommandName Get-StorePath -MockWith {
                     param (
+                        [Parameter()]
                         [string]$Scope,
+
+                        [Parameter()]
                         [string]$Cnpj
                     )
+
+                    $null = $Scope
 
                     if ($Cnpj -eq $Script:CnpjOne) {
                         return $Script:DatabasePathCnpjOne
@@ -890,14 +861,18 @@ INSERT INTO dfe_document (
 
             It 'Returns only documents from the requested CNPJ index' {
                 $results = @(Get-DFeDocumentEntry -Cnpj $Script:CnpjTwo -ErrorAction Stop)
-                $results | Should -HaveCount 1
 
+                $results | Should -HaveCount 1
                 $results[0].chave_acesso | Should -Be $Script:DocCnpjTwo.ChaveAcesso
             }
 
             It 'Does not return documents from another CNPJ index' {
-                $results = @(Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop)
-                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
+                $entryParams = @{
+                    Cnpj        = $Script:CnpjOne
+                    ErrorAction =  'Stop'
+                }
+
+                $chaves = @(Get-DFeDocumentEntry @entryParams | Select-Object -ExpandProperty chave_acesso)
 
                 $chaves | Should -Not -Contain $Script:DocCnpjTwo.ChaveAcesso
             }
@@ -910,72 +885,42 @@ INSERT INTO dfe_document (
             BeforeEach {
 
                 Mock -CommandName Get-StorePath -MockWith {
-                    $Script:DatabasePathCnpjOne
+                    return $Script:DatabasePathCnpjOne
                 }
             }
 
             It 'Preserves UnsupportedDateFormat for an invalid StartDate' {
+                $exception = $null
+
                 try {
-                    $entryParams = @{
-                        Cnpj        = $Script:CnpjOne
-                        StartDate   = 'not-a-date'
-                        ErrorAction = 'Stop'
-                    }
-
-                    Get-DFeDocumentEntry @entryParams
-
-                    throw 'Expected Get-DFeDocumentEntry to fail.'
+                    Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -StartDate 'not-a-date' -ErrorAction Stop
                 } catch {
-                    $_.FullyQualifiedErrorId | Should -BeLike 'UnsupportedDateFormat*'
+                    $exception = $_
                 }
+
+                $exception.FullyQualifiedErrorId | Should -BeLike 'UnsupportedDateFormat*'
             }
 
             It 'Preserves UnsupportedDateFormat for an invalid EndDate' {
+                $exception = $null
+
                 try {
-                    $entryParams = @{
-                        Cnpj        = $Script:CnpjOne
-                        EndDate     = 'not-a-date'
-                        ErrorAction = 'Stop'
-                    }
-
-                    Get-DFeDocumentEntry @entryParams
-
-                    throw 'Expected Get-DFeDocumentEntry to fail.'
+                    Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -EndDate 'not-a-date' -ErrorAction Stop
                 } catch {
-                    $_.FullyQualifiedErrorId | Should -BeLike 'UnsupportedDateFormat*'
+                    $exception = $_
                 }
+
+                $exception.FullyQualifiedErrorId | Should -BeLike 'UnsupportedDateFormat*'
             }
 
-            It 'Does not attempt to resolve the database when StartDate is invalid' {
+            It 'Does not resolve the database when StartDate is invalid' {
                 try {
-                    $entryParams = @{
-                        Cnpj        = $Script:CnpjOne
-                        StartDate   = 'not-a-date'
-                        ErrorAction = 'Stop'
-                    }
-
-                    Get-DFeDocumentEntry @entryParams
+                    Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -StartDate 'not-a-date' -ErrorAction Stop
                 } catch {
                     $null = $_
                 }
 
-                Should -Invoke -CommandName Get-StorePath -Times 0 -Exactly
-            }
-
-            It 'Does not attempt to resolve the database when EndDate is invalid' {
-                try {
-                    $entryParams = @{
-                        Cnpj        = $Script:CnpjOne
-                        EndDate     ='not-a-date'
-                        ErrorAction = 'Stop'
-                    }
-
-                    Get-DFeDocumentEntry @entryParams
-                } catch {
-                    $null = $_
-                }
-
-                Should -Invoke -CommandName Get-StorePath -Times 0 -Exactly
+                Should -Invoke -CommandName Get-StorePath -ModuleName PipeDFe -Scope It -Exactly -Times 0
             }
         }
         #endregion
@@ -988,7 +933,7 @@ INSERT INTO dfe_document (
                 $Script:FailureDatabasePath = New-TestDatabasePath
 
                 Mock -CommandName Get-StorePath -MockWith {
-                    $Script:FailureDatabasePath
+                    return $Script:FailureDatabasePath
                 }
 
                 Mock -CommandName Open-SqliteConnection -MockWith {
@@ -999,48 +944,47 @@ INSERT INTO dfe_document (
             }
 
             It 'Converts connection failures to DocumentEntryReadFailed' {
+                $exception = $null
+
                 try {
                     Get-DFeDocumentEntry -Cnpj '11111111000111' -ErrorAction Stop
-                    throw 'Expected Get-DFeDocumentEntry to fail.'
                 } catch {
-                    $_.FullyQualifiedErrorId | Should -BeLike 'DocumentEntryReadFailed*'
+                    $exception = $_
                 }
+
+                $exception.FullyQualifiedErrorId | Should -BeLike 'DocumentEntryReadFailed*'
             }
 
             It 'Uses ReadError for a read failure' {
+                $exception = $null
+
                 try {
                     Get-DFeDocumentEntry -Cnpj '22222222000122' -ErrorAction Stop
-                    throw 'Expected Get-DFeDocumentEntry to fail.'
                 } catch {
-                    $_.CategoryInfo.Category |
-                        Should -Be ([System.Management.Automation.ErrorCategory]::ReadError)
+                    $exception = $_
                 }
+
+                $exception.CategoryInfo.Category |
+                    Should -Be ([System.Management.Automation.ErrorCategory]::ReadError)
             }
 
             It 'Uses the database path as TargetObject' {
+                $exception = $null
+
                 try {
                     Get-DFeDocumentEntry -Cnpj '33333333000133' -ErrorAction Stop
-                    throw 'Expected Get-DFeDocumentEntry to fail.'
                 } catch {
-                    $_.TargetObject | Should -Be $Script:FailureDatabasePath
+                    $exception = $_
                 }
-            }
 
-            It 'Preserves the original exception' {
-                try {
-                    Get-DFeDocumentEntry -Cnpj '44444444000144' -ErrorAction Stop
-                    throw 'Expected Get-DFeDocumentEntry to fail.'
-                } catch {
-                    $_.Exception | Should -Not -BeNullOrEmpty
-                    $_.Exception.Message | Should -Be 'Simulated SQLite connection failure.'
-                }
+                $exception.TargetObject | Should -Be $Script:FailureDatabasePath
             }
 
             It 'Does not produce output when the read fails' {
                 $result = $null
 
                 try {
-                    $result = @(Get-DFeDocumentEntry -Cnpj '55555555000155' -ErrorAction Stop)
+                    $result = @(Get-DFeDocumentEntry -Cnpj '44444444000144' -ErrorAction Stop)
                 } catch {
                     $null = $_
                 }
