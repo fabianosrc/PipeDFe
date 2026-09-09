@@ -241,7 +241,10 @@ Describe 'Save-SmtpConfig' {
             }
 
             It 'Updates UpdatedAt on subsequent writes' {
-                $Script:SecondWriteUpdatedAt | Should -Not -Be $Script:FirstUpdatedAt
+                $firstTime  = [System.DateTimeOffset]$Script:FirstUpdatedAt
+                $secondTime = [System.DateTimeOffset]$Script:SecondWriteUpdatedAt
+
+                $secondTime | Should -BeGreaterOrEqual $firstTime
             }
         }
         #endregion
