@@ -5,24 +5,23 @@ Creates one ZIP archive per DFe document type.
 .DESCRIPTION
 Orchestrates archive creation for each pre-calculated archive info:
 
-  1. Compresses matching entries to a temporary ZIP via Compress-DFeArchive.
-  2. Validates the ZIP was created and throws ZipNotCreated when absent.
-  3. Computes SHA-256 of the temporary ZIP.
-  4. Copies the temporary ZIP to the destination path.
-
-Eventos (DfeModel = 0) are not grouped into their own archive - they are
-embedded inside their parent document's subfolder by Compress-DFeArchive.
+  1. Loads eventos from the index for all documents in the group.
+  2. Maps snake_case index entries to PascalCase objects for the IO layer.
+  3. Compresses matching entries to a temporary ZIP via Compress-DFeArchive.
+  4. Validates the ZIP was created and throws ZipNotCreated when absent.
+  5. Computes SHA-256 of the temporary ZIP.
+  6. Copies the temporary ZIP to the destination path.
 
 Returns one result object per archive created.
 
 .PARAMETER Cnpj
-Empresa CNPJ. Used in error messages only.
+Empresa CNPJ. Used to query eventos from the index.
 
 .PARAMETER Company
 Empresa object exposing XmlPath and OutputPath.
 
 .PARAMETER Entries
-Index entries to include in the archive. Mixed document types are supported.
+Document index entries as returned by Get-DFeDocumentEntry.
 
 .PARAMETER ArchiveInfos
 Pre-calculated archive metadata from Resolve-DFeArchiveInfo, one per
@@ -32,11 +31,11 @@ and DestPath.
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
-TipoDFe  [string] - Document type label matching DFeModelo enum name.
-FileName [string] - ZIP file name.
-FileHash [string] - SHA-256 hash of the temporary ZIP.
-TempPath [string] - Full path to the temporary ZIP.
-DestPath [string] - Full path to the destination ZIP.
+  TipoDFe  [string] - Document type label matching ModeloDFe enum name.
+  FileName [string] - ZIP file name.
+  FileHash [string] - SHA-256 hash of the temporary ZIP.
+  TempPath [string] - Full path to the temporary ZIP.
+  DestPath [string] - Full path to the destination ZIP.
 
 .EXAMPLE
 PS C:\> $archiveParams = @{
@@ -51,6 +50,7 @@ PS C:\> $archives = New-DFeArchive @archiveParams
 .NOTES
 Private dependencies:
   Compress-DFeArchive
+  Get-DFeEventoEntry
   Get-FileSha256
 #>
 function New-DFeArchive {
@@ -83,17 +83,52 @@ function New-DFeArchive {
         [System.IO.Directory]::CreateDirectory($Company.OutputPath) | Out-Null
     }
 
+    # Load all eventos for the documents in this batch.
+    # Eventos are embedded inside their parent document's subfolder in the ZIP.
+    $allEventos = [System.Collections.Generic.List[pscustomobject]]::new()
+
+    foreach ($entry in $Entries) {
+        $eventoParams = @{
+            Cnpj        = $Cnpj
+            ChavePai    = $entry.chave_acesso
+            ErrorAction = 'SilentlyContinue'
+        }
+
+        foreach ($evento in @(Get-DFeEventoEntry @eventoParams)) {
+            $allEventos.Add($evento)
+        }
+    }
+
+    # Map snake_case index entries to PascalCase for the IO layer.
+    # Store uses snake_case (database contract).
+    # IO uses PascalCase (PowerShell/.NET contract).
+    $eventosMapped = @(
+        $allEventos | ForEach-Object {
+            [PSCustomObject]@{
+                ChavePai = $_.chave_pai
+                FilePath = $_.file_path
+            }
+        }
+    )
+
     foreach ($archiveInfo in $ArchiveInfos) {
         $modelValue = [int][System.Enum]::Parse([ModeloDFe], $archiveInfo.TipoDFe)
 
         $groupEntries = @(
-            $Entries | Where-Object { $_.DfeModel -eq $modelValue }
-            $Entries | Where-Object { $_.DfeModel -eq 0 }
+            $Entries | Where-Object { $_.modelo -eq $modelValue } |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        ChaveAcesso = $_.chave_acesso
+                        Modelo      = $_.modelo
+                        FilePath    = $_.file_path
+                    }
+                }
         )
 
         $compressParams = @{
             XmlPath = $Company.XmlPath
             Entries = $groupEntries
+            Eventos = $eventosMapped
             ZipPath = $archiveInfo.TempPath
         }
 
@@ -112,13 +147,13 @@ function New-DFeArchive {
             )
         }
 
+        $zipHash = Get-FileSha256 -Path $archiveInfo.TempPath
+
         $copyParams = @{
             LiteralPath = $archiveInfo.TempPath
             Destination = $archiveInfo.DestPath
             Force       = $true
         }
-
-        $zipHash = Get-FileSha256 -Path $archiveInfo.TempPath
 
         Copy-Item @copyParams
 
