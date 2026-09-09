@@ -17,8 +17,8 @@ Contexts:
   Output contract - all fields present, correct types and exact shape
   Failure paths   - classification failure, namespace failure,
                     missing infNode, invalid chave
-Architectural     - DFeExtractionMap gap invariant and runtime guard
-Delegation        - Get-DFeAccessKey and Resolve-DFeEvento contracts
+  Architectural     - DFeExtractionMap gap invariant and runtime guard
+  Delegation        - Get-DFeAccessKey and Resolve-DFeEvento contracts
 
 The suite intentionally tests the public contract of Get-DFeXmlMetadata
 while also protecting the architectural contracts between its private
