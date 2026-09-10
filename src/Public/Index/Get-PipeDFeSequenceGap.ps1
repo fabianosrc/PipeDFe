@@ -21,6 +21,9 @@ When -StartDate and -EndDate are omitted, the previous full calendar month
 is used. -StartDate and -EndDate follow the same resolution rules as
 Invoke-PipeDFe: both are optional, but -EndDate requires -StartDate.
 
+Throws IndexNotFound when the DFe index does not exist for the requested
+CNPJ. Run Invoke-PipeDFe to initialize the index before querying it.
+
 Returns no pipeline objects when no gaps are detected. An empty result is
 not an error.
 
@@ -45,18 +48,18 @@ One object per contiguous gap range:
   Final   [int]    - Last missing document number in the range.
 
 .EXAMPLE
-PS C:\> Get-PipeDFeSequenceGap -Cnpj '12345678000195'
+  Get-PipeDFeSequenceGap -Cnpj '12345678000195'
 
 .EXAMPLE
-PS C:\> Get-PipeDFeSequenceGap -Cnpj '12.345.678/0001-95'
->>     -StartDate '01/08/2026' -EndDate '31/08/2026'
+  Get-PipeDFeSequenceGap -Cnpj '12.345.678/0001-95' -StartDate '01/08/2026' -EndDate '31/08/2026'
 
 .NOTES
-Private dependencies:
-  ConvertTo-NormalizedCnpj
-  Resolve-DateRange
-  Get-DFeDocumentEntry
-  Get-DFeSequenceGap
+  Private dependencies:
+    ConvertTo-NormalizedCnpj
+    Get-StorePath
+    Resolve-DateRange
+    Get-DFeDocumentEntry
+    Get-DFeSequenceGap
 #>
 function Get-PipeDFeSequenceGap {
     [CmdletBinding()]
@@ -73,7 +76,25 @@ function Get-PipeDFeSequenceGap {
     )
 
     $cnpjNormalized = ConvertTo-NormalizedCnpj -Value $Cnpj
-    $resolveParams  = @{}
+
+    # Verify the index exists before attempting to query it.
+    # A missing index means Invoke-PipeDFe has never run for this CNPJ.
+    $indexPath = Get-StorePath -Scope 'Index' -Cnpj $cnpjNormalized
+
+    if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf)) {
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.IO.FileNotFoundException]::new(
+                    "Índice não encontrado para o CNPJ '$cnpjNormalized'. Execute Invoke-PipeDFe para criar o índice."
+                ),
+                'IndexNotFound',
+                [System.Management.Automation.ErrorCategory]::ObjectNotFound,
+                $cnpjNormalized
+            )
+        )
+    }
+
+    $resolveParams = @{}
 
     if (-not [string]::IsNullOrWhiteSpace($StartDate)) {
         $resolveParams['StartDate'] = $StartDate
