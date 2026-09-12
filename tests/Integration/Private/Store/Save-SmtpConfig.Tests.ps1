@@ -14,13 +14,14 @@ Coverage includes:
   - Replaces smtp.json atomically when it already exists.
   - Persists all expected fields correctly.
   - Sets CreatedAt on first write.
+  - Sets UpdatedAt to null on first write.
   - Preserves CreatedAt on subsequent writes.
-  - Sets UpdatedAt to the current UTC time.
+  - Updates UpdatedAt on subsequent writes.
   - Throws SmtpConfigInvalid when Config fails validation.
-  - Throws SmtpConfigSaveFailed on write failure.
   - Produces no output.
   - Written JSON is valid and parseable.
   - Written JSON uses UTF-8 without BOM.
+  - Does not leave temp files behind.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -49,11 +50,13 @@ Describe 'Save-SmtpConfig' {
 
         BeforeAll {
 
+            $testID = [guid]::NewGuid().ToString('N')
+
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
 
             $joinPathParams = @{
                 Path      = [System.IO.Path]::GetTempPath()
-                ChildPath = 'PipeDFe.Tests-' + [guid]::NewGuid().ToString('N')
+                ChildPath = 'PipeDFe.Tests-{0}' -f $testID
             }
 
             $Script:TempRoot = Join-Path @joinPathParams
@@ -65,6 +68,10 @@ Describe 'Save-SmtpConfig' {
             $Script:SmtpPath = Join-Path -Path (Get-StorePath -Scope Root) -ChildPath 'smtp.json'
 
             function New-ValidSmtpConfig {
+                [CmdletBinding()]
+                [OutputType([pscustomobject])]
+                param ()
+
                 [PSCustomObject]@{
                     Server        = 'smtp.office365.com'
                     Port          = 587
@@ -87,14 +94,16 @@ Describe 'Save-SmtpConfig' {
         AfterAll {
 
             $env:LOCALAPPDATA = $Script:OriginalLocalAppData
-            $removeItemparams = @{
+
+            $removeItemParams = @{
                 LiteralPath = $Script:TempRoot
                 Recurse     = $true
                 Force       = $true
                 ErrorAction = 'SilentlyContinue'
             }
 
-            Remove-Item @removeItemparams
+            Remove-Item @removeItemParams
+            Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
         }
 
         #region Parameter contract
@@ -103,8 +112,7 @@ Describe 'Save-SmtpConfig' {
             It 'Declares Config as mandatory' {
                 $mandatory = (Get-Command Save-SmtpConfig).Parameters['Config'].Attributes |
                     Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
                     }
 
                 $mandatory | Should -Not -BeNullOrEmpty
@@ -121,17 +129,20 @@ Describe 'Save-SmtpConfig' {
 
             BeforeAll {
 
-                $config = New-ValidSmtpConfig
-
                 $saveParams = @{
-                    Config      = $config
+                    Config      = (New-ValidSmtpConfig)
                     ErrorAction = 'Stop'
                 }
 
                 Save-SmtpConfig @saveParams
 
-                $Script:Written = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
-                    ConvertFrom-Json
+                $contentParams = @{
+                    LiteralPath = $Script:SmtpPath
+                    Raw         = $true
+                    Encoding    = 'UTF8'
+                }
+
+                $Script:Written = Get-Content @contentParams | ConvertFrom-Json
             }
 
             AfterAll {
@@ -175,13 +186,12 @@ Describe 'Save-SmtpConfig' {
                 $Script:Written.CreatedAt | Should -Not -BeNullOrEmpty
             }
 
-            It 'Sets UpdatedAt on write' {
-                $Script:Written.UpdatedAt | Should -Not -BeNullOrEmpty
+            It 'Sets UpdatedAt to null on first write' {
+                $Script:Written.UpdatedAt | Should -BeNullOrEmpty
             }
 
             It 'Produces no output' {
-                $result = Save-SmtpConfig -Config (New-ValidSmtpConfig)
-                $result | Should -BeNullOrEmpty
+                @(Save-SmtpConfig -Config (New-ValidSmtpConfig)) | Should -HaveCount 0
             }
         }
         #endregion
@@ -191,44 +201,34 @@ Describe 'Save-SmtpConfig' {
 
             BeforeAll {
 
-                $config = New-ValidSmtpConfig
+                Save-SmtpConfig -Config (New-ValidSmtpConfig)
 
-                Save-SmtpConfig -Config $config
-
-                $firstWriteRaw = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
-                    ConvertFrom-Json
-
-                $Script:FirstCreatedAt = if ($firstWriteRaw.CreatedAt -is [datetime]) {
-                    $firstWriteRaw.CreatedAt.ToUniversalTime().ToString('o')
-                } else {
-                    [string]$firstWriteRaw.CreatedAt
+                $firstWriteRawParams = @{
+                    LiteralPath = $Script:SmtpPath
+                    Raw         = $true
+                    Encoding    = 'UTF8'
                 }
 
-                $Script:FirstUpdatedAt = if ($firstWriteRaw.UpdatedAt -is [datetime]) {
-                    $firstWriteRaw.UpdatedAt.ToUniversalTime().ToString('o')
-                } else {
-                    [string]$firstWriteRaw.UpdatedAt
-                }
+                $firstWriteRaw = Get-Content @firstWriteRawParams | ConvertFrom-Json
 
-                $configWithCreatedAt = New-ValidSmtpConfig
+                $Script:FirstCreatedAt = [string]$firstWriteRaw.CreatedAt
+                $Script:FirstUpdatedAt = [string]$firstWriteRaw.UpdatedAt
+
+                $configWithCreatedAt           = New-ValidSmtpConfig
                 $configWithCreatedAt.CreatedAt = $Script:FirstCreatedAt
 
                 Save-SmtpConfig -Config $configWithCreatedAt
 
-                $secondWriteRaw = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
-                    ConvertFrom-Json
-
-                $Script:SecondWriteCreatedAt = if ($secondWriteRaw.CreatedAt -is [datetime]) {
-                    $secondWriteRaw.CreatedAt.ToUniversalTime().ToString('o')
-                } else {
-                    [string]$secondWriteRaw.CreatedAt
+                $secondWriteRawParams = @{
+                    LiteralPath = $Script:SmtpPath
+                    Raw         = $true
+                    Encoding    = 'UTF8'
                 }
 
-                $Script:SecondWriteUpdatedAt = if ($secondWriteRaw.UpdatedAt -is [datetime]) {
-                    $secondWriteRaw.UpdatedAt.ToUniversalTime().ToString('o')
-                } else {
-                    [string]$secondWriteRaw.UpdatedAt
-                }
+                $secondWriteRaw = Get-Content @secondWriteRawParams | ConvertFrom-Json
+
+                $Script:SecondWriteCreatedAt = [string]$secondWriteRaw.CreatedAt
+                $Script:SecondWriteUpdatedAt = [string]$secondWriteRaw.UpdatedAt
             }
 
             AfterAll {
@@ -241,7 +241,7 @@ Describe 'Save-SmtpConfig' {
             }
 
             It 'Updates UpdatedAt on subsequent writes' {
-                $firstTime  = [System.DateTimeOffset]$Script:FirstUpdatedAt
+                $firstTime  = [System.DateTimeOffset]$Script:FirstCreatedAt
                 $secondTime = [System.DateTimeOffset]$Script:SecondWriteUpdatedAt
 
                 $secondTime | Should -BeGreaterOrEqual $firstTime
@@ -262,8 +262,13 @@ Describe 'Save-SmtpConfig' {
 
                 Save-SmtpConfig -Config $config
 
-                $Script:Replaced = Get-Content -LiteralPath $Script:SmtpPath -Raw -Encoding UTF8 |
-                    ConvertFrom-Json
+                $replacedParams = @{
+                    LiteralPath = $Script:SmtpPath
+                    Raw         = $true
+                    Encoding    = 'UTF8'
+                }
+
+                $Script:Replaced = Get-Content @replacedParams | ConvertFrom-Json
             }
 
             AfterAll {
@@ -275,9 +280,18 @@ Describe 'Save-SmtpConfig' {
                 $Script:Replaced.Server | Should -Be 'smtp.gmail.com'
             }
 
-            It 'Does not leave a temp file behind' {
-                $tempPath = "$($Script:SmtpPath).tmp"
-                Test-Path -LiteralPath $tempPath | Should -BeFalse
+            It 'Does not leave temp files behind' {
+                $rootPath = Get-StorePath -Scope Root
+
+                $tempFileParams = @{
+                    Path        = $rootPath
+                    Filter      = 'smtp.*.tmp'
+                    ErrorAction = 'SilentlyContinue'
+                }
+
+                $tmpFiles = Get-ChildItem @tempFileParams
+
+                $tmpFiles | Should -HaveCount 0
             }
         }
         #endregion
@@ -287,10 +301,10 @@ Describe 'Save-SmtpConfig' {
 
             It 'Throws SmtpConfigInvalid when Config fails validation' {
                 $invalid = [PSCustomObject]@{
-                    Server        = ''
+                    Server        = [string]::Empty
                     Port          = 587
                     Ssl           = $true
-                    Username      = ''
+                    Username      = [string]::Empty
                     Password      = 'blob'
                     From          = [PSCustomObject]@{
                         Name  = 'PipeDFe'
@@ -324,11 +338,11 @@ Describe 'Save-SmtpConfig' {
 
                 Save-SmtpConfig -Config (New-ValidSmtpConfig)
 
-                $bytes = [System.IO.File]::ReadAllBytes($Script:SmtpPath)
-                $Script:FirstThreeBytes = $bytes[0..2]
+                $Script:FirstThreeBytes = ([System.IO.File]::ReadAllBytes($Script:SmtpPath))[0..2]
             }
 
             AfterAll {
+
                 Remove-Item -LiteralPath $Script:SmtpPath -Force -ErrorAction SilentlyContinue
             }
 
