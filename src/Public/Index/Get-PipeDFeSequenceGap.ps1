@@ -48,18 +48,19 @@ One object per contiguous gap range:
   Final   [int]    - Last missing document number in the range.
 
 .EXAMPLE
-  Get-PipeDFeSequenceGap -Cnpj '12345678000195'
+Ps C:> Get-PipeDFeSequenceGap -Cnpj '12345678000195'
 
 .EXAMPLE
-  Get-PipeDFeSequenceGap -Cnpj '12.345.678/0001-95' -StartDate '01/08/2026' -EndDate '31/08/2026'
+PS C:\> Get-PipeDFeSequenceGap -Cnpj '12.345.678/0001-95'
+>> -StartDate '01/08/2026' -EndDate '31/08/2026'
 
 .NOTES
-  Private dependencies:
-    ConvertTo-NormalizedCnpj
-    Get-StorePath
-    Resolve-DateRange
-    Get-DFeDocumentEntry
-    Get-DFeSequenceGap
+Private dependencies:
+  ConvertTo-NormalizedCnpj
+  Get-StorePath
+  Resolve-DateRange
+  Get-DFeDocumentEntry
+  Get-DFeSequenceGap
 #>
 function Get-PipeDFeSequenceGap {
     [CmdletBinding()]
@@ -85,7 +86,8 @@ function Get-PipeDFeSequenceGap {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
                 [System.IO.FileNotFoundException]::new(
-                    "Índice não encontrado para o CNPJ '$cnpjNormalized'. Execute Invoke-PipeDFe para criar o índice."
+                    "Índice não encontrado para o CNPJ '$cnpjNormalized'. " +
+                    "Execute Invoke-PipeDFe para criar o índice."
                 ),
                 'IndexNotFound',
                 [System.Management.Automation.ErrorCategory]::ObjectNotFound,

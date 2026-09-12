@@ -7,9 +7,10 @@ Unit tests for Get-PipeDFeSequenceGap.
 .DESCRIPTION
 All external dependencies are mocked. No filesystem or database I/O occurs.
 
-Coverage includedes:
+Coverage includes:
   - Parameter contract
   - CNPJ normalization
+  - Index not found
   - Date range resolution - no dates, StartDate only, both dates
   - EndDate without StartDate propagation
   - Empty entries - no pipeline output
@@ -119,6 +120,10 @@ Describe 'Get-PipeDFeSequenceGap' {
 
             BeforeAll {
 
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
+
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
                 }
@@ -168,10 +173,51 @@ Describe 'Get-PipeDFeSequenceGap' {
         }
         #endregion
 
+        #region Index Not Found
+        Context 'Index not found' {
+
+            BeforeAll {
+
+                Mock -CommandName Test-Path -MockWith {
+                    return $false
+                }
+            }
+
+            It 'Throws IndexNotFound when the index does not exist' {
+                $thrown = $null
+
+                try {
+                    Get-PipeDFeSequenceGap -Cnpj '12345678000195'
+                } catch {
+                    $thrown = $_
+                }
+
+                $thrown | Should -Not -BeNullOrEmpty
+                $thrown.FullyQualifiedErrorId | Should -BeLike 'IndexNotFound*'
+            }
+
+            It 'Includes the CNPJ in the error message' {
+                $thrown = $null
+
+                try {
+                    Get-PipeDFeSequenceGap -Cnpj '12345678000195'
+                } catch {
+                    $thrown = $_
+                }
+
+                $thrown.Exception.Message | Should -BeLike '*12345678000195*'
+            }
+        }
+        #endregion
+
         #region Date range resolution
         Context 'Date range resolution - no dates supplied' {
 
             BeforeAll {
+
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
@@ -237,6 +283,10 @@ Describe 'Get-PipeDFeSequenceGap' {
 
             BeforeAll {
 
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
+
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
                 }
@@ -288,6 +338,10 @@ Describe 'Get-PipeDFeSequenceGap' {
         Context 'Date range resolution - StartDate and EndDate' {
 
             BeforeAll {
+
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
@@ -349,6 +403,10 @@ Describe 'Get-PipeDFeSequenceGap' {
         Context 'EndDate without StartDate propagation' {
 
             BeforeAll {
+
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
@@ -420,6 +478,10 @@ Describe 'Get-PipeDFeSequenceGap' {
 
             BeforeAll {
 
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
+
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
                 }
@@ -459,6 +521,10 @@ Describe 'Get-PipeDFeSequenceGap' {
         Context 'Gap detection - gaps found' {
 
             BeforeAll {
+
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
@@ -517,6 +583,10 @@ Describe 'Get-PipeDFeSequenceGap' {
 
             BeforeAll {
 
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
+
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
                 }
@@ -544,6 +614,10 @@ Describe 'Get-PipeDFeSequenceGap' {
         Context 'Output contract' {
 
             BeforeAll {
+
+                Mock -CommandName Test-Path -MockWith {
+                    return $true
+                }
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     return $Script:CnpjNormalized
