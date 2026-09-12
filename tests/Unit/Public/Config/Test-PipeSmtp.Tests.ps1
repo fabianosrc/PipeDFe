@@ -5,29 +5,40 @@
 Unit tests for Test-PipeSmtp.
 
 .DESCRIPTION
-Tests the public Test-PipeSmtp command against its real module contracts.
+Tests the public Test-PipeSmtp command against the current post-refactor
+implementation contract.
+
+The suite intentionally isolates all external dependencies:
+  - Configuration commands are mocked.
+  - DPAPI credential resolution is mocked.
+  - TCP connectivity is mocked.
+  - Send-SmtpMessage is mocked.
+
+The suite does not open real network connections and does not send real email.
 
 Coverage includes:
-  - Parameter contract.
-  - Default parameter set.
+  - Parameter contract and parameter sets.
   - CNPJ validation.
   - Global SMTP resolution.
-  - Global configuration failure.
   - Company SMTP resolution.
-  - Global fallback through Resolve-DFeSmtp.
-  - Direct configuration.
+  - Company-to-global fallback.
+  - Resolution failures.
+  - Direct SMTP configuration.
   - SMTP configuration validation.
-  - Timeout defaulting.
+  - Timeout selection and override.
   - DPAPI credential resolution.
-  - SMTP client configuration.
+  - TCP connectivity probe.
+  - SMTP send contract.
   - Test message construction.
-  - SMTP send.
   - FailureStage classification.
   - Structured result contract.
+  - Credential secrecy.
   - No unexpected exceptions.
 
-The suite mocks only PowerShell commands used by Test-PipeSmtp.
-.NET SMTP types are real objects and are not mocked.
+IMPORTANT:
+This suite targets the current refactored implementation, where
+Send-SmtpMessage receives Server/Port/EnableSsl/Credential/Message/TimeoutSeconds
+and Test-PipeSmtp performs a TCP connectivity probe before the SMTP send.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -45,9 +56,9 @@ param ()
 BeforeDiscovery {
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
-    $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
+    $moduleManifest = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
 
-    Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
+    Import-Module -Name $moduleManifest -Force -Global -ErrorAction Stop
 }
 
 Describe 'Test-PipeSmtp' {
@@ -101,11 +112,23 @@ Describe 'Test-PipeSmtp' {
                 'Source'
                 'Server'
                 'Port'
+                'Ssl'
                 'Authenticated'
                 'ErrorMessage'
                 'FailureStage'
             )
         }
+
+        #region Shared test isolation
+        BeforeEach {
+            # The refactored implementation performs a real TCP probe before
+            # calling Send-SmtpMessage. Unit tests must never depend on DNS,
+            # routing, firewalls, or an SMTP server being reachable.
+            Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                return $true
+            }
+        }
+        #endregion
 
         #region Parameter contract
         Context 'Parameter contract' {
@@ -151,11 +174,23 @@ Describe 'Test-PipeSmtp' {
             }
 
             It 'Declares SmtpConfig as PSCustomObject' {
-                $Script:Command.Parameters['SmtpConfig'].ParameterType | Should -Be ([pscustomobject])
+                $Script:Command.Parameters['SmtpConfig'].ParameterType |
+                    Should -Be ([pscustomobject])
             }
 
             It 'Declares Cnpj as string' {
-                $Script:Command.Parameters['Cnpj'].ParameterType | Should -Be ([string])
+                $Script:Command.Parameters['Cnpj'].ParameterType |
+                    Should -Be ([string])
+            }
+
+            It 'Declares TimeoutSeconds as int' {
+                $Script:Command.Parameters['TimeoutSeconds'].ParameterType |
+                    Should -Be ([int])
+            }
+
+            It 'Requires TimeoutSeconds to be greater than zero' {
+                { Test-PipeSmtp -TimeoutSeconds 0 }  | Should -Throw
+                { Test-PipeSmtp -TimeoutSeconds -1 } | Should -Throw
             }
         }
         #endregion
@@ -163,7 +198,7 @@ Describe 'Test-PipeSmtp' {
         #region CNPJ validation
         Context 'CNPJ validation' {
 
-            It 'Accepts a valid uppercase alphanumeric CNPJ' {
+            It 'Accepts the current uppercase alphanumeric CNPJ contract' {
                 { Test-PipeSmtp -Cnpj 'AB12CD34000195' } | Should -Not -Throw
             }
 
@@ -194,32 +229,42 @@ Describe 'Test-PipeSmtp' {
 
             BeforeEach {
 
+                Mock -CommandName Get-SmtpConfig -MockWith {
+                    return $Script:FakeSmtpConfig
+                }
+
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
                     $null = $Cnpj
+                    return $null
                 }
 
                 Mock -CommandName Resolve-DFeSmtp -MockWith {
                     param ([pscustomobject]$Company)
                     $null = $Company
-                }
-
-                Mock -CommandName Get-SmtpConfig -MockWith {
-                    return $Script:FakeSmtpConfig
+                    return $null
                 }
 
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
             }
 
@@ -236,40 +281,79 @@ Describe 'Test-PipeSmtp' {
                 Test-PipeSmtp | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Get-SmtpConfig'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 1
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Get-SmtpConfig @invokeParams
             }
 
             It 'Does not call company resolution' {
                 Test-PipeSmtp | Out-Null
 
                 $invokeParamsOne = @{
-                    CommandName = 'Get-CompanyConfig'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 0
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
                 }
+
+                Should -Invoke Get-CompanyConfig @invokeParamsOne
 
                 $invokeParamsTwo = @{
-                    CommandName = 'Resolve-DFeSmtp'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 0
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
                 }
 
-                Should -Invoke @invokeParamsOne
-                Should -Invoke @invokeParamsTwo
+                Should -Invoke Resolve-DFeSmtp @invokeParamsTwo
             }
 
-            It 'Returns Authenticated true on successful send' {
+            It 'Resolves credentials before the TCP probe' {
+                Test-PipeSmtp | Out-Null
+
+                $invokeParamsOne = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
+                }
+
+                Should -Invoke ConvertFrom-DpapiString @invokeParamsOne
+
+                $invokeParamsTwo = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
+                }
+
+                Should -Invoke Test-SmtpTcpConnection @invokeParamsTwo
+            }
+
+            It 'Performs the TCP probe before sending SMTP' {
+                $Script:CallOrder = [System.Collections.Generic.List[string]]::new()
+
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    $Script:CallOrder.Add('TCP')
+                    return $true
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    $Script:CallOrder.Add('SMTP')
+                }
+
+                Test-PipeSmtp | Out-Null
+
+                $Script:CallOrder    | Should -HaveCount 2
+                $Script:CallOrder[0] | Should -Be 'TCP'
+                $Script:CallOrder[1] | Should -Be 'SMTP'
+            }
+
+            It 'Returns Authenticated true after a successful SMTP send' {
                 (Test-PipeSmtp).Authenticated | Should -BeTrue
             }
 
@@ -327,18 +411,21 @@ Describe 'Test-PipeSmtp' {
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     param ([string]$Value)
+
                     $Value | Should -Be 'AB12CD34000195'
                     return 'AB12CD34000195'
                 }
 
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
+
                     $Cnpj | Should -Be 'AB12CD34000195'
                     return $Script:FakeCompanyWithSmtp
                 }
 
                 Mock -CommandName Resolve-DFeSmtp -MockWith {
                     param ([pscustomobject]$Company)
+
                     $Company | Should -Be $Script:FakeCompanyWithSmtp
                     return $Script:FakeSmtpConfig
                 }
@@ -347,14 +434,22 @@ Describe 'Test-PipeSmtp' {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
             }
 
@@ -362,42 +457,39 @@ Describe 'Test-PipeSmtp' {
                 Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'ConvertTo-NormalizedCnpj'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 1
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke ConvertTo-NormalizedCnpj @invokeParams
             }
 
             It 'Gets the company using the normalized CNPJ exactly once' {
                 Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Get-CompanyConfig'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
                     Times      = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Get-CompanyConfig @invokeParams
             }
 
             It 'Resolves SMTP from the company exactly once' {
                 Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Resolve-DFeSmtp'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 1
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Resolve-DFeSmtp @invokeParams
             }
 
             It 'Returns Company as Source' {
@@ -415,18 +507,17 @@ Describe 'Test-PipeSmtp' {
                 (Test-PipeSmtp -Cnpj 'AB12CD34000195').Success | Should -BeTrue
             }
 
-            It 'Does not resolve global SMTP configuration' {
+            It 'Does not resolve the global SMTP configuration' {
                 Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Get-SmtpConfig'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 0
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Get-SmtpConfig @invokeParams
             }
         }
         #endregion
@@ -436,26 +527,29 @@ Describe 'Test-PipeSmtp' {
 
             BeforeEach {
 
+                Mock -CommandName Get-SmtpConfig -MockWith {
+                    return $Script:FakeSmtpConfig
+                }
+
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     param ([string]$Value)
                     $null = $Value
+
                     return 'AB12CD34000195'
                 }
 
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
                     $null = $Cnpj
+
                     return $Script:FakeCompanyWithoutSmtp
                 }
 
                 Mock -CommandName Resolve-DFeSmtp -MockWith {
                     param ([pscustomobject]$Company)
                     $null = $Company
-                    Write-Warning -Message 'No company SMTP found. Falling back to global.'
-                    return $Script:FakeSmtpConfig
-                }
 
-                Mock -CommandName Get-SmtpConfig -MockWith {
+                    Write-Warning -Message 'No company SMTP found. Falling back to global.'
                     return $Script:FakeSmtpConfig
                 }
 
@@ -463,54 +557,52 @@ Describe 'Test-PipeSmtp' {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
-                    $null = $Client
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
             }
 
             It 'Uses the normalized CNPJ to obtain the company' {
                 Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
 
-                $invokeParamsOne = @{
-                    CommandName = 'ConvertTo-NormalizedCnpj'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 1
+                $invokeParams = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
                 }
 
-                $invokeParamsTwo = @{
-                    CommandName = 'Get-CompanyConfig'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 1
-                }
-
-                Should -Invoke @invokeParamsOne
-                Should -Invoke @invokeParamsTwo
+                Should -Invoke Get-CompanyConfig @invokeParams
             }
 
             It 'Uses Resolve-DFeSmtp to resolve the effective configuration' {
                 Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Resolve-DFeSmtp'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 1
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Resolve-DFeSmtp @invokeParams
             }
 
-            It 'Returns Global as Source when Resolve-DFeSmtp falls back' {
+            It 'Returns Global as Source when Resolve-DFeSmtp emits a warning' {
                 (Test-PipeSmtp -Cnpj 'AB12CD34000195').Source | Should -Be 'Global'
             }
 
@@ -522,10 +614,23 @@ Describe 'Test-PipeSmtp' {
                 $result.Port          | Should -Be 587
                 $result.Authenticated | Should -BeTrue
             }
+
+            It 'Does not call Get-SmtpConfig during Resolve-DFeSmtp fallback' {
+                Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
+
+                $invokeParams = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
+                }
+
+                Should -Invoke Get-SmtpConfig @invokeParams
+            }
         }
         #endregion
 
-        #region ByCnpj - resolution failure
+        #region ByCnpj - resolution failures
         Context 'ByCnpj - resolution failure' {
 
             BeforeEach {
@@ -533,18 +638,21 @@ Describe 'Test-PipeSmtp' {
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     param ([string]$Value)
                     $null = $Value
+
                     return 'AB12CD34000195'
                 }
 
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
                     $null = $Cnpj
+
                     return $Script:FakeCompanyWithSmtp
                 }
 
                 Mock -CommandName Resolve-DFeSmtp -MockWith {
                     param ([pscustomobject]$Company)
                     $null = $Company
+
                     throw 'Company SMTP resolution failed.'
                 }
             }
@@ -561,10 +669,47 @@ Describe 'Test-PipeSmtp' {
                 $result.FailureStage | Should -Be 'Configuration'
                 $result.ErrorMessage | Should -Be 'Company SMTP resolution failed.'
             }
-        }
-        #endregion
 
-        #region ByCnpj - company not found
+            It 'Does not attempt credentials, TCP, or SMTP after resolution failure' {
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    throw 'Should not be called.'
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    throw 'Should not be called.'
+                }
+
+                Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
+
+                $invokeParamsOne = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
+                }
+
+                Should -Invoke ConvertFrom-DpapiString @invokeParamsOne
+
+                $invokeParamsTwo = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
+                }
+
+                Should -Invoke Test-SmtpTcpConnection @invokeParamsTwo
+
+                $invokeParamsThree = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
+                }
+
+                Should -Invoke Send-SmtpMessage @invokeParamsThree
+            }
+        }
+
         Context 'ByCnpj - company not found' {
 
             BeforeEach {
@@ -572,12 +717,14 @@ Describe 'Test-PipeSmtp' {
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
                     param ([string]$Value)
                     $null = $Value
+
                     return 'AB12CD34000195'
                 }
 
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
                     $null = $Cnpj
+
                     throw "Company not found: 'AB12CD34000195'"
                 }
             }
@@ -620,19 +767,28 @@ Describe 'Test-PipeSmtp' {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
             }
 
             It 'Uses Direct as Source' {
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
                 $result.Source | Should -Be 'Direct'
             }
 
@@ -641,48 +797,46 @@ Describe 'Test-PipeSmtp' {
 
                 $result.Server | Should -Be 'smtp.example.com'
                 $result.Port   | Should -Be 587
+                $result.Ssl    | Should -BeTrue
             }
 
             It 'Does not call Get-SmtpConfig' {
                 Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Get-SmtpConfig'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 0
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Get-SmtpConfig @invokeParams
             }
 
             It 'Does not call Get-CompanyConfig' {
                 Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Get-CompanyConfig'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 0
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Get-CompanyConfig @invokeParams
             }
 
             It 'Does not call Resolve-DFeSmtp' {
                 Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Resolve-DFeSmtp'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 0
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Resolve-DFeSmtp @invokeParams
             }
 
             It 'Returns Success true' {
@@ -697,7 +851,7 @@ Describe 'Test-PipeSmtp' {
         Context 'Configuration validation' {
 
             It 'Rejects an empty server' {
-                $config        = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Server = [string]::Empty
 
                 $result = Test-PipeSmtp -SmtpConfig $config
@@ -707,18 +861,19 @@ Describe 'Test-PipeSmtp' {
                 $result.ErrorMessage | Should -Be 'SMTP server is not configured.'
             }
 
-            It 'Rejects whitespace-only server' {
-                $config        = $Script:FakeSmtpConfig.PSObject.Copy()
+            It 'Rejects a whitespace-only server' {
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Server = '   '
 
                 $result = Test-PipeSmtp -SmtpConfig $config
 
                 $result.Success      | Should -BeFalse
                 $result.FailureStage | Should -Be 'Configuration'
+                $result.ErrorMessage | Should -Be 'SMTP server is not configured.'
             }
 
             It 'Rejects port below 1' {
-                $config      = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Port = 0
 
                 $result = Test-PipeSmtp -SmtpConfig $config
@@ -726,10 +881,11 @@ Describe 'Test-PipeSmtp' {
                 $result.Success      | Should -BeFalse
                 $result.FailureStage | Should -Be 'Configuration'
                 $result.Port         | Should -Be 0
+                $result.ErrorMessage | Should -Be "SMTP port '0' is outside the valid range 1-65535."
             }
 
             It 'Rejects port greater than 65535' {
-                $config      = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Port = 65536
 
                 $result = Test-PipeSmtp -SmtpConfig $config
@@ -737,21 +893,23 @@ Describe 'Test-PipeSmtp' {
                 $result.Success      | Should -BeFalse
                 $result.FailureStage | Should -Be 'Configuration'
                 $result.Port         | Should -Be 65536
+                $result.ErrorMessage | Should -Be "SMTP port '65536' is outside the valid range 1-65535."
             }
 
             It 'Rejects an empty username' {
-                $config          = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Username = [string]::Empty
 
                 $result = Test-PipeSmtp -SmtpConfig $config
 
                 $result.Success      | Should -BeFalse
                 $result.FailureStage | Should -Be 'Configuration'
-                $result.ErrorMessage | Should -Be 'SMTP username is not configured.'
+                $result.ErrorMessage |
+                    Should -Be 'SMTP username is not configured.'
             }
 
-            It 'Rejects whitespace-only username' {
-                $config          = $Script:FakeSmtpConfig.PSObject.Copy()
+            It 'Rejects a whitespace-only username' {
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Username = '   '
 
                 $result = Test-PipeSmtp -SmtpConfig $config
@@ -761,7 +919,7 @@ Describe 'Test-PipeSmtp' {
             }
 
             It 'Rejects a null From object' {
-                $config      = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.From = $null
 
                 $result = Test-PipeSmtp -SmtpConfig $config
@@ -772,7 +930,7 @@ Describe 'Test-PipeSmtp' {
             }
 
             It 'Rejects an empty sender address' {
-                $config      = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.From = [PSCustomObject]@{
                     Name  = 'Empresa'
                     Email = [string]::Empty
@@ -785,8 +943,21 @@ Describe 'Test-PipeSmtp' {
                 $result.ErrorMessage | Should -Be 'SMTP sender address is not configured.'
             }
 
+            It 'Rejects a whitespace-only sender address' {
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config.From = [PSCustomObject]@{
+                    Name  = 'Empresa'
+                    Email = '   '
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $config
+
+                $result.Success      | Should -BeFalse
+                $result.FailureStage | Should -Be 'Configuration'
+            }
+
             It 'Rejects an invalid sender address' {
-                $config      = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.From = [PSCustomObject]@{
                     Name  = 'Empresa'
                     Email = 'not-an-email'
@@ -800,91 +971,190 @@ Describe 'Test-PipeSmtp' {
             }
 
             It 'Accepts a valid sender address' {
-
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
 
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
                 $result.Success | Should -BeTrue
             }
 
-            It 'Uses 30 seconds when Timeout is zero' {
-
+            It 'Uses 15 seconds when Timeout is zero' {
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $Client.Timeout | Should -Be 30000
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+
+                    $TimeoutSeconds | Should -Be 15
                 }
 
-                $config         = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Timeout = 0
 
                 $result = Test-PipeSmtp -SmtpConfig $config
+
                 $result.Success | Should -BeTrue
             }
 
-            It 'Uses 30 seconds when Timeout is negative' {
-
+            It 'Uses 15 seconds when Timeout is negative' {
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $Client.Timeout | Should -Be 30000
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+
+                    $TimeoutSeconds | Should -Be 15
                 }
 
-                $config         = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Timeout = -1
 
                 $result = Test-PipeSmtp -SmtpConfig $config
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Uses 15 seconds when Timeout is absent' {
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $Message
+
+                    $TimeoutSeconds | Should -Be 15
+                }
+
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config.PSObject.Properties.Remove('Timeout')
+
+                $result = Test-PipeSmtp -SmtpConfig $config
+
                 $result.Success | Should -BeTrue
             }
 
             It 'Uses the configured timeout when greater than zero' {
-
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $Client.Timeout | Should -Be 45000
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+
+                    $TimeoutSeconds | Should -Be 45
                 }
 
-                $config         = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
                 $config.Timeout = 45
 
                 $result = Test-PipeSmtp -SmtpConfig $config
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Uses TimeoutSeconds parameter as an override' {
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $Message
+
+                    $TimeoutSeconds | Should -Be 5
+                }
+
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config.Timeout = 45
+
+                $result = Test-PipeSmtp -SmtpConfig $config -TimeoutSeconds 5
+
                 $result.Success | Should -BeTrue
             }
         }
@@ -894,57 +1164,100 @@ Describe 'Test-PipeSmtp' {
         Context 'Credential handling' {
 
             It 'Calls ConvertFrom-DpapiString exactly once' {
-
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
 
                 Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'ConvertFrom-DpapiString'
-                    ModuleName  = 'PipeDFe'
-                    Scope       = 'It'
-                    Exactly     = $true
-                    Times       = 1
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke ConvertFrom-DpapiString @invokeParams
             }
 
             It 'Passes the configured encrypted password to the DPAPI helper' {
-
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     param ([string]$Value)
+
                     $Value | Should -Be $Script:FakeSmtpConfig.Password
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
 
                 Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
             }
 
-            It 'Returns Credentials failure when DPAPI decryption fails' {
+            It 'Builds a NetworkCredential with the configured username' {
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
 
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Message
+                    $null = $TimeoutSeconds
+
+                    $Credential | Should -Not -BeNullOrEmpty
+                    $Credential.UserName | Should -Be 'user@example.com'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Returns Credentials failure when DPAPI decryption fails' {
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     throw 'DPAPI decryption failed.'
                 }
@@ -957,240 +1270,367 @@ Describe 'Test-PipeSmtp' {
                 $result.ErrorMessage  | Should -Be 'DPAPI decryption failed.'
             }
 
-            It 'Does not expose the password when credential resolution fails' {
-
+            It 'Does not attempt TCP or SMTP when credential resolution fails' {
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
-                    throw "Authentication failed for password $($Script:FakeSecurePassword)"
+                    throw 'DPAPI decryption failed.'
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    throw 'Should not be called.'
+                }
+
+                Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
+
+                $invokeParamsOne = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
+                }
+
+                Should -Invoke Test-SmtpTcpConnection @invokeParamsOne
+
+                $invokeParamsTwo = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
+                }
+
+                Should -Invoke Send-SmtpMessage @invokeParamsTwo
+            }
+
+            It 'Does not expose the encrypted password when credential resolution fails' {
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    throw "Authentication failed for password $($Script:FakeSmtpConfig.Password)"
                 }
 
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
 
+                $result.ErrorMessage | Should -Not -Match [regex]::Escape($Script:FakeSmtpConfig.Password)
                 $result.ErrorMessage | Should -Not -Match 'P@ssw0rd!'
-                $result.ErrorMessage | Should -Not -Match 'AQAAANCMnd8BFdERjHoAwAw=='
             }
         }
         #endregion
 
-        #region SMTP client
-        Context 'SMTP client' {
+        #region TCP connectivity
+        Context 'TCP connectivity' {
 
             BeforeEach {
 
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
-            }
 
-            It 'Configures the SMTP server and port' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $Client.Host | Should -Be 'smtp.example.com'
-                    $Client.Port | Should -Be 587
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
+                }
+            }
+
+            It 'Passes the effective server, port, and timeout to the TCP probe' {
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config.Timeout = 42
+
+                Test-PipeSmtp -SmtpConfig $config | Out-Null
+
+                $invokeParams = @{
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Server -eq 'smtp.example.com' -and
+                        $Port -eq 587 -and
+                        $TimeoutMs -eq 42000
+                    }
+                }
+
+                Should -Invoke Test-SmtpTcpConnection @invokeParams
+            }
+
+            It 'Uses TimeoutSeconds override for the TCP probe' {
+                Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig -TimeoutSeconds 7 |
+                    Out-Null
+
+                $invokeParams = @{
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter =  {
+                        $Server -eq 'smtp.example.com' -and
+                        $Port -eq 587 -and
+                        $TimeoutMs -eq 7000
+                    }
+                }
+
+                Should -Invoke Test-SmtpTcpConnection @invokeParams
+            }
+
+            It 'Proceeds to SMTP send when TCP connectivity succeeds' {
+                Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
+
+                $invokeParams = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
+                }
+
+                Should -Invoke Send-SmtpMessage @invokeParams
+            }
+
+            It 'Returns Connection failure when the TCP probe returns false' {
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    return $false
                 }
 
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
+
+                $result.Success       | Should -BeFalse
+                $result.Authenticated | Should -BeFalse
+                $result.FailureStage  | Should -Be 'Connection'
+                $result.ErrorMessage  | Should -Be (
+                    "TCP connection to 'smtp.example.com':'587' timed out. " +
+                    "Check server address, port and firewall rules."
+                )
             }
 
-            It 'Uses SSL when configured' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Client.EnableSsl | Should -BeTrue
-                    $null = $Message
-                }
-
-                (Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig).Success | Should -BeTrue
-            }
-
-            It 'Uses network delivery' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Client.DeliveryMethod |
-                        Should -Be ([System.Net.Mail.SmtpDeliveryMethod]::Network)
-
-                    $null = $Message
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-
-            It 'Disables default credentials' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Client.UseDefaultCredentials | Should -BeFalse
-                    $null = $Message
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-
-            It 'Configures explicit SMTP credentials' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Client.Credentials | Should -Not -BeNullOrEmpty
-                    $null = $Message
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-        }
-        #endregion
-
-        #region SMTP message
-        Context 'SMTP message' {
-
-            BeforeEach {
-
-                Mock -CommandName ConvertFrom-DpapiString -MockWith {
-                    return $Script:FakeSecurePassword
-                }
-            }
-
-            It 'Sends from the configured sender' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Message.From.Address | Should -Be 'noreply@example.com'
-                    $null = $Client
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-
-            It 'Sends to the sender itself' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Message.To.Count      | Should -Be 1
-                    $Message.To[0].Address | Should -Be 'noreply@example.com'
-                    $null = $Client
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-
-            It 'Uses the expected subject' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Message.Subject | Should -Be '[PipeDFe] SMTP connectivity test'
-                    $null = $Client
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-
-            It 'Uses the expected body' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Message.Body | Should -Be 'This is an automated SMTP connectivity test sent by PipeDFe. You can ignore this message.'
-                    $null = $Client
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-
-            It 'Uses plain text body' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $Message.IsBodyHtml | Should -BeFalse
-                    $null = $Client
-                }
-
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeTrue
-            }
-
-            It 'Calls the SMTP send wrapper exactly once' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $null = $Client
-                    $null = $Message
+            It 'Does not call SMTP send when TCP connectivity fails' {
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    return $false
                 }
 
                 Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
 
                 $invokeParams = @{
-                    CommandName = 'Send-PipeSmtpTestMessage'
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 0
+                }
+
+                Should -Invoke Send-SmtpMessage @invokeParams
+            }
+
+            It 'Returns Connection failure when the TCP probe throws' {
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    throw 'Network is unreachable.'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success       | Should -BeFalse
+                $result.Authenticated | Should -BeFalse
+                $result.FailureStage  | Should -Be 'Connection'
+                $result.ErrorMessage  | Should -Be (
+                    "TCP connection to 'smtp.example.com':'587' failed: " +
+                    "Network is unreachable."
+                )
+            }
+
+            It 'Does not call SMTP send when the TCP probe throws' {
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    throw 'Network is unreachable.'
+                }
+
+                Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
+
+                $invokeParams = @{
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
-                    Times       = 1
+                    Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke Send-SmtpMessage @invokeParams
             }
 
-            It 'Returns success when SMTP send succeeds' {
+            It 'Returns the effective SSL setting on TCP failure' {
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    return $false
+                }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Ssl | Should -BeTrue
+            }
+        }
+        #endregion
+
+        #region SMTP send contract
+        Context 'SMTP send contract' {
+
+            BeforeEach {
+
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+            }
+
+            It 'Calls Send-SmtpMessage exactly once after a successful TCP probe' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
+                }
+
+                Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig | Out-Null
+
+                $invokeParams = @{
+                    ModuleName = 'PipeDFe'
+                    Scope      = 'It'
+                    Exactly    = $true
+                    Times      = 1
+                }
+
+                Should -Invoke Send-SmtpMessage @invokeParams
+            }
+
+            It 'Passes the configured SMTP server and port' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $Message
+                    $null = $TimeoutSeconds
+
+                    $Server | Should -Be 'smtp.example.com'
+                    $Port   | Should -Be 587
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Passes the configured SSL setting' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $Credential
+                    $null = $Message
+                    $null = $TimeoutSeconds
+
+                    $EnableSsl | Should -BeTrue
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Passes the credential object' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Message
+                    $null = $TimeoutSeconds
+
+                    $Credential | Should -Not -BeNullOrEmpty
+                    $Credential.GetType().FullName | Should -Be 'System.Net.NetworkCredential'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Passes the effective timeout' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $Message
+
+                    $TimeoutSeconds | Should -Be 30
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Returns Success when Send-SmtpMessage completes successfully' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $Message
+                    $null = $TimeoutSeconds
                 }
 
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
@@ -1201,17 +1641,9 @@ Describe 'Test-PipeSmtp' {
                 $result.ErrorMessage  | Should -BeNullOrEmpty
             }
 
-            It 'Returns Send failure when SMTP send throws' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $null = $Client
-                    $null = $Message
-                    throw 'SMTP server rejected the message.'
+            It 'Returns Send failure when Send-SmtpMessage throws' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    throw 'SMTP authentication failed.'
                 }
 
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
@@ -1219,33 +1651,211 @@ Describe 'Test-PipeSmtp' {
                 $result.Success       | Should -BeFalse
                 $result.Authenticated | Should -BeFalse
                 $result.FailureStage  | Should -Be 'Send'
-                $result.ErrorMessage  | Should -Be 'SMTP server rejected the message.'
+                $result.ErrorMessage  | Should -Be 'SMTP authentication failed.'
             }
 
-            It 'Never exposes SMTP credentials in the send failure result' {
-
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
-                    param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
-                    )
-
-                    $null = $Client
-                    $null = $Message
-                    throw "SMTP authentication failed for password $($Script:FakeSmtpConfig.Password)"
+            It 'Never throws when Send-SmtpMessage fails' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    throw 'SMTP authentication failed.'
                 }
 
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $passwd = $Script:FakeSmtpConfig.Password
-
-                $result.ErrorMessage | Should -Not -Match [regex]::Escape($passwd)
-                $result.ErrorMessage | Should -Not -Match 'P@ssw0rd!'
+                { Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig } |
+                    Should -Not -Throw
             }
         }
         #endregion
 
-        #region Return contract
-        Context 'Return contract' {
+        #region Test message construction
+        Context 'Test message construction' {
+
+            BeforeEach {
+
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+            }
+
+            It 'Uses the configured sender as From' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $TimeoutSeconds
+
+                    $Message.From.Address | Should -Be 'noreply@example.com'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Sends the test message to the sender itself' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $TimeoutSeconds
+
+                    $Message.To | Should -HaveCount 1
+                    $Message.To[0].Address | Should -Be 'noreply@example.com'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Uses the expected subject' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $TimeoutSeconds
+
+                    $Message.Subject | Should -Be '[PipeDFe] SMTP connectivity test'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Uses the expected automated test body' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $TimeoutSeconds
+
+                    $Message.Body |
+                        Should -Be 'This is an automated SMTP connectivity test sent by PipeDFe. You can ignore this message.'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Uses plain text instead of HTML' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $TimeoutSeconds
+
+                    $Message.IsBodyHtml | Should -BeFalse
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Uses UTF-8 body encoding' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $TimeoutSeconds
+
+                    $Message.BodyEncoding.WebName | Should -Be 'utf-8'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+
+            It 'Uses UTF-8 subject encoding' {
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $TimeoutSeconds
+
+                    $Message.SubjectEncoding.WebName | Should -Be 'utf-8'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success | Should -BeTrue
+            }
+        }
+        #endregion
+
+        #region Result contract
+        Context 'Result contract' {
 
             BeforeEach {
 
@@ -1253,75 +1863,222 @@ Describe 'Test-PipeSmtp' {
                     return $Script:FakeSecurePassword
                 }
 
-                Mock -CommandName Send-PipeSmtpTestMessage -MockWith {
+                Mock -CommandName Send-SmtpMessage -MockWith {
                     param (
-                        [System.Net.Mail.SmtpClient]$Client,
-                        [System.Net.Mail.MailMessage]$Message
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
                     )
 
-                    $null = $Client
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
                     $null = $Message
+                    $null = $TimeoutSeconds
                 }
             }
 
             It 'Returns exactly one object' {
-                @(Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig) | Should -HaveCount 1
+                $output = @(Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig)
+
+                $output | Should -HaveCount 1
             }
 
             It 'Returns a PSCustomObject' {
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
 
-                $result.PSObject.BaseObject.GetType().Name | Should -Be 'PSCustomObject'
+                $result.PSObject.BaseObject |
+                    Should -BeOfType [pscustomobject]
             }
 
-            It 'Returns exactly the documented properties' {
+            It 'Uses the expected custom type name' {
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
 
-                @($result.PSObject.Properties.Name) | Should -BeExactly $Script:ExpectedProperties
+                $result.PSObject.TypeNames[0] |
+                    Should -Be 'PipeDFe.SmtpTestResult'
             }
 
-            It 'Returns Success as bool' {
+            It 'Returns exactly the expected public properties' {
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Success | Should -BeOfType ([bool])
+
+                @($result.PSObject.Properties.Name) |
+                    Should -Be $Script:ExpectedProperties
             }
 
-            It 'Returns Source as string' {
+            It 'Returns correctly typed success fields' {
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Source | Should -BeOfType ([string])
+
+                $result.Success       | Should -BeOfType [bool]
+                $result.Source        | Should -BeOfType [string]
+                $result.Server        | Should -BeOfType [string]
+                $result.Port          | Should -BeOfType [int]
+                $result.Ssl           | Should -BeOfType [bool]
+                $result.Authenticated | Should -BeOfType [bool]
             }
 
-            It 'Returns Server as string' {
+            It 'Returns null ErrorMessage and FailureStage on success' {
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Server | Should -BeOfType ([string])
-            }
 
-            It 'Returns Port as int' {
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Port | Should -BeOfType ([int])
-            }
-
-            It 'Returns Authenticated as bool' {
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $result.Authenticated | Should -BeOfType ([bool])
-            }
-
-            It 'Returns ErrorMessage as null on success' {
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
                 $result.ErrorMessage | Should -BeNullOrEmpty
-            }
-
-            It 'Returns FailureStage as null on success' {
-                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
                 $result.FailureStage | Should -BeNullOrEmpty
             }
 
-            It 'Does not return credential properties' {
+            It 'Does not expose credentials in the result' {
                 $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
-                $props  = @($result.PSObject.Properties.Name)
 
-                $props | Should -Not -Contain 'Password'
-                $props | Should -Not -Contain 'Credential'
-                $props | Should -Not -Contain 'Credentials'
+                @($result.PSObject.Properties.Name) |
+                    Should -Not -Contain 'Password'
+
+                @($result.PSObject.Properties.Name) |
+                    Should -Not -Contain 'Credential'
+
+                $result | Out-String |
+                    Should -Not -Match 'P@ssw0rd!'
+
+                $result | Out-String |
+                    Should -Not -Match [regex]::Escape($Script:FakeSmtpConfig.Password)
+            }
+
+            It 'Returns the expected success metadata' {
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success       | Should -BeTrue
+                $result.Source        | Should -Be 'Direct'
+                $result.Server        | Should -Be 'smtp.example.com'
+                $result.Port          | Should -Be 587
+                $result.Ssl           | Should -BeTrue
+                $result.Authenticated | Should -BeTrue
+            }
+        }
+        #endregion
+
+        #region Failure result contract
+        Context 'Failure result contract' {
+
+            It 'Returns structured Configuration failure' {
+                $config = $Script:FakeSmtpConfig.PSObject.Copy()
+                $config.Server = [string]::Empty
+
+                $result = Test-PipeSmtp -SmtpConfig $config
+
+                $result.Success       | Should -BeFalse
+                $result.Authenticated | Should -BeFalse
+                $result.FailureStage  | Should -Be 'Configuration'
+                $result.ErrorMessage  | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Returns structured Credentials failure' {
+
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    throw 'Credential resolution failed.'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success       | Should -BeFalse
+                $result.Authenticated | Should -BeFalse
+                $result.FailureStage  | Should -Be 'Credentials'
+                $result.ErrorMessage  | Should -Be 'Credential resolution failed.'
+            }
+
+            It 'Returns structured Connection failure' {
+
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    return $false
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success       | Should -BeFalse
+                $result.Authenticated | Should -BeFalse
+                $result.FailureStage  | Should -Be 'Connection'
+                $result.ErrorMessage  | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Returns structured Send failure' {
+
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    throw 'SMTP send failed.'
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.Success       | Should -BeFalse
+                $result.Authenticated | Should -BeFalse
+                $result.FailureStage  | Should -Be 'Send'
+                $result.ErrorMessage  | Should -Be 'SMTP send failed.'
+            }
+        }
+        #endregion
+
+        #region No unexpected exceptions
+        Context 'No unexpected exceptions' {
+
+            It 'Does not throw for a valid direct configuration and successful SMTP send' {
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    param (
+                        [string]$Server,
+                        [int]$Port,
+                        [bool]$EnableSsl,
+                        [System.Net.NetworkCredential]$Credential,
+                        [System.Net.Mail.MailMessage]$Message,
+                        [int]$TimeoutSeconds
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $EnableSsl
+                    $null = $Credential
+                    $null = $Message
+                    $null = $TimeoutSeconds
+                }
+
+                { Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig } |
+                    Should -Not -Throw
+            }
+
+            It 'Does not throw when the TCP probe fails' {
+
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    return $false
+                }
+
+                { Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig } |
+                    Should -Not -Throw
+            }
+
+            It 'Does not throw when the SMTP send fails' {
+
+                Mock -CommandName ConvertFrom-DpapiString -MockWith {
+                    return $Script:FakeSecurePassword
+                }
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    throw 'SMTP send failed.'
+                }
+
+                { Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig } |
+                    Should -Not -Throw
             }
         }
         #endregion

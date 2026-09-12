@@ -12,6 +12,21 @@ When called with -Cnpj, resolves the company SMTP via Resolve-DFeSmtp,
 falling back to the global configuration with a warning if none is found.
 When called with -SmtpConfig, tests the provided configuration directly.
 
+The -TimeoutSeconds parameter overrides the timeout configured in the
+SMTP object. When omitted, the configured timeout is used; when the
+configured timeout is also absent or zero, defaults to 15 seconds.
+
+Before attempting SMTP, performs a TCP connectivity probe to the server
+and port. A failed TCP probe returns immediately with a clear diagnosis,
+avoiding the full SMTP timeout. A successful TCP probe proceeds to the
+full SMTP send, allowing the failure message to distinguish between a
+network/firewall problem and an SMTP/TLS configuration problem.
+
+Note: System.Net.Mail.SmtpClient does not support implicit TLS (port 465).
+Send-SmtpMessage implements the SMTP protocol directly over
+TcpClient and SslStream to support both port 465 (implicit TLS) and
+port 587 (STARTTLS).
+
 Never throws. Always returns a structured result object.
 
 .PARAMETER Cnpj
@@ -23,14 +38,20 @@ no company-specific configuration exists.
 SMTP configuration object as returned by Get-PipeSmtp or Resolve-DFeSmtp.
 Tested directly without any resolution or fallback logic.
 
+.PARAMETER TimeoutSeconds
+Optional timeout override in seconds. Applies to both the TCP probe and
+the SMTP send. Overrides the timeout configured in the SMTP object.
+Must be greater than zero.
+
 .OUTPUTS
-System.Management.Automation.PSCustomObject
+System.Management.Automation.PSCustomObject - TypeName: PipeDFe.SmtpTestResult
 
   Success       [bool]   - Whether the test message was sent successfully.
   Source        [string] - 'Company', 'Global', or 'Direct'.
   Server        [string] - SMTP server hostname tested.
   Port          [int]    - SMTP server port tested.
-  Authenticated [bool]   - Whether the SMTP operation authenticated successfully.
+  Ssl           [bool]   - Whether SSL/TLS was enabled during the test.
+  Authenticated [bool]   - Whether SMTP authentication succeeded.
   ErrorMessage  [string] - Error message on failure, $null on success.
   FailureStage  [string] - Stage that failed: 'Configuration', 'Credentials',
                            'Connection', 'Message', 'Send', or $null on success.
@@ -44,14 +65,18 @@ PS C:\> Test-PipeSmtp -Cnpj 'AB12CD34000195'
 .EXAMPLE
 PS C:\> Test-PipeSmtp -SmtpConfig (Get-PipeSmtp)
 
+.EXAMPLE
+PS C:\> Test-PipeSmtp -TimeoutSeconds 5
+
 .NOTES
-  Private dependencies:
-    ConvertTo-NormalizedCnpj
-    Get-CompanyConfig
-    Get-SmtpConfig
-    Resolve-DFeSmtp
-    ConvertFrom-DpapiString
-    Send-PipeSmtpTestMessage
+Private dependencies:
+  ConvertTo-NormalizedCnpj
+  Get-CompanyConfig
+  Get-SmtpConfig
+  Resolve-DFeSmtp
+  ConvertFrom-DpapiString
+  Send-SmtpMessage
+  Test-SmtpTcpConnection
 #>
 function Test-PipeSmtp {
     [CmdletBinding(DefaultParameterSetName = 'ByGlobal')]
@@ -63,7 +88,11 @@ function Test-PipeSmtp {
 
         [Parameter(ParameterSetName = 'ByConfig')]
         [ValidateNotNull()]
-        [pscustomobject]$SmtpConfig
+        [pscustomobject]$SmtpConfig,
+
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$TimeoutSeconds
     )
 
     #region Helpers
@@ -88,6 +117,9 @@ function Test-PipeSmtp {
             [Parameter()]
             [int]$Port,
 
+            [Parameter()]
+            [bool]$Ssl,
+
             [Parameter(Mandatory)]
             [bool]$Authenticated,
 
@@ -98,32 +130,37 @@ function Test-PipeSmtp {
             [string]$FailureStage
         )
 
-        [PSCustomObject]@{
+        $result = [PSCustomObject]@{
             Success       = $Success
             Source        = $Source
             Server        = $Server
             Port          = $Port
+            Ssl           = $Ssl
             Authenticated = $Authenticated
             ErrorMessage  = $ErrorMessage
             FailureStage  = $FailureStage
         }
+
+        $result.PSObject.TypeNames.Insert(0, 'PipeDFe.SmtpTestResult')
+
+        $result
     }
     #endregion
 
     $config = $null
     $source = 'Global'
 
-    # Resolve SMTP configuration
+    #region Resolve configuration
     try {
         switch ($PSCmdlet.ParameterSetName) {
             'ByCnpj' {
                 $cnpjNormalized = ConvertTo-NormalizedCnpj -Value $Cnpj
-                $company        = Get-CompanyConfig -Cnpj $cnpjNormalized
+                $companyConfig  = Get-CompanyConfig -Cnpj $cnpjNormalized
 
                 $resolveWarnings = $null
 
                 $resolveParams = @{
-                    Company         = $company
+                    Company         = $companyConfig
                     WarningVariable = 'resolveWarnings'
                 }
 
@@ -145,6 +182,7 @@ function Test-PipeSmtp {
         $resultParams = @{
             Success       = $false
             Source        = $source
+            Ssl           = $false
             Authenticated = $false
             ErrorMessage  = $_.Exception.Message
             FailureStage  = 'Configuration'
@@ -157,6 +195,7 @@ function Test-PipeSmtp {
         $resultParams = @{
             Success       = $false
             Source        = $source
+            Ssl           = $false
             Authenticated = $false
             ErrorMessage  = 'SMTP configuration not found.'
             FailureStage  = 'Configuration'
@@ -164,14 +203,16 @@ function Test-PipeSmtp {
 
         return New-SmtpTestResult @resultParams
     }
+    #endregion
 
-    # Validate SMTP configuration
+    #region Validate configuration
     $server = [string]$config.Server
 
     if ([string]::IsNullOrWhiteSpace($server)) {
         $resultParams = @{
             Success       = $false
             Source        = $source
+            Ssl           = $false
             Authenticated = $false
             ErrorMessage  = 'SMTP server is not configured.'
             FailureStage  = 'Configuration'
@@ -188,6 +229,7 @@ function Test-PipeSmtp {
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = $false
             Authenticated = $false
             ErrorMessage  = "SMTP port '$port' is outside the valid range 1-65535."
             FailureStage  = 'Configuration'
@@ -204,6 +246,7 @@ function Test-PipeSmtp {
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = [bool]$config.Ssl
             Authenticated = $false
             ErrorMessage  = 'SMTP username is not configured.'
             FailureStage  = 'Configuration'
@@ -224,6 +267,7 @@ function Test-PipeSmtp {
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = [bool]$config.Ssl
             Authenticated = $false
             ErrorMessage  = 'SMTP sender address is not configured.'
             FailureStage  = 'Configuration'
@@ -240,6 +284,7 @@ function Test-PipeSmtp {
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = [bool]$config.Ssl
             Authenticated = $false
             ErrorMessage  = "SMTP sender address '$fromAddress' is invalid."
             FailureStage  = 'Configuration'
@@ -248,13 +293,20 @@ function Test-PipeSmtp {
         return New-SmtpTestResult @resultParams
     }
 
-    $timeoutSeconds = if ($null -ne $config.Timeout -and [int]$config.Timeout -gt 0) {
+    $sslEnabled = [bool]$config.Ssl
+
+    $effectiveTimeout = if ($PSBoundParameters.ContainsKey('TimeoutSeconds')) {
+        $TimeoutSeconds
+    } elseif ($null -ne $config.PSObject.Properties['Timeout'] -and
+        [int]$config.Timeout -gt 0
+    ) {
         [int]$config.Timeout
     } else {
-        30
+        15
     }
+    #endregion
 
-    # Resolve credentials
+    #region Credentials
     try {
         $securePassword = ConvertFrom-DpapiString -Value $config.Password
 
@@ -268,6 +320,7 @@ function Test-PipeSmtp {
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = $sslEnabled
             Authenticated = $false
             ErrorMessage  = $_.Exception.Message
             FailureStage  = 'Credentials'
@@ -275,20 +328,26 @@ function Test-PipeSmtp {
 
         return New-SmtpTestResult @resultParams
     }
+    #endregion
 
-    # Create SMTP client
-    $smtpClient = $null
+    #region TCP probe
+    # Distinguishes network/firewall failures from SMTP/TLS failures
+    # without waiting for the full SMTP timeout. The TCP connection is
+    # intentionally closed after the probe - Send-SmtpMessage opens its
+    # own connection for the actual SMTP exchange.
+    $tcpParams = @{
+        Server    = $server
+        Port      = $port
+        TimeoutMs = $effectiveTimeout * 1000
+    }
 
     try {
-        $smtpClient                       = [System.Net.Mail.SmtpClient]::new($server, $port)
-        $smtpClient.EnableSsl             = [bool]$config.Ssl
-        $smtpClient.DeliveryMethod        = [System.Net.Mail.SmtpDeliveryMethod]::Network
-        $smtpClient.UseDefaultCredentials = $false
-        $smtpClient.Credentials           = $credential
-        $smtpClient.Timeout               = $timeoutSeconds * 1000
+        $tcpConnected = Test-SmtpTcpConnection @tcpParams
     } catch {
-        if ($null -ne $smtpClient) {
-            $smtpClient.Dispose()
+        $errorMessage = if ($null -ne $_.Exception.InnerException) {
+            $_.Exception.InnerException.Message
+        } else {
+            $_.Exception.Message
         }
 
         $resultParams = @{
@@ -296,24 +355,42 @@ function Test-PipeSmtp {
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = $sslEnabled
             Authenticated = $false
-            ErrorMessage  = $_.Exception.Message
+            ErrorMessage  = "TCP connection to '$server':'$port' failed: $errorMessage"
             FailureStage  = 'Connection'
         }
 
         return New-SmtpTestResult @resultParams
     }
 
-    # Build test message
+    if (-not $tcpConnected) {
+        $resultParams = @{
+            Success       = $false
+            Source        = $source
+            Server        = $server
+            Port          = $port
+            Ssl           = $sslEnabled
+            Authenticated = $false
+            ErrorMessage  = "TCP connection to '$server':'$port' timed out. Check server address, port and firewall rules."
+            FailureStage  = 'Connection'
+        }
+
+        return New-SmtpTestResult @resultParams
+    }
+    #endregion
+
+    #region Build test message
     $testMsg = $null
-    $bodyMsg = 'This is an automated SMTP connectivity test sent by PipeDFe. You can ignore this message.'
 
     try {
-        $testMsg            = [System.Net.Mail.MailMessage]::new()
-        $testMsg.From       = [System.Net.Mail.MailAddress]::new($fromAddress)
-        $testMsg.Subject    = '[PipeDFe] SMTP connectivity test'
-        $testMsg.Body       = $bodyMsg
-        $testMsg.IsBodyHtml = $false
+        $testMsg                 = [System.Net.Mail.MailMessage]::new()
+        $testMsg.From            = [System.Net.Mail.MailAddress]::new($fromAddress)
+        $testMsg.Subject         = '[PipeDFe] SMTP connectivity test'
+        $testMsg.Body            = 'This is an automated SMTP connectivity test sent by PipeDFe. You can ignore this message.'
+        $testMsg.IsBodyHtml      = $false
+        $testMsg.BodyEncoding    = [System.Text.Encoding]::UTF8
+        $testMsg.SubjectEncoding = [System.Text.Encoding]::UTF8
 
         [void]$testMsg.To.Add([System.Net.Mail.MailAddress]::new($fromAddress))
     } catch {
@@ -321,13 +398,12 @@ function Test-PipeSmtp {
             $testMsg.Dispose()
         }
 
-        $smtpClient.Dispose()
-
         $resultParams = @{
             Success       = $false
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = $sslEnabled
             Authenticated = $false
             ErrorMessage  = $_.Exception.Message
             FailureStage  = 'Message'
@@ -335,21 +411,27 @@ function Test-PipeSmtp {
 
         return New-SmtpTestResult @resultParams
     }
+    #endregion
 
-    # Send test message
+    #region SMTP send
     try {
         $sendParams = @{
-            Client  = $smtpClient
-            Message = $testMsg
+            Server         = $server
+            Port           = $port
+            EnableSsl      = $sslEnabled
+            Credential     = $credential
+            Message        = $testMsg
+            TimeoutSeconds = $effectiveTimeout
         }
 
-        Send-PipeSmtpTestMessage @sendParams
+        Send-SmtpMessage @sendParams
 
         $resultParams = @{
             Success       = $true
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = $sslEnabled
             Authenticated = $true
             FailureStage  = $null
         }
@@ -361,6 +443,7 @@ function Test-PipeSmtp {
             Source        = $source
             Server        = $server
             Port          = $port
+            Ssl           = $sslEnabled
             Authenticated = $false
             ErrorMessage  = $_.Exception.Message
             FailureStage  = 'Send'
@@ -371,9 +454,6 @@ function Test-PipeSmtp {
         if ($null -ne $testMsg) {
             $testMsg.Dispose()
         }
-
-        if ($null -ne $smtpClient) {
-            $smtpClient.Dispose()
-        }
     }
+    #endregion
 }
