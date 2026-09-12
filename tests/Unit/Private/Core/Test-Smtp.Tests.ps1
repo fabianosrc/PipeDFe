@@ -221,7 +221,7 @@ Describe 'Test-Smtp' {
                 $result = Test-Smtp -InputObject $config
 
                 $result.IsValid | Should -BeFalse
-                $result.Errors  | Should -Contain 'SMTP port must be between 1 and 65535.'
+                $result.Errors  | Should -Contain 'SMTP port is required.'
             }
 
             It 'Returns an error when Port is zero' {
@@ -261,7 +261,7 @@ Describe 'Test-Smtp' {
                 $result = Test-Smtp -InputObject $config
 
                 $result.IsValid | Should -BeFalse
-                $result.Errors  | Should -Contain 'SMTP port must be between 1 and 65535.'
+                $result.Errors  | Should -Contain 'SMTP port must be an integer.'
             }
         }
         #endregion
@@ -346,7 +346,7 @@ Describe 'Test-Smtp' {
                 $result = Test-Smtp -InputObject $config
 
                 $result.IsValid | Should -BeFalse
-                $result.Errors  | Should -Contain 'SMTP timeout must be between 1 and 120 seconds.'
+                $result.Errors  | Should -Contain 'SMTP timeout is required.'
             }
 
             It 'Returns an error when Timeout is zero' {
@@ -386,7 +386,7 @@ Describe 'Test-Smtp' {
                 $result = Test-Smtp -InputObject $config
 
                 $result.IsValid | Should -BeFalse
-                $result.Errors  | Should -Contain 'SMTP timeout must be between 1 and 120 seconds.'
+                $result.Errors  | Should -Contain 'SMTP timeout must be an integer.'
             }
         }
         #endregion
