@@ -14,22 +14,23 @@ Throws SmtpConfigInvalid when the file cannot be parsed or fails validation.
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
-SchemaVersion [int]            - Schema version.
-Server        [string]         - SMTP server hostname.
-Port          [int]            - SMTP server port.
-Ssl           [bool]           - Whether SSL is enabled.
-Username      [string]         - SMTP authentication username.
-Password      [string]         - DPAPI-encrypted password blob.
-From          [pscustomobject] - Sender address object.
-SenderAddress [pscustomobject] - Optional technical sender address.
-ReplyTo       [pscustomobject] - Optional reply-to address.
-Timeout       [int]            - Connection timeout in seconds.
-CreatedAt     [string]         - ISO 8601 creation timestamp.
-UpdatedAt     [string]         - ISO 8601 last update timestamp.
+  SchemaVersion [int]            - Schema version.
+  Server        [string]         - SMTP server hostname.
+  Port          [int]            - SMTP server port.
+  Ssl           [bool]           - Whether SSL is enabled.
+  Username      [string]         - SMTP authentication username.
+  Password      [string]         - DPAPI-encrypted password blob.
+  From          [pscustomobject] - Sender address object.
+  SenderAddress [pscustomobject] - Optional technical sender address.
+  ReplyTo       [pscustomobject] - Optional reply-to address.
+  Timeout       [int]            - Connection timeout in seconds.
+  CreatedAt     [string]         - ISO 8601 UTC creation timestamp.
+  UpdatedAt     [string]         - ISO 8601 UTC last update timestamp,
+                                   or $null on first save.
 
 .EXAMPLE
-PS C:\> $smtp = Get-SmtpConfig
->> $secure = ConvertFrom-DpapiString -Value $smtp.Password
+PS C:> $smtp   = Get-SmtpConfig
+PS C:> $secure = ConvertFrom-DpapiString -Value $smtp.Password
 
 .NOTES
 Private dependencies:
@@ -41,79 +42,92 @@ function Get-SmtpConfig {
     [OutputType([pscustomobject])]
     param ()
 
-    $path = Join-Path -Path (Get-StorePath -Scope Root) -ChildPath 'smtp.json'
+    $rootPath   = Get-StorePath -Scope Root
+    $configPath = Join-Path -Path $rootPath -ChildPath 'smtp.json'
 
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    if (-not [System.IO.File]::Exists($configPath)) {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
                 [System.IO.FileNotFoundException]::new(
-                    "smtp.json not found. Run Set-PipeSmtp to configure SMTP. Path: '$path'",
-                    $path
+                    'SMTP configuration file was not found.',
+                    $configPath
                 ),
                 'SmtpConfigNotFound',
                 [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                $path
+                $configPath
             )
         )
     }
 
-    $raw = $null
-
     try {
-        $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop |
-            ConvertFrom-Json -ErrorAction Stop
+        $json = [System.IO.File]::ReadAllText(
+            $configPath,
+            [System.Text.UTF8Encoding]::new($false)
+        )
+
+        if ([string]::IsNullOrWhiteSpace($json)) {
+            throw [System.IO.InvalidDataException]::new(
+                'SMTP configuration file is empty.'
+            )
+        }
+
+        $config = $json | ConvertFrom-Json
     } catch {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
                 [System.IO.InvalidDataException]::new(
-                    "Failed to parse smtp.json: $($_.Exception.Message)",
+                    'Failed to read or parse the SMTP configuration file.',
                     $_.Exception
                 ),
                 'SmtpConfigInvalid',
                 [System.Management.Automation.ErrorCategory]::InvalidData,
-                $path
+                $configPath
             )
         )
     }
 
-    $validation = Test-Smtp -InputObject $raw
+    $validation = Test-Smtp -InputObject $config
 
     if (-not $validation.IsValid) {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
                 [System.IO.InvalidDataException]::new(
-                    "smtp.json failed validation: $($validation.Errors -join '; ')"
+                    "SMTP configuration is invalid. $($validation.Errors -join ' ')"
                 ),
                 'SmtpConfigInvalid',
                 [System.Management.Automation.ErrorCategory]::InvalidData,
-                $path
+                $configPath
             )
         )
     }
 
-    $createdAt = if ($raw.CreatedAt -is [datetime]) {
-        $raw.CreatedAt.ToUniversalTime().ToString('o')
+    # Timestamps are returned as strings to preserve the ISO 8601 UTC format
+    # written by Save-SmtpConfig. Casting to [datetime] or [DateTimeOffset]
+    # here would lose the offset on .NET Framework and break the round-trip
+    # contract with Save-SmtpConfig.
+    $createdAt = if ($null -ne $config.CreatedAt) {
+        [string]$config.CreatedAt
     } else {
-        [string]$raw.CreatedAt
+        $null
     }
 
-    $updatedAt = if ($raw.UpdatedAt -is [datetime]) {
-        $raw.UpdatedAt.ToUniversalTime().ToString('o')
+    $updatedAt = if ($null -ne $config.UpdatedAt) {
+        [string]$config.UpdatedAt
     } else {
-        [string]$raw.UpdatedAt
+        $null
     }
 
-    [PSCustomObject]@{
-        SchemaVersion = [int]$raw.SchemaVersion
-        Server        = [string]$raw.Server
-        Port          = [int]$raw.Port
-        Ssl           = [bool]$raw.Ssl
-        Username      = [string]$raw.Username
-        Password      = [string]$raw.Password
-        From          = $raw.From
-        SenderAddress = $raw.SenderAddress
-        ReplyTo       = $raw.ReplyTo
-        Timeout       = [int]$raw.Timeout
+    [PSCustomObject][ordered]@{
+        SchemaVersion = [int]$config.SchemaVersion
+        Server        = [string]$config.Server
+        Port          = [int]$config.Port
+        Ssl           = [bool]$config.Ssl
+        Username      = [string]$config.Username
+        Password      = [string]$config.Password
+        From          = $config.From
+        SenderAddress = $config.SenderAddress
+        ReplyTo       = $config.ReplyTo
+        Timeout       = [int]$config.Timeout
         CreatedAt     = $createdAt
         UpdatedAt     = $updatedAt
     }
