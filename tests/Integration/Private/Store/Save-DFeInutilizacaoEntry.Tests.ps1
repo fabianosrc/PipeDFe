@@ -57,6 +57,8 @@ Describe 'Save-DFeInutilizacaoEntry' {
         #region Infrastructure
         BeforeAll {
 
+            $Script:OriginalLocalAppData = $env:LOCALAPPDATA
+
             $joinPathParams = @{
                 Path      = [System.IO.Path]::GetTempPath()
                 ChildPath = 'PipeDFe.Save-DFeInutilizacaoEntry.Tests-' + [guid]::NewGuid().ToString('N')
@@ -180,17 +182,13 @@ WHERE  id_inut = @id_inut;
                     [System.IO.FileInfo]$File
                 )
 
-                $fileHashParams = @{
-                    LiteralPath = $File.FullName
-                    Algorithm   = 'SHA256'
-                    ErrorAction = 'Stop'
-                }
-
-                (Get-FileHash @fileHashParams).Hash
+                Get-FileSha256 -Path $File.FullName
             }
         }
 
         AfterAll {
+
+            $env:LOCALAPPDATA = $Script:OriginalLocalAppData
 
             if ($null -ne $Script:TestRoot -and (Test-Path -LiteralPath $Script:TestRoot)) {
                 $removeItemParams = @{

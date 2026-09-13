@@ -59,6 +59,8 @@ Describe 'Save-DFeDocumentEntry' {
         #region Infrastructure
         BeforeAll {
 
+            $Script:OriginalLocalAppData = $env:LOCALAPPDATA
+
             $joinPathParams = @{
                 Path      = [System.IO.Path]::GetTempPath()
                 ChildPath = 'PipeDFe.Save-DFeDocumentEntry.Tests-' + [guid]::NewGuid().ToString('N')
@@ -200,17 +202,13 @@ WHERE  chave_acesso = @chave;
                     [System.IO.FileInfo]$File
                 )
 
-                $fileHashParams = @{
-                    LiteralPath = $File.FullName
-                    Algorithm   = 'SHA256'
-                    ErrorAction = 'Stop'
-                }
-
-                (Get-FileHash @fileHashParams).Hash
+                Get-FileSha256 -Path $File.FullName
             }
         }
 
         AfterAll {
+
+            $env:LOCALAPPDATA = $Script:OriginalLocalAppData
 
             if ($null -ne $Script:TestRoot -and (Test-Path -LiteralPath $Script:TestRoot)) {
                 $removeItemParams = @{
