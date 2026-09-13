@@ -294,13 +294,16 @@ Describe 'Set-PipeCompany' {
             # Interactive certificate setup
             Mock -CommandName Invoke-CertificateSetup -MockWith {
                 param (
-                    [string]$Path
+                    [string]$Path,
+                    [System.Security.SecureString]$Password
                 )
 
                 $null = $Path
+                $null = $Password
 
                 return [PSCustomObject]@{
-                    EncryptedPassword = 'interactive-blob'
+                    EncryptedPassword = 'encrypted-blob'
+                    ExpiresOn         = [System.DateTimeOffset]::UtcNow.AddYears(1)
                 }
             }
 
@@ -769,7 +772,7 @@ Describe 'Set-PipeCompany' {
                 Should -Invoke -CommandName Invoke-CertificateSetup -Times 0 -Exactly
             }
 
-            It 'Calls ConvertTo-DpapiString when CertPath and CertPassword are supplied' {
+            It 'Calls Invoke-CertificateSetup when CertPath and CertPassword are supplied' {
                 $setParams = @{
                     Cnpj         = $Script:Cnpj
                     CertPath     = $Script:CertPath
@@ -778,11 +781,28 @@ Describe 'Set-PipeCompany' {
 
                 Set-PipeCompany @setParams
 
-                Should -Invoke -CommandName ConvertTo-DpapiString -Times 1 -Exactly -ParameterFilter {
-                    $null -ne $Value
+                $invokeParams = @{
+                    CommandName     = 'Invoke-CertificateSetup'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Path -eq $Script:CertPath -and $null -ne $Password
+                    }
                 }
 
-                Should -Invoke -CommandName Invoke-CertificateSetup -Times 0 -Exactly
+                Should -Invoke @invokeParams
+
+                $invokeParamsTwo = @{
+                    CommandName = 'ConvertTo-DpapiString'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParamsTwo
 
                 $Script:CapturedFactoryParams.CertPath     | Should -Be $Script:CertPath
                 $Script:CapturedFactoryParams.CertPassword | Should -Be 'encrypted-blob'
@@ -791,20 +811,35 @@ Describe 'Set-PipeCompany' {
             It 'Calls Invoke-CertificateSetup when CertPath is provided without CertPassword' {
                 Set-PipeCompany -Cnpj $Script:Cnpj -CertPath $Script:CertPath
 
-                Should -Invoke -CommandName Invoke-CertificateSetup -Times 1 -Exactly -ParameterFilter {
-                    $Path -eq $Script:CertPath
+                $invokeParams = @{
+                    CommandName     = 'Invoke-CertificateSetup'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $Path -eq $Script:CertPath -and $null -eq $Password }
                 }
 
-                Should -Invoke -CommandName ConvertTo-DpapiString -Times 0 -Exactly
+                Should -Invoke @invokeParams
+
+                $invokeParamsTwo = @{
+                    CommandName = 'ConvertTo-DpapiString'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParamsTwo
 
                 $Script:CapturedFactoryParams.CertPath     | Should -Be $Script:CertPath
-                $Script:CapturedFactoryParams.CertPassword | Should -Be 'interactive-blob'
+                $Script:CapturedFactoryParams.CertPassword | Should -Be 'encrypted-blob'
             }
 
-            It 'Propagates the interactive certificate password to ConvertTo-CompanyObject' {
+            It 'Propagates the certificate password to ConvertTo-CompanyObject' {
                 Set-PipeCompany -Cnpj $Script:Cnpj -CertPath $Script:CertPath
 
-                $Script:CapturedFactoryParams.CertPassword | Should -Be 'interactive-blob'
+                $Script:CapturedFactoryParams.CertPassword | Should -Be 'encrypted-blob'
             }
 
             It 'Rejects a certificate path that does not exist' {

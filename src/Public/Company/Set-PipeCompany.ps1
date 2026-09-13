@@ -89,11 +89,10 @@ PS C:\> Set-PipeCompany -Cnpj '12345678000195' -IsActive $false
 Private dependencies:
   Assert-CompanyInput
   ConvertTo-CompanyObject
-  ConvertTo-DpapiString
   ConvertTo-NormalizedCnpj
   ConvertTo-NormalizedMailRecipient
   Get-CompanyConfig
-  Invoke-CertificateSetup
+  Resolve-CompanyCertificate
   Save-CompanyConfig
 #>
 function Set-PipeCompany {
@@ -262,7 +261,6 @@ function Set-PipeCompany {
     } else {
         @($existing.Email.Cco | Where-Object { $null -ne $_ })
     }
-
     #endregion
 
     #region Phase 4 - Validate
@@ -285,15 +283,14 @@ function Set-PipeCompany {
     #endregion
 
     #region Phase 5 - Construct
-
-    $resolvedCertParams = @{
+    $certParams = @{
         Bound        = $bound
         CertPath     = $CertPath
         CertPassword = $CertPassword
         Existing     = $existing.Certificado
     }
 
-    $resolvedCertificado = Resolve-SetCompanyCertificate @resolvedCertParams
+    $resolvedCertificado = Resolve-CompanyCertificate @certParams
 
     $factoryParams = @{
         Cnpj           = $cnpjNormalized
@@ -321,103 +318,30 @@ function Set-PipeCompany {
     $company.IsActive      = $resolvedIsActive
     $company.CreatedAt     = $existing.CreatedAt
     $company.SchemaVersion = $existing.SchemaVersion
-
     #endregion
 
     #region Phase 6 - Persist
-
     if (-not $PSCmdlet.ShouldProcess($cnpjNormalized, 'Update company configuration')) {
         return
     }
 
     Save-CompanyConfig -Company $company -AsUpdate
 
-    # Always return the persisted representation rather than the
-    # pre-persistence object.
     $updated = Get-CompanyConfig -Cnpj $cnpjNormalized
 
     if ($null -eq $updated) {
-        $errorRecord = New-Object System.Management.Automation.ErrorRecord(
-            ([System.InvalidOperationException]::new(
-                "Company '$cnpjNormalized' could not be reloaded after update."
-            )),
-            'CompanyReloadFailed',
-            [System.Management.Automation.ErrorCategory]::InvalidResult,
-            $cnpjNormalized
-        )
-
-        $PSCmdlet.ThrowTerminatingError($errorRecord)
-    }
-
-    return $updated
-
-    #endregion
-}
-
-#region Private helper
-function Resolve-SetCompanyCertificate {
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param (
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$Bound,
-
-        [Parameter()]
-        [AllowNull()]
-        [AllowEmptyString()]
-        [string]$CertPath,
-
-        [Parameter()]
-        [AllowNull()]
-        [System.Security.SecureString]$CertPassword,
-
-        [Parameter(Mandatory)]
-        [AllowNull()]
-        [pscustomobject]$Existing
-    )
-
-    $existingPath = if ($null -ne $Existing) {
-        $Existing.Path
-    } else {
-        $null
-    }
-
-    $existingPassword = if ($null -ne $Existing) {
-        $Existing.EncryptedPassword
-    } else {
-        $null
-    }
-
-    if (-not $Bound.ContainsKey('CertPath')) {
-        return [PSCustomObject]@{
-            Path              = $existingPath
-            EncryptedPassword = $existingPassword
-        }
-    }
-
-    if (-not (Test-Path -LiteralPath $CertPath -PathType Leaf)) {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
-                [System.IO.FileNotFoundException]::new(
-                    "Certificate file not found: '$CertPath'"
+                [System.InvalidOperationException]::new(
+                    "Company '$cnpjNormalized' could not be reloaded after update."
                 ),
-                'CertNotFound',
-                [System.Management.Automation.ErrorCategory]::ObjectNotFound,
-                $CertPath
+                'CompanyReloadFailed',
+                [System.Management.Automation.ErrorCategory]::InvalidResult,
+                $cnpjNormalized
             )
         )
     }
 
-    if ($Bound.ContainsKey('CertPassword')) {
-        $encryptedPassword = ConvertTo-DpapiString -Value $CertPassword
-    } else {
-        $certSetup         = Invoke-CertificateSetup -Path $CertPath
-        $encryptedPassword = $certSetup.EncryptedPassword
-    }
-
-    [PSCustomObject]@{
-        Path              = $CertPath
-        EncryptedPassword = $encryptedPassword
-    }
+    $updated
+    #endregion
 }
-#endregion
