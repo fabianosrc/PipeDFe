@@ -61,7 +61,7 @@ Describe 'ConvertTo-MailAddress' {
         Context 'Parameter contract' {
 
             It 'Declares Email as mandatory' {
-                $mandatory = $Script:Command.Parameters['Email'].Attributes |
+                $mandatory = $Script:Command.Parameters['InputObject'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
@@ -71,7 +71,7 @@ Describe 'ConvertTo-MailAddress' {
             }
 
             It 'Accepts Email from the pipeline' {
-                $pipeline = $Script:Command.Parameters['Email'].Attributes |
+                $pipeline = $Script:Command.Parameters['InputObject'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.ValueFromPipeline
@@ -81,7 +81,7 @@ Describe 'ConvertTo-MailAddress' {
             }
 
             It 'Accepts Email from pipeline property binding' {
-                $propertyBinding = $Script:Command.Parameters['Email'].Attributes |
+                $propertyBinding = $Script:Command.Parameters['InputObject'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.ValueFromPipelineByPropertyName
@@ -90,17 +90,17 @@ Describe 'ConvertTo-MailAddress' {
                 $propertyBinding | Should -Not -BeNullOrEmpty
             }
 
-            It 'Allows null values for Email' {
-                $allowNull = $Script:Command.Parameters['Email'].Attributes |
+            It 'Allows empty string values for InputObject' {
+                $allowEmptyString = $Script:Command.Parameters['InputObject'].Attributes |
                     Where-Object {
-                        $_ -is [System.Management.Automation.AllowNullAttribute]
+                        $_ -is [System.Management.Automation.AllowEmptyStringAttribute]
                     }
 
-                $allowNull | Should -Not -BeNullOrEmpty
+                $allowEmptyString | Should -Not -BeNullOrEmpty
             }
 
             It 'Allows empty strings for Email' {
-                $allowEmpty = $Script:Command.Parameters['Email'].Attributes |
+                $allowEmpty = $Script:Command.Parameters['InputObject'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.AllowEmptyStringAttribute]
                     }
@@ -109,12 +109,12 @@ Describe 'ConvertTo-MailAddress' {
             }
 
             It 'Declares Email as a string array' {
-                $Script:Command.Parameters['Email'].ParameterType |
+                $Script:Command.Parameters['InputObject'].ParameterType |
                     Should -Be ([string[]])
             }
 
             It 'Accepts EmailList as alias for Email' {
-                $Script:Command.Parameters['Email'].Aliases |
+                $Script:Command.Parameters['InputObject'].Aliases |
                     Should -Contain 'EmailList'
             }
 
@@ -129,30 +129,30 @@ Describe 'ConvertTo-MailAddress' {
         Context 'Parsing' {
 
             It 'Parses a plain email address' {
-                $result = ConvertTo-MailAddress -Email 'joao@empresa.com.br'
+                $result = ConvertTo-MailAddress -InputObject 'joao@empresa.com.br'
                 $result.Email | Should -Be 'joao@empresa.com.br'
             }
 
             It 'Parses a display name format address' {
-                $result = ConvertTo-MailAddress -Email 'Joao Silva <joao@empresa.com.br>'
+                $result = ConvertTo-MailAddress -InputObject 'Joao Silva <joao@empresa.com.br>'
 
                 $result.Email | Should -Be 'joao@empresa.com.br'
                 $result.Name  | Should -Be 'Joao Silva'
             }
 
             It 'Preserves the display name' {
-                $result = ConvertTo-MailAddress -Email '"Joao Silva" <joao@empresa.com.br>'
+                $result = ConvertTo-MailAddress -InputObject '"Joao Silva" <joao@empresa.com.br>'
                 $result.Name | Should -Be 'Joao Silva'
             }
 
-            It 'Uses the email address as Name when no display name is present' {
-                $result = ConvertTo-MailAddress -Email 'joao@empresa.com.br'
-                $result.Name | Should -Be 'joao@empresa.com.br'
+            It 'Sets Name to empty string when no display name is present' {
+                $result = ConvertTo-MailAddress -InputObject 'joao@empresa.com.br'
+                $result.Name | Should -BeNullOrEmpty
             }
 
             It 'Parses a comma-separated list in a single string' {
                 $results = @(
-                    ConvertTo-MailAddress -Email 'joao@empresa.com.br, maria@empresa.com.br'
+                    ConvertTo-MailAddress -InputObject 'joao@empresa.com.br, maria@empresa.com.br'
                 )
 
                 $results | Should -HaveCount 2
@@ -162,7 +162,7 @@ Describe 'ConvertTo-MailAddress' {
 
             It 'Parses a semicolon-separated list in a single string' {
                 $results = @(
-                    ConvertTo-MailAddress -Email 'joao@empresa.com.br; maria@empresa.com.br'
+                    ConvertTo-MailAddress -InputObject 'joao@empresa.com.br; maria@empresa.com.br'
                 )
 
                 $results | Should -HaveCount 2
@@ -172,7 +172,7 @@ Describe 'ConvertTo-MailAddress' {
 
             It 'Parses mixed comma and semicolon delimiters' {
                 $results = @(
-                    ConvertTo-MailAddress -Email 'joao@empresa.com.br, maria@empresa.com.br; ana@empresa.com.br'
+                    ConvertTo-MailAddress -InputObject 'joao@empresa.com.br, maria@empresa.com.br; ana@empresa.com.br'
                 )
 
                 $results | Should -HaveCount 3
@@ -180,7 +180,7 @@ Describe 'ConvertTo-MailAddress' {
 
             It 'Handles whitespace around delimiters' {
                 $results = @(
-                    ConvertTo-MailAddress -Email '  joao@empresa.com.br  ;  maria@empresa.com.br  '
+                    ConvertTo-MailAddress -InputObject '  joao@empresa.com.br  ;  maria@empresa.com.br  '
                 )
 
                 $results | Should -HaveCount 2
@@ -192,7 +192,7 @@ Describe 'ConvertTo-MailAddress' {
         Context 'Normalization' {
 
             It 'Normalizes email addresses to lowercase' {
-                $result = ConvertTo-MailAddress -Email 'JOAO@EMPRESA.COM.BR'
+                $result = ConvertTo-MailAddress -InputObject 'JOAO@EMPRESA.COM.BR'
                 $result.Email | Should -Be 'joao@empresa.com.br'
             }
 
@@ -208,7 +208,7 @@ Describe 'ConvertTo-MailAddress' {
 
             It 'Deduplicates addresses within a single input' {
                 $results = @(
-                    ConvertTo-MailAddress -Email 'joao@empresa.com.br, JOAO@EMPRESA.COM.BR'
+                    ConvertTo-MailAddress -InputObject 'joao@empresa.com.br, JOAO@EMPRESA.COM.BR'
                 )
 
                 $results | Should -HaveCount 1
@@ -227,8 +227,8 @@ Describe 'ConvertTo-MailAddress' {
             }
 
             It 'Does not leak deduplication state between invocations' {
-                $first  = ConvertTo-MailAddress -Email 'joao@empresa.com.br'
-                $second = ConvertTo-MailAddress -Email 'joao@empresa.com.br'
+                $first  = ConvertTo-MailAddress -InputObject 'joao@empresa.com.br'
+                $second = ConvertTo-MailAddress -InputObject 'joao@empresa.com.br'
 
                 $first  | Should -HaveCount 1
                 $second | Should -HaveCount 1
@@ -240,17 +240,17 @@ Describe 'ConvertTo-MailAddress' {
         Context 'Invalid input' {
 
             It 'Skips an empty string silently' {
-                $results = @(ConvertTo-MailAddress -Email '')
+                $results = @(ConvertTo-MailAddress -InputObject '')
                 $results | Should -HaveCount 0
             }
 
             It 'Skips whitespace-only input silently' {
-                $results = @(ConvertTo-MailAddress -Email '   ')
+                $results = @(ConvertTo-MailAddress -InputObject '   ')
                 $results | Should -HaveCount 0
             }
 
             It 'Skips invalid addresses in normal mode' {
-                $results = @(ConvertTo-MailAddress -Email 'not-an-email')
+                $results = @(ConvertTo-MailAddress -InputObject 'not-an-email')
 
                 $results | Should -HaveCount 0
             }
@@ -258,14 +258,14 @@ Describe 'ConvertTo-MailAddress' {
             It 'Does not emit a warning for an invalid address' {
                 $warnings = @()
 
-                ConvertTo-MailAddress -Email 'not-an-email' -WarningVariable warnings | Out-Null
+                ConvertTo-MailAddress -InputObject 'not-an-email' -WarningVariable warnings | Out-Null
 
                 $warnings | Should -HaveCount 0
             }
 
             It 'Skips invalid addresses while preserving valid addresses' {
                 $results = @(
-                    ConvertTo-MailAddress -Email 'valid@example.com; invalid'
+                    ConvertTo-MailAddress -InputObject 'valid@example.com; invalid'
                 )
 
                 $results | Should -HaveCount 1
@@ -276,7 +276,7 @@ Describe 'ConvertTo-MailAddress' {
                 $thrown = $null
 
                 try {
-                    ConvertTo-MailAddress -Email 'not-an-email' -Strict -ErrorAction Stop
+                    ConvertTo-MailAddress -InputObject 'not-an-email' -Strict -ErrorAction Stop
                 } catch {
                     $thrown = $_
                 }
@@ -289,7 +289,7 @@ Describe 'ConvertTo-MailAddress' {
                 $thrown = $null
 
                 try {
-                    ConvertTo-MailAddress -Email 'not-an-email' -Strict -ErrorAction Stop
+                    ConvertTo-MailAddress -InputObject 'not-an-email' -Strict -ErrorAction Stop
                 } catch {
                     $thrown = $_
                 }
@@ -302,7 +302,7 @@ Describe 'ConvertTo-MailAddress' {
                 $thrown = $null
 
                 try {
-                    ConvertTo-MailAddress -Email 'not-an-email' -Strict -ErrorAction Stop
+                    ConvertTo-MailAddress -InputObject 'not-an-email' -Strict -ErrorAction Stop
                 } catch {
                     $thrown = $_
                 }
@@ -353,7 +353,7 @@ Describe 'ConvertTo-MailAddress' {
 
             It 'Accepts pipeline property binding' {
                 $inputObject = [PSCustomObject]@{
-                    Email = 'joao@empresa.com.br'
+                    InputObject = 'joao@empresa.com.br'
                 }
 
                 $result = $inputObject | ConvertTo-MailAddress
@@ -377,7 +377,7 @@ Describe 'ConvertTo-MailAddress' {
 
             BeforeAll {
 
-                $Script:Sample = ConvertTo-MailAddress -Email 'Joao Silva <joao@empresa.com.br>'
+                $Script:Sample = ConvertTo-MailAddress -InputObject 'Joao Silva <joao@empresa.com.br>'
             }
 
             It 'Returns a PSCustomObject' {

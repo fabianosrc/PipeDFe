@@ -13,10 +13,9 @@ across the entire pipeline invocation.
 Invalid addresses are skipped by default. When -Strict is specified,
 a terminating InvalidData error is thrown for the first invalid address.
 
-Display names are preserved as provided by the email parser. When no
-display name is present, Name is set to the normalized email address.
+When no display name is present, Name is set to an empty string.
 
-.PARAMETER Email
+.PARAMETER InputObject
 One or more email address strings. Accepts pipeline input and
 ValueFromPipelineByPropertyName.
 
@@ -27,23 +26,22 @@ Throws a terminating InvalidData error when an invalid address is found.
 System.Management.Automation.PSCustomObject
 
 Properties:
-  Name  [string] Display name, or normalized email when absent.
+  Name  [string] Display name, or empty string when absent.
   Email [string] Normalized lowercase email address.
 
 .EXAMPLE
-PS C:\> ConvertTo-MailAddress -Email 'joao@empresa.com.br'
+PS C:\> ConvertTo-MailAddress -InputObject 'joao@empresa.com.br'
 
 .EXAMPLE
 PS C:\> 'Joao Silva <joao@empresa.com.br>', 'maria@empresa.com.br' |
 >> ConvertTo-MailAddress
 
 .EXAMPLE
-PS C:\> ConvertTo-MailAddress `
->> -Email 'joao@empresa.com.br; maria@empresa.com.br'
+PS C:\> ConvertTo-MailAddress -InputObject 'joao@empresa.com.br;
+>> maria@empresa.com.br'
 
 .EXAMPLE
-PS C:\> ConvertTo-MailAddress `
->> -Email 'valid@example.com; invalid'
+PS C:\> ConvertTo-MailAddress -InputObject 'valid@example.com; invalid'
 
 .NOTES
 No external I/O or warnings are produced.
@@ -59,79 +57,68 @@ function ConvertTo-MailAddress {
     param (
         [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
         [Alias('EmailList')]
-        [AllowNull()]
+        [AllowEmptyCollection()]
         [AllowEmptyString()]
-        [string[]]$Email,
+        [string[]]$InputObject,
 
         [Parameter()]
         [switch]$Strict
     )
 
     begin {
-        $seenEmails = [System.Collections.Generic.HashSet[string]]::new(
+        $seen = [System.Collections.Generic.HashSet[string]]::new(
             [System.StringComparer]::OrdinalIgnoreCase
         )
+
+        $emailPattern = '^[^@\s]+@[^@\s]+$'
     }
 
     process {
-        if ($null -eq $Email) {
-            return
-        }
-
-        foreach ($inputValue in $Email) {
-            if ([string]::IsNullOrWhiteSpace($inputValue)) {
+        foreach ($value in $InputObject) {
+            if ([string]::IsNullOrWhiteSpace($value)) {
                 continue
             }
 
-            $entries = $inputValue -split '\s*[,;]\s*'
+            foreach ($candidate in ($value -split '[,;]')) {
+                $candidate = $candidate.Trim()
 
-            foreach ($entry in $entries) {
-                $value = $entry.Trim()
-
-                if ([string]::IsNullOrWhiteSpace($value)) {
+                if ([string]::IsNullOrWhiteSpace($candidate)) {
                     continue
                 }
-
-                $mailAddress = $null
 
                 try {
-                    $mailAddress = [System.Net.Mail.MailAddress]::new($value)
-                } catch [System.FormatException] {
-                    if (-not $Strict) {
-                        continue
+                    $mailAddress = [System.Net.Mail.MailAddress]::new($candidate)
+
+                    if ($Strict -and $mailAddress.Address -notmatch $emailPattern) {
+                        throw [System.FormatException]::new("Invalid email address '$candidate'.")
+                    }
+                } catch {
+                    if ($Strict) {
+                        $PSCmdlet.ThrowTerminatingError(
+                            [System.Management.Automation.ErrorRecord]::new(
+                                [System.FormatException]::new(
+                                    "Invalid email address '$candidate'.",
+                                    $_.Exception
+                                ),
+                                'InvalidMailAddress',
+                                [System.Management.Automation.ErrorCategory]::InvalidData,
+                                $candidate
+                            )
+                        )
                     }
 
-                    $message = "Invalid email address: '$value'."
-
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                        [System.FormatException]::new($message),
-                        'InvalidMailAddress',
-                        [System.Management.Automation.ErrorCategory]::InvalidData,
-                        $value
-                    )
-
-                    $PSCmdlet.ThrowTerminatingError($errorRecord)
-                }
-
-                if ($null -eq $mailAddress) {
                     continue
                 }
 
-                $normalizedEmail = $mailAddress.Address.Trim().ToLowerInvariant()
+                $email = $mailAddress.Address.Trim().ToLowerInvariant()
 
-                if (-not $seenEmails.Add($normalizedEmail)) {
+                if (-not $seen.Add($email)) {
                     continue
-                }
-
-                $displayName = $mailAddress.DisplayName.Trim()
-
-                if ([string]::IsNullOrWhiteSpace($displayName)) {
-                    $displayName = $normalizedEmail
                 }
 
                 [PSCustomObject]@{
-                    Name  = $displayName
-                    Email = $normalizedEmail
+                    Name  = $mailAddress.DisplayName
+                    Email = $email
                 }
             }
         }
