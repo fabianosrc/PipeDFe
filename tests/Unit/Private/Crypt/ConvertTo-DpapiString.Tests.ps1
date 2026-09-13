@@ -9,8 +9,8 @@ Verifies that ConvertTo-DpapiString delegates to ConvertFrom-SecureString
 and wraps failures in a structured terminating error.
 
 Coverage includes:
-  - Value is mandatory.
-  - Value rejects null.
+  - SecureString is mandatory.
+  - SecureString rejects null.
   - Returns the encrypted string produced by ConvertFrom-SecureString.
   - Throws DpapiEncryptFailed when ConvertFrom-SecureString fails.
   - DpapiEncryptFailed uses SecurityError category.
@@ -44,16 +44,29 @@ Describe 'ConvertTo-DpapiString' {
 
         BeforeAll {
 
-            $Script:Command       = Get-Command -Name ConvertTo-DpapiString -ErrorAction Stop
-            $Script:SecureValue   = ConvertTo-SecureString -String 'vgqTHH9Gyci9UG' -AsPlainText -Force
+            $Script:Command = Get-Command -Name ConvertTo-DpapiString -ErrorAction Stop
+
+            $secureStringParams = @{
+                String      = 'vgqTHH9Gyci9UG'
+                AsPlainText = $true
+                Force       = $true
+            }
+
+            $Script:SecureValue = ConvertTo-SecureString @secureStringParams
+
             $Script:EncryptedBlob = 'encrypted-blob-placeholder'
+        }
+
+        AfterAll {
+
+            Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
         }
 
         #region Parameter contract
         Context 'Parameter contract' {
 
-            It 'Declares Value as mandatory' {
-                $mandatory = $Script:Command.Parameters['Value'].Attributes |
+            It 'Declares SecureString as mandatory' {
+                $mandatory = $Script:Command.Parameters['SecureString'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
@@ -62,13 +75,13 @@ Describe 'ConvertTo-DpapiString' {
                 $mandatory | Should -Not -BeNullOrEmpty
             }
 
-            It 'Declares Value as SecureString' {
-                $Script:Command.Parameters['Value'].ParameterType |
+            It 'Declares SecureString as SecureString type' {
+                $Script:Command.Parameters['SecureString'].ParameterType |
                     Should -Be ([securestring])
             }
 
-            It 'Rejects a null Value' {
-                { ConvertTo-DpapiString -Value $null } | Should -Throw
+            It 'Rejects a null SecureString' {
+                { ConvertTo-DpapiString -SecureString $null } | Should -Throw
             }
         }
         #endregion
@@ -76,34 +89,37 @@ Describe 'ConvertTo-DpapiString' {
         #region Successful encryption
         Context 'Successful encryption' {
 
-            It 'Returns the encrypted string from ConvertFrom-SecureString' {
-                Mock -CommandName ConvertFrom-SecureString -MockWith {
-                    $Script:EncryptedBlob
-                }
+            BeforeEach {
 
-                $result = ConvertTo-DpapiString -Value $Script:SecureValue
+                Mock -CommandName ConvertFrom-SecureString -MockWith {
+                    return $Script:EncryptedBlob
+                }
+            }
+
+            It 'Returns the encrypted string from ConvertFrom-SecureString' {
+                $result = ConvertTo-DpapiString -SecureString $Script:SecureValue
 
                 $result | Should -Be $Script:EncryptedBlob
             }
 
             It 'Returns a string' {
-                Mock -CommandName ConvertFrom-SecureString -MockWith {
-                    $Script:EncryptedBlob
-                }
-
-                $result = ConvertTo-DpapiString -Value $Script:SecureValue
+                $result = ConvertTo-DpapiString -SecureString $Script:SecureValue
 
                 $result | Should -BeOfType [string]
             }
 
-            It 'Passes the SecureString to ConvertFrom-SecureString' {
-                Mock -CommandName ConvertFrom-SecureString -MockWith {
-                    $Script:EncryptedBlob
+            It 'Calls ConvertFrom-SecureString exactly once' {
+                ConvertTo-DpapiString -SecureString $Script:SecureValue | Out-Null
+
+                $invokeParams = @{
+                    CommandName = 'ConvertFrom-SecureString'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 1
                 }
 
-                ConvertTo-DpapiString -Value $Script:SecureValue
-
-                Should -Invoke -CommandName ConvertFrom-SecureString -Times 1 -Exactly
+                Should -Invoke @invokeParams
             }
         }
         #endregion
@@ -122,7 +138,7 @@ Describe 'ConvertTo-DpapiString' {
                 $Script:Thrown = $null
 
                 try {
-                    ConvertTo-DpapiString -Value $Script:SecureValue -ErrorAction Stop
+                    ConvertTo-DpapiString -SecureString $Script:SecureValue -ErrorAction Stop
                 } catch {
                     $Script:Thrown = $_
                 }
@@ -139,7 +155,7 @@ Describe 'ConvertTo-DpapiString' {
             }
 
             It 'Preserves the original exception' {
-                $Script:Thrown.Exception.Message |
+                $Script:Thrown.Exception.InnerException.Message |
                     Should -Be $Script:OriginalException.Message
             }
 
