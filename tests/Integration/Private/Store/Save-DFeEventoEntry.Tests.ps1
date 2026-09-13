@@ -190,7 +190,7 @@ Describe 'Save-DFeEventoEntry' {
                     [System.IO.FileInfo]$File
                 )
 
-                (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+                Get-FileSha256 -Path $File.FullName
             }
         }
 

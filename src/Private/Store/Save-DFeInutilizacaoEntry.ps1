@@ -147,13 +147,7 @@ function Save-DFeInutilizacaoEntry {
 
     # Compute SHA-256 before opening the connection - file I/O must not
     # happen inside the transaction.
-    $fileHashParams = @{
-        LiteralPath = $Metadata.File.FullName
-        Algorithm   = 'SHA256'
-        ErrorAction = 'Stop'
-    }
-
-    $incomingSha256 = (Get-FileHash @fileHashParams).Hash
+    $incomingSha256 = Get-FileSha256 -Path $Metadata.File.FullName
 
     $connection  = $null
     $transaction = $null

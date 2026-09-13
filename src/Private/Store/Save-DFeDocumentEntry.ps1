@@ -117,14 +117,8 @@ function Save-DFeDocumentEntry {
 
     # Compute SHA-256 before opening the connection - file I/O must not
     # happen inside the transaction.
-    $hashParams = @{
-        LiteralPath = $Metadata.File.FullName
-        Algorithm   = 'SHA256'
-        ErrorAction = 'Stop'
-    }
-
     $incomingIsProc = [int][bool]$Metadata.IsProc
-    $incomingSha256 = (Get-FileHash @hashParams).Hash
+    $incomingSha256 = Get-FileSha256 -Path $Metadata.File.FullName
 
     $ndoc = if ($null -eq $Metadata.Ndoc -or
         [string]::IsNullOrWhiteSpace([string]$Metadata.Ndoc)) {
