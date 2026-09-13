@@ -6,11 +6,24 @@ Persists the global SMTP configuration.
 Accepts SMTP parameters, encrypts the password via DPAPI, validates the
 resulting configuration and writes it atomically to smtp.json.
 
-Throws SmtpConfigInvalid when any required field is missing or invalid.
-Throws SmtpConfigSaveFailed when the file cannot be written.
+On the first call - when smtp.json does not exist - Server, Port, Ssl,
+Username, Password and From are required. Subsequent calls may supply any
+subset of parameters; omitted parameters are preserved from the existing
+configuration.
 
-On the first call, CreatedAt is set to the current UTC moment. On
-subsequent calls, CreatedAt is preserved and only UpdatedAt is updated.
+Partial updates use PSBoundParameters to distinguish an explicit value
+from an omitted parameter. This means -Ssl $false correctly sets SSL to
+false rather than being treated as absent.
+
+Passing an empty string to -SenderAddress or -ReplyTo clears that field.
+
+When smtp.json exists but is corrupted or fails validation, the error is
+propagated unchanged. Corruption is never silently treated as absence.
+
+SchemaVersion is always set to the current version. An existing
+configuration is silently promoted when the schema changes.
+
+Throws SmtpConfigSaveFailed when the file cannot be written.
 
 .PARAMETER Server
 SMTP server hostname or IP address.
@@ -29,41 +42,47 @@ SMTP authentication password as a SecureString. Encrypted via DPAPI
 before being written to disk.
 
 .PARAMETER From
-Sender address. Accepts the formats accepted by ConvertTo-MailAddress:
-'Display Name <address@domain>' or 'address@domain'.
+Sender address. Accepts 'Display Name <address@domain>' or
+'address@domain'. When no display name is supplied, only the email
+address is stored.
 
 .PARAMETER SenderAddress
 Optional technical sender address used when the From address differs
-from the envelope sender. Same format as -From.
+from the envelope sender. Same format as -From. Pass an empty string
+to clear an existing value.
 
 .PARAMETER ReplyTo
-Optional reply-to address. Same format as -From.
+Optional reply-to address. Same format as -From. Pass an empty string
+to clear an existing value.
 
 .PARAMETER Timeout
-Connection timeout in seconds. Defaults to 30.
+Connection timeout in seconds. Defaults to 30 on first save.
 
 .OUTPUTS
-System.Management.Automation.PSCustomObject
-
-  SchemaVersion [int]            - Schema version.
-  Server        [string]         - SMTP server hostname.
-  Port          [int]            - SMTP server port.
-  Ssl           [bool]           - Whether SSL is enabled.
-  Username      [string]         - SMTP authentication username.
-  Password      [string]         - DPAPI-encrypted password blob.
-  From          [pscustomobject] - Sender display name and address.
-  SenderAddress [pscustomobject] - Optional technical sender address.
-  ReplyTo       [pscustomobject] - Optional reply-to address.
-  Timeout       [int]            - Connection timeout in seconds.
-  CreatedAt     [string]         - ISO 8601 UTC creation timestamp.
-  UpdatedAt     [string]         - ISO 8601 UTC last update timestamp.
+System.Management.Automation.PSCustomObject - TypeName: PipeDFe.Smtp
 
 .EXAMPLE
-PS C:\> $pwd = Read-Host -AsSecureString
+PS C:\> $password = Read-Host -AsSecureString
 
-PS C:\> Set-PipeSmtp -Server smtp.example.com -Port 587 -Ssl $true
->> -Username user@example.com -Password $pwd
->> -From 'Empresa <noreply@example.com>'
+PS C:\> $smtpParams = @{
+    Server   = 'smtp.example.com'
+    Port     = 587
+    Ssl      = $true
+    Username = 'user@example.com'
+    Password = $password
+    From     = 'Empresa <noreply@example.com>'
+}
+
+PS C:\> Set-PipeSmtp @smtpParams
+
+.EXAMPLE
+PS C:\> Set-PipeSmtp -Port 465
+
+.EXAMPLE
+PS C:\> Set-PipeSmtp -Ssl $false
+
+.EXAMPLE
+PS C:\> Set-PipeSmtp -ReplyTo ''
 
 .NOTES
 Private dependencies:
@@ -71,31 +90,35 @@ Private dependencies:
   ConvertTo-MailAddress
   Get-SmtpConfig
   Save-SmtpConfig
+  Get-PipeSmtp
 #>
 function Set-PipeSmtp {
-    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
+    [CmdletBinding(
+        SupportsShouldProcess,
+        ConfirmImpact = 'Medium'
+    )]
     [OutputType([pscustomobject])]
     param (
-        [Parameter(Mandatory)]
+        [Parameter()]
         [ValidateNotNullOrEmpty()]
         [string]$Server,
 
-        [Parameter(Mandatory)]
+        [Parameter()]
         [ValidateRange(1, 65535)]
         [int]$Port,
 
-        [Parameter(Mandatory)]
+        [Parameter()]
         [bool]$Ssl,
 
-        [Parameter(Mandatory)]
+        [Parameter()]
         [ValidateNotNullOrEmpty()]
         [string]$Username,
 
-        [Parameter(Mandatory)]
+        [Parameter()]
         [ValidateNotNull()]
         [System.Security.SecureString]$Password,
 
-        [Parameter(Mandatory)]
+        [Parameter()]
         [ValidateNotNullOrEmpty()]
         [string]$From,
 
@@ -108,67 +131,204 @@ function Set-PipeSmtp {
         [string]$ReplyTo,
 
         [Parameter()]
-        [ValidateRange(1, 3600)]
-        [int]$Timeout = 30
+        [ValidateRange(1, 120)]
+        [int]$Timeout
     )
 
-    # Encrypt and resolve addresses before any persistence attempt.
-    $encryptedPassword = ConvertTo-DpapiString -Value $Password
-
-    $fromObj = ConvertTo-MailAddress -Email $From | Select-Object -First 1
-
-    $senderAddressObj = $null
-    $replyToObj       = $null
-
-    if (-not [string]::IsNullOrWhiteSpace($SenderAddress)) {
-        $senderAddressObj = ConvertTo-MailAddress -Email $SenderAddress.Trim() |
-            Select-Object -First 1
-
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($ReplyTo)) {
-        $replyToObj = ConvertTo-MailAddress -Email $ReplyTo.Trim() |
-            Select-Object -First 1
-    }
-
-    # Attempt to load existing config to preserve CreatedAt.
-    # SmtpConfigNotFound is expected on first call and silenced intentionally.
-    $existing = $null
+    $existingConfig       = $null
+    $isFirstConfiguration = $false
 
     try {
-        $existing = Get-SmtpConfig -ErrorAction Stop
+        $existingConfig = Get-SmtpConfig
     } catch {
-        $null = $_
+        if ($_.FullyQualifiedErrorId -like 'SmtpConfigNotFound*') {
+            $isFirstConfiguration = $true
+        } else {
+            throw
+        }
     }
 
-    $now = [System.DateTimeOffset]::UtcNow.ToString('o', [cultureinfo]::InvariantCulture)
+    $bound = $PSBoundParameters
 
-    $createdAt = if ($null -ne $existing) {
-        [string]$existing.CreatedAt
+    if ($isFirstConfiguration) {
+        $requiredParameters = @('Server', 'Port', 'Ssl', 'Username', 'Password', 'From')
+
+        $missingParameters = @(
+            $requiredParameters | Where-Object { -not $bound.ContainsKey($_) }
+        )
+
+        if ($missingParameters.Count -gt 0) {
+            $PSCmdlet.ThrowTerminatingError(
+                [System.Management.Automation.ErrorRecord]::new(
+                    [System.ArgumentException]::new(
+                        "The following parameters are required for the first " +
+                        "SMTP configuration: $($missingParameters -join ', ')."
+                    ),
+                    'SmtpInitialConfigIncomplete',
+                    [System.Management.Automation.ErrorCategory]::InvalidArgument,
+                    $missingParameters
+                )
+            )
+        }
+
+        $timeoutSeconds = if ($bound.ContainsKey('Timeout')) {
+            $Timeout
+        } else {
+            30
+        }
+
+        $createdAtUtc = [System.DateTimeOffset]::UtcNow.ToString(
+            'o',
+            [System.Globalization.CultureInfo]::InvariantCulture
+        )
+
+        $config = [PSCustomObject][ordered]@{
+            SchemaVersion = [int]$Script:SmtpSchemaVersion
+            Server        = $Server
+            Port          = $Port
+            Ssl           = $Ssl
+            Username      = $Username
+            Password      = ConvertTo-DpapiString -SecureString $Password
+            From          = $null
+            SenderAddress = $null
+            ReplyTo       = $null
+            Timeout       = $timeoutSeconds
+            CreatedAt     = $createdAtUtc
+            UpdatedAt     = $null
+        }
+
+        $config.From = ConvertTo-MailAddress -InputObject $From -Strict |
+            Select-Object -First 1
+
+        if ($bound.ContainsKey('SenderAddress') -and -not
+            [string]::IsNullOrWhiteSpace($SenderAddress)
+        ) {
+            $senderAddressParams = @{
+                InputObject = $SenderAddress
+                Strict      = $true
+            }
+
+            $config.SenderAddress = ConvertTo-MailAddress @senderAddressParams |
+                Select-Object -First 1
+        }
+
+        if ($bound.ContainsKey('ReplyTo') -and -not
+            [string]::IsNullOrWhiteSpace($ReplyTo)
+        ) {
+            $replyToParams = @{
+                InputObject = $ReplyTo
+                Strict      = $true
+            }
+
+            $config.ReplyTo = ConvertTo-MailAddress @replyToParams |
+                Select-Object -First 1
+        }
     } else {
-        $now
+        $serverName = if ($bound.ContainsKey('Server')) {
+            $Server
+        } else {
+            $existingConfig.Server
+        }
+
+        $portNumber = if ($bound.ContainsKey('Port')) {
+            $Port
+        } else {
+            $existingConfig.Port
+        }
+
+        $enableSsl = if ($bound.ContainsKey('Ssl')) {
+            $Ssl
+        } else {
+            $existingConfig.Ssl
+        }
+
+        $effectiveUsername = if ($bound.ContainsKey('Username')) {
+            $Username
+        } else {
+            $existingConfig.Username
+        }
+
+        $effectivePassword = if ($bound.ContainsKey('Password')) {
+            ConvertTo-DpapiString -SecureString $Password
+        } else {
+            $existingConfig.Password
+        }
+
+        $timeoutSeconds = if ($bound.ContainsKey('Timeout')) {
+            $Timeout
+        } else {
+            $existingConfig.Timeout
+        }
+
+        $config = [PSCustomObject][ordered]@{
+            SchemaVersion = [int]$Script:SmtpSchemaVersion
+            Server        = $serverName
+            Port          = $portNumber
+            Ssl           = $enableSsl
+            Username      = $effectiveUsername
+            Password      = $effectivePassword
+            From          = $null
+            SenderAddress = $null
+            ReplyTo       = $null
+            Timeout       = $timeoutSeconds
+            CreatedAt     = $existingConfig.CreatedAt
+            UpdatedAt     = $null
+        }
+
+        $config.From = if ($bound.ContainsKey('From')) {
+            ConvertTo-MailAddress -InputObject $From -Strict | Select-Object -First 1
+        } else {
+            $existingConfig.From
+        }
+
+        $config.SenderAddress = if ($bound.ContainsKey('SenderAddress')) {
+            if ([string]::IsNullOrWhiteSpace($SenderAddress)) {
+                $null
+            } else {
+                $senderAddressParams = @{
+                    InputObject = $SenderAddress
+                    Strict      = $true
+                }
+
+                ConvertTo-MailAddress @senderAddressParams | Select-Object -First 1
+            }
+        } else {
+            $existingConfig.SenderAddress
+        }
+
+        $config.ReplyTo = if ($bound.ContainsKey('ReplyTo')) {
+            if ([string]::IsNullOrWhiteSpace($ReplyTo)) {
+                $null
+            } else {
+                $replyToParams = @{
+                    InputObject = $ReplyTo
+                    Strict      = $true
+                }
+
+                ConvertTo-MailAddress @replyToParams | Select-Object -First 1
+            }
+        } else {
+            $existingConfig.ReplyTo
+        }
     }
 
-    $config = [PSCustomObject][ordered]@{
-        SchemaVersion = $Script:SmtpSchemaVersion
-        Server        = $Server.Trim()
-        Port          = $Port
-        Ssl           = $Ssl
-        Username      = $Username.Trim()
-        Password      = $encryptedPassword
-        From          = $fromObj
-        SenderAddress = $senderAddressObj
-        ReplyTo       = $replyToObj
-        Timeout       = $Timeout
-        CreatedAt     = $createdAt
-        UpdatedAt     = $now
+    $validation = Test-Smtp -InputObject $config
+
+    if (-not $validation.IsValid) {
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.IO.InvalidDataException]::new(
+                    "SMTP configuration is invalid. $($validation.Errors -join ' ')"
+                ),
+                'SmtpConfigValidationFailed',
+                [System.Management.Automation.ErrorCategory]::InvalidData,
+                $config
+            )
+        )
     }
 
-    if (-not $PSCmdlet.ShouldProcess('smtp.json', 'Save SMTP configuration')) {
-        return
+    if ($PSCmdlet.ShouldProcess('smtp.json', 'Save SMTP configuration')) {
+        Save-SmtpConfig -Config $config
+        Get-PipeSmtp
     }
-
-    Save-SmtpConfig -Config $config
-
-    Get-SmtpConfig
 }

@@ -50,7 +50,7 @@ Describe 'Set-PipeSmtp' -Tag 'Integration' {
 
             $Script:TempRoot = [System.IO.Path]::Combine(
                 [System.IO.Path]::GetTempPath(),
-                ('PipeDFe.Tests-{0}' -f $testID)
+                'PipeDFe.Tests-{0}' -f $testID
             )
 
             New-Item -Path $Script:TempRoot -ItemType Directory -Force | Out-Null
@@ -191,15 +191,13 @@ Describe 'Set-PipeSmtp' -Tag 'Integration' {
                 $Script:Result.Password | Should -Not -Be 'P@ssw0rd!'
             }
 
-            It 'Sets CreatedAt and UpdatedAt on first write' {
+            It 'Sets CreatedAt on first write and leaves UpdatedAt null' {
                 $Script:Result.CreatedAt | Should -Not -BeNullOrEmpty
-                $Script:Result.UpdatedAt | Should -Not -BeNullOrEmpty
 
                 { [System.DateTimeOffset]::Parse($Script:Result.CreatedAt) } |
                     Should -Not -Throw
 
-                { [System.DateTimeOffset]::Parse($Script:Result.UpdatedAt) } |
-                    Should -Not -Throw
+                $Script:Result.UpdatedAt | Should -BeNullOrEmpty
             }
         }
         #endregion
