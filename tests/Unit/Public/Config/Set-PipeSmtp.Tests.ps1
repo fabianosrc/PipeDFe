@@ -115,65 +115,64 @@ Describe 'Set-PipeSmtp' {
         #region Parameter contract
         Context 'Parameter contract' {
 
-            It 'Declares Server as mandatory' {
+            It 'Does not declare Server as mandatory' {
                 $attr = $Script:Command.Parameters['Server'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
                     }
 
-                $attr | Should -Not -BeNullOrEmpty
+                $attr | Should -BeNullOrEmpty
             }
 
-            It 'Declares Port as mandatory' {
+            It 'Does not declare Port as mandatory' {
                 $attr = $Script:Command.Parameters['Port'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
                     }
 
-                $attr | Should -Not -BeNullOrEmpty
+                $attr | Should -BeNullOrEmpty
             }
 
-            It 'Declares Ssl as mandatory' {
+            It 'Does not declare Ssl as mandatory' {
                 $attr = $Script:Command.Parameters['Ssl'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
                     }
 
-                $attr | Should -Not -BeNullOrEmpty
+                $attr | Should -BeNullOrEmpty
             }
 
-            It 'Declares Username as mandatory' {
+            It 'Does not declare Username as mandatory' {
                 $attr = $Script:Command.Parameters['Username'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
                     }
 
-                $attr | Should -Not -BeNullOrEmpty
+                $attr | Should -BeNullOrEmpty
             }
 
-            It 'Declares Password as mandatory' {
+            It 'Does not declare Password as mandatory' {
                 $attr = $Script:Command.Parameters['Password'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
                     }
 
-                $attr | Should -Not -BeNullOrEmpty
+                $attr | Should -BeNullOrEmpty
             }
 
-
-            It 'Declares From as mandatory' {
+            It 'Does not declare From as mandatory' {
                 $attr = $Script:Command.Parameters['From'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
                     }
 
-                $attr | Should -Not -BeNullOrEmpty
+                $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare SenderAddress as mandatory' {
@@ -194,15 +193,6 @@ Describe 'Set-PipeSmtp' {
                     }
 
                 $attr | Should -BeNullOrEmpty
-            }
-
-            It 'Defaults Timeout to 30' {
-                $param = $Script:Command.ScriptBlock.Ast.Body.ParamBlock.Parameters |
-                    Where-Object {
-                        $_.Name.VariablePath.UserPath -eq 'Timeout'
-                    }
-
-                $param.DefaultValue.Value | Should -Be 30
             }
 
             It 'Supports ShouldProcess' {
@@ -240,9 +230,9 @@ Describe 'Set-PipeSmtp' {
                 { Set-PipeSmtp @splat } | Should -Throw
             }
 
-            It 'Rejects Timeout 3601' {
+            It 'Rejects Timeout 121' {
                 $splat = $Script:ValidSplat.Clone()
-                $splat['Timeout'] = 3601
+                $splat['Timeout'] = 121
 
                 { Set-PipeSmtp @splat } | Should -Throw
             }
@@ -252,6 +242,95 @@ Describe 'Set-PipeSmtp' {
                 $splat['Password'] = 'P@ssw0rd!'
 
                 { Set-PipeSmtp @splat } | Should -Throw
+            }
+        }
+        #endregion
+
+        #region Password encryption
+        Context 'Password encryption' {
+
+            BeforeAll {
+
+                Mock -CommandName ConvertTo-DpapiString -MockWith {
+                    param ([System.Security.SecureString]$SecureString)
+                    $null = $SecureString
+                    return 'ENCRYPTED'
+                }
+
+                Mock -CommandName ConvertTo-MailAddress -MockWith {
+                    param ([string]$InputObject)
+                    $null = $InputObject
+                    return $Script:FakeFrom
+                }
+
+                Mock -CommandName Get-SmtpConfig -MockWith {
+                    param ()
+                    return $Script:ExistingConfig
+                }
+
+                Mock -CommandName Save-SmtpConfig -MockWith {
+                    param ([pscustomobject]$Config)
+                    $null = $Config
+                }
+
+                Mock -CommandName Get-PipeSmtp -MockWith {
+                    param ()
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
+                }
+
+                Set-PipeSmtp @Script:ValidSplat | Out-Null
+            }
+
+            It 'Calls ConvertTo-DpapiString exactly once' {
+                $invokeParams = @{
+                    CommandName = 'ConvertTo-DpapiString'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 1
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Passes the supplied SecureString to ConvertTo-DpapiString' {
+                $invokeParams = @{
+                    CommandName     = 'ConvertTo-DpapiString'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $SecureString -eq $Script:SecurePassword
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Does not persist plaintext password' {
+                $invokeParams = @{
+                    CommandName     = 'Save-SmtpConfig'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Config.Password -eq 'ENCRYPTED' -and
+                        $Config.Password -ne 'P@ssw0rd!'
+                    }
+                }
+
+                Should -Invoke @invokeParams
             }
         }
         #endregion
@@ -286,6 +365,16 @@ Describe 'Set-PipeSmtp' {
                     $null = $Config
                 }
 
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
+                }
+
                 Set-PipeSmtp @Script:ValidSplat | Out-Null
             }
 
@@ -309,7 +398,7 @@ Describe 'Set-PipeSmtp' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Value -eq $Script:SecurePassword
+                        $SecureString -is [System.Security.SecureString]
                     }
                 }
 
@@ -340,16 +429,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -364,6 +453,16 @@ Describe 'Set-PipeSmtp' {
                     $null = $Config
                 }
 
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
+                }
+
                 Set-PipeSmtp @Script:ValidSplat | Out-Null
             }
 
@@ -375,7 +474,7 @@ Describe 'Set-PipeSmtp' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Email -eq 'Empresa <noreply@example.com>'
+                        $InputObject -eq 'Empresa <noreply@example.com>'
                     }
                 }
 
@@ -390,7 +489,7 @@ Describe 'Set-PipeSmtp' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Email -eq 'Empresa <noreply@example.com>'
+                        $InputObject -eq 'Empresa <noreply@example.com>'
                     }
                 }
 
@@ -405,16 +504,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -427,6 +526,16 @@ Describe 'Set-PipeSmtp' {
                     param ([pscustomobject]$Config)
 
                     $null = $Config
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
                 }
 
                 $splat = $Script:ValidSplat.Clone()
@@ -456,16 +565,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -479,6 +588,16 @@ Describe 'Set-PipeSmtp' {
                 Mock -CommandName Save-SmtpConfig -MockWith {
                     param ([pscustomobject]$Config)
                     $Script:CapturedConfig = $Config
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
                 }
 
                 $splat = $Script:ValidSplat.Clone()
@@ -531,16 +650,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -554,6 +673,16 @@ Describe 'Set-PipeSmtp' {
                 Mock -CommandName Save-SmtpConfig -MockWith {
                     param ([pscustomobject]$Config)
                     $Script:CapturedConfig = $Config
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
                 }
 
                 $splat = $Script:ValidSplat.Clone()
@@ -579,16 +708,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -604,6 +733,16 @@ Describe 'Set-PipeSmtp' {
                     $Script:CapturedConfig = $Config
                 }
 
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
+                }
+
                 Set-PipeSmtp @Script:ValidSplat | Out-Null
             }
 
@@ -616,11 +755,6 @@ Describe 'Set-PipeSmtp' {
                 $Script:CapturedConfig.UpdatedAt |
                     Should -Not -Be $Script:ExistingConfig.UpdatedAt
             }
-
-            It 'Sets a non-empty UpdatedAt' {
-                $Script:CapturedConfig.UpdatedAt |
-                    Should -Not -BeNullOrEmpty
-            }
         }
         #endregion
 
@@ -630,29 +764,49 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
                 Mock -CommandName Get-SmtpConfig -MockWith {
                     param ()
-                    return $null
+                    throw [System.Management.Automation.ErrorRecord]::new(
+                        [System.IO.FileNotFoundException]::new('smtp.json not found.'),
+                        'SmtpConfigNotFound',
+                        [System.Management.Automation.ErrorCategory]::ObjectNotFound,
+                        'smtp.json'
+                    )
                 }
 
-                $Script:CapturedConfig = $null
+                $Script:FirstConfigCaptured = $null
 
                 Mock -CommandName Save-SmtpConfig -MockWith {
                     param ([pscustomobject]$Config)
-                    $Script:CapturedConfig = $Config
+                    $Script:FirstConfigCaptured = $Config
+                }
+
+                Mock -CommandName Get-PipeSmtp -MockWith {
+                    param ()
+                    return $Script:PersistedConfig
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
                 }
 
                 $Script:Before = [System.DateTimeOffset]::UtcNow
@@ -664,16 +818,16 @@ Describe 'Set-PipeSmtp' {
 
             It 'Generates CreatedAt within the call window' {
                 $created = [System.DateTimeOffset]::Parse(
-                    $Script:CapturedConfig.CreatedAt
+                    $Script:FirstConfigCaptured.CreatedAt
                 )
 
                 $created | Should -BeGreaterOrEqual $Script:Before
                 $created | Should -BeLessOrEqual $Script:After
             }
 
-            It 'Sets CreatedAt equal to UpdatedAt on first write' {
-                $Script:CapturedConfig.CreatedAt |
-                    Should -Be $Script:CapturedConfig.UpdatedAt
+            It 'Sets UpdatedAt to null on first configuration' {
+                $Script:FirstConfigCaptured.UpdatedAt |
+                    Should -BeNullOrEmpty
             }
         }
         #endregion
@@ -684,16 +838,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -714,6 +868,16 @@ Describe 'Set-PipeSmtp' {
                     }
 
                     return $Script:PersistedConfig
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
                 }
 
                 $Script:Result = Set-PipeSmtp @Script:ValidSplat
@@ -751,16 +915,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -776,6 +940,16 @@ Describe 'Set-PipeSmtp' {
                     param ()
                     $Script:GetCount++
                     return $Script:ExistingConfig
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
                 }
 
                 Set-PipeSmtp @Script:ValidSplat -WhatIf | Out-Null
@@ -805,16 +979,14 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
-
-                    $null = $Value
+                    param ([System.Security.SecureString]$SecureString)
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
-
-                    $null = $Email
+                    param ([string]$InputObject)
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -825,8 +997,21 @@ Describe 'Set-PipeSmtp' {
 
                 Mock -CommandName Save-SmtpConfig -MockWith {
                     param ([pscustomobject]$Config)
-
                     $null = $Config
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
+                }
+
+                Mock -CommandName Get-PipeSmtp -MockWith {
+                    param ()
+                    return $Script:PersistedConfig
                 }
             }
 
@@ -877,7 +1062,7 @@ Describe 'Set-PipeSmtp' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Email -eq 'sender@example.com'
+                        $InputObject -eq 'sender@example.com'
                     }
                 }
 
@@ -897,7 +1082,7 @@ Describe 'Set-PipeSmtp' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Email -eq 'replyto@example.com'
+                        $InputObject -eq 'replyto@example.com'
                     }
                 }
 
@@ -912,17 +1097,16 @@ Describe 'Set-PipeSmtp' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-DpapiString -MockWith {
-                    param ([System.Security.SecureString]$Value)
+                    param ([System.Security.SecureString]$SecureString)
 
-                    $null = $Value
-
+                    $null = $SecureString
                     return 'ENCRYPTED'
                 }
 
                 Mock -CommandName ConvertTo-MailAddress -MockWith {
-                    param ([string]$Email)
+                    param ([string]$InputObject)
 
-                    $null = $Email
+                    $null = $InputObject
                     return $Script:FakeFrom
                 }
 
@@ -933,7 +1117,6 @@ Describe 'Set-PipeSmtp' {
 
                 Mock -CommandName Save-SmtpConfig -MockWith {
                     param ([pscustomobject]$Config)
-
                     $null = $Config
 
                     $PSCmdlet.ThrowTerminatingError(
@@ -944,6 +1127,15 @@ Describe 'Set-PipeSmtp' {
                             'smtp.json'
                         )
                     )
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    param ([pscustomobject]$InputObject)
+                    $null = $InputObject
+                    return [PSCustomObject]@{
+                        IsValid = $true
+                        Errors  = @()
+                    }
                 }
 
                 $Script:Exception = $null

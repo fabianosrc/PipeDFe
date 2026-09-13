@@ -93,10 +93,7 @@ Private dependencies:
   Get-PipeSmtp
 #>
 function Set-PipeSmtp {
-    [CmdletBinding(
-        SupportsShouldProcess,
-        ConfirmImpact = 'Medium'
-    )]
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
     [OutputType([pscustomobject])]
     param (
         [Parameter()]
@@ -225,7 +222,7 @@ function Set-PipeSmtp {
         }
     } else {
         $serverName = if ($bound.ContainsKey('Server')) {
-            $Server
+            $Server.Trim()
         } else {
             $existingConfig.Server
         }
@@ -243,7 +240,7 @@ function Set-PipeSmtp {
         }
 
         $effectiveUsername = if ($bound.ContainsKey('Username')) {
-            $Username
+            $Username.Trim()
         } else {
             $existingConfig.Username
         }
@@ -286,7 +283,7 @@ function Set-PipeSmtp {
                 $null
             } else {
                 $senderAddressParams = @{
-                    InputObject = $SenderAddress
+                    InputObject = $SenderAddress.Trim()
                     Strict      = $true
                 }
 
@@ -301,7 +298,7 @@ function Set-PipeSmtp {
                 $null
             } else {
                 $replyToParams = @{
-                    InputObject = $ReplyTo
+                    InputObject = $ReplyTo.Trim()
                     Strict      = $true
                 }
 
