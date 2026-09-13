@@ -26,15 +26,20 @@ interactive prompt is skipped entirely.
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
-EncryptedPassword [string]         DPAPI-encrypted certificate password.
-ExpiresOn         [DateTimeOffset] Certificate expiration date.
+  EncryptedPassword [string]         DPAPI-encrypted certificate password.
+  ExpiresOn         [DateTimeOffset] Certificate expiration date.
 
 .EXAMPLE
 PS C:\> $result = Invoke-CertificateSetup -Path 'C:\certs\empresa.pfx'
 
 .EXAMPLE
-PS C:\> $result = Invoke-CertificateSetup
->> -Path 'C:\certs\empresa.pfx' -Password $secure
+PS C:\> $result = Invoke-CertificateSetup -Path 'C:\certs\empresa.pfx'
+>> -Password $secure
+
+.NOTES
+Private dependencies:
+  Test-CertificateFile
+  ConvertTo-DpapiString
 #>
 function Invoke-CertificateSetup {
     [CmdletBinding()]
@@ -105,7 +110,7 @@ function Invoke-CertificateSetup {
     }
 
     [PSCustomObject]@{
-        EncryptedPassword = ConvertTo-DpapiString -Value $securePassword
+        EncryptedPassword = ConvertTo-DpapiString -SecureString $securePassword
         ExpiresOn         = $certResult.ExpiresOn
     }
 }
