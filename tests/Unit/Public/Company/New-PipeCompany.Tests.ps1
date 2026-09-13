@@ -44,7 +44,7 @@ BeforeDiscovery {
 
 Describe 'New-PipeCompany' {
 
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
 
@@ -81,6 +81,13 @@ Describe 'New-PipeCompany' {
 
             Mock -CommandName ConvertTo-DpapiString -MockWith {
                 'encrypted-blob'
+            }
+
+            Mock -CommandName Invoke-CertificateSetup -MockWith {
+                return [PSCustomObject]@{
+                    EncryptedPassword = 'encrypted-blob'
+                    ExpiresOn         = [System.DateTimeOffset]::UtcNow.AddYears(1)
+                }
             }
 
             Mock -CommandName ConvertTo-CompanyObject -MockWith {
@@ -273,7 +280,15 @@ Describe 'New-PipeCompany' {
 
                 New-PipeCompany @companyParams
 
-                Should -Invoke -CommandName ConvertTo-DpapiString -Times 1 -Exactly
+                $invokeParams = @{
+                    CommandName = 'Invoke-CertificateSetup'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 1
+                }
+
+                Should -Invoke @invokeParams
             }
 
             It 'Does not call ConvertTo-DpapiString when CertPath is absent' {

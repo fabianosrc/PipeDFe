@@ -78,9 +78,8 @@ System.Management.Automation.PSCustomObject
 TypeName: PipeDFe.Company
 
 .EXAMPLE
-PS C:\> New-PipeCompany -Cnpj '12345678000195'
->> -RazaoSocial 'ACME COMERCIO LTDA' -Uf SP
->> -Ambiente Producao -XmlPath 'C:\ERP\XML'
+PS C:\> New-PipeCompany -Cnpj '12345678000195' -RazaoSocial
+>> 'ACME COMERCIO LTDA' -Uf SP -Ambiente Producao -XmlPath 'C:\ERP\XML'
 
 .EXAMPLE
 PS C:\> $regParams = @{
@@ -99,11 +98,11 @@ PS C:\> New-PipeCompany @regParams
 Private dependencies:
   Assert-CompanyInput
   ConvertTo-CompanyObject
-  ConvertTo-DpapiString
   ConvertTo-NormalizedCnpj
   ConvertTo-NormalizedMailRecipient
   Get-CompanyConfig
   Get-StorePath
+  Invoke-CertificateSetup
   Save-CompanyConfig
 #>
 function New-PipeCompany {
@@ -194,7 +193,8 @@ function New-PipeCompany {
 
     #region Phase 2 - Resolve side-effects and construct
     $resolvedOutputPath = if ($PSBoundParameters.ContainsKey('OutputPath') -and
-        -not [string]::IsNullOrWhiteSpace($OutputPath)) {
+        -not [string]::IsNullOrWhiteSpace($OutputPath)
+    ) {
         $OutputPath
     } else {
         Get-StorePath -Scope Output -Cnpj $cnpjNormalized
@@ -237,8 +237,15 @@ function New-PipeCompany {
     }
 
     if ($PSBoundParameters.ContainsKey('CertPath')) {
+        $certSetupParams = @{
+            Path     = $CertPath
+            Password = $CertPassword
+        }
+
+        $certSetup = Invoke-CertificateSetup @certSetupParams
+
         $factoryParams['CertPath']     = $CertPath
-        $factoryParams['CertPassword'] = ConvertTo-DpapiString -Value $CertPassword
+        $factoryParams['CertPassword'] = $certSetup.EncryptedPassword
     }
 
     $company = ConvertTo-CompanyObject @factoryParams
