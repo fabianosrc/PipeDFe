@@ -30,6 +30,8 @@ Schema:
 
 Schema evolution is tracked through SQLite PRAGMA user_version.
 
+Current schema version: 2.
+
 .PARAMETER Cnpj
 14-digit normalized CNPJ identifying the company index.
 
@@ -39,6 +41,11 @@ Full path to the index.db file.
 
 .EXAMPLE
 PS C:\> $databasePath = Initialize-DFeIndex -Cnpj '12345678000199'
+
+.NOTES
+Private dependencies:
+  Get-StorePath
+  Open-SqliteConnection
 #>
 function Initialize-DFeIndex {
     [CmdletBinding()]
@@ -55,7 +62,8 @@ function Initialize-DFeIndex {
 
     if (-not (Test-Path -LiteralPath $databaseDir -PathType Container)) {
         try {
-            New-Item -Path $databaseDir -ItemType Directory -Force | Out-Null
+            New-Item -Path $databaseDir -ItemType Directory -Force -ErrorAction Stop |
+                Out-Null
         } catch {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
@@ -81,36 +89,40 @@ function Initialize-DFeIndex {
         )
 
         foreach ($pragma in $pragmaStatements) {
-            $command = $connection.CreateCommand()
+            $pragmaCommand = $null
 
             try {
-                $command.CommandText = $pragma
-                $command.ExecuteNonQuery() | Out-Null
+                $pragmaCommand = $connection.CreateCommand()
+                $pragmaCommand.CommandText = $pragma
+                $pragmaCommand.ExecuteNonQuery() | Out-Null
             } finally {
-                $command.Dispose()
+                if ($null -ne $pragmaCommand) {
+                    $pragmaCommand.Dispose()
+                }
             }
         }
 
-        $transaction = $connection.BeginTransaction()
+        $transaction = $null
+        $command     = $null
 
         try {
+            $transaction = $connection.BeginTransaction()
             $command = $connection.CreateCommand()
             $command.Transaction = $transaction
 
-            try {
-                $command.CommandText = 'PRAGMA user_version;'
-                $currentVersion = [int]$command.ExecuteScalar()
-            } finally {
-                $command.Dispose()
-            }
+            $command.CommandText = 'PRAGMA user_version;'
+            $currentVersion = [int]$command.ExecuteScalar()
 
             switch ($currentVersion) {
-                0 {
-                    $command = $connection.CreateCommand()
-                    $command.Transaction = $transaction
 
-                    try {
-                        $command.CommandText = @'
+                # ===================================================
+                # Version 0
+                #
+                # New database. Create the complete v2 schema.
+                # ===================================================
+
+                0 {
+                    $command.CommandText = @'
 CREATE TABLE IF NOT EXISTS dfe_document (
     chave_acesso TEXT    NOT NULL PRIMARY KEY,
     modelo       INTEGER NOT NULL,
@@ -127,8 +139,8 @@ CREATE INDEX IF NOT EXISTS ix_dfe_document_modelo_serie
     ON dfe_document (modelo, serie)
     WHERE ndoc IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS ix_dfe_documento_sha256
-    ON dfe_documento (sha256)
+CREATE INDEX IF NOT EXISTS ix_dfe_document_sha256
+    ON dfe_document (sha256)
     WHERE sha256 IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dfe_evento (
@@ -166,38 +178,44 @@ CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_sha256
     ON dfe_inutilizacao (sha256)
     WHERE sha256 IS NOT NULL;
 
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 '@
-                        $command.ExecuteNonQuery() | Out-Null
-                    } finally {
-                        $command.Dispose()
-                    }
+                    $null = $command.ExecuteNonQuery()
                 }
+
+                # ===================================================
+                # Version 1
+                #
+                # Legacy database. Add sha256 partial indexes.
+                # ===================================================
 
                 1 {
-                    # Current schema version.
-                    # No migration needed before v2 was introduced.
-                    $null = $cmd.ExecuteNonQuery()
+                    $command.CommandText = @'
+CREATE INDEX IF NOT EXISTS ix_dfe_document_sha256
+    ON dfe_document (sha256)
+    WHERE sha256 IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS ix_dfe_evento_sha256
+    ON dfe_evento (sha256)
+    WHERE sha256 IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_sha256
+    ON dfe_inutilizacao (sha256)
+    WHERE sha256 IS NOT NULL;
+
+PRAGMA user_version = 2;
+'@
+                    $null = $command.ExecuteNonQuery()
                 }
+
+                # ===================================================
+                # Version 2
+                #
+                # Current schema. No migration needed.
+                # ===================================================
 
                 2 {
-                    $commands = @(
-                        'CREATE INDEX IF NOT EXISTS ix_dfe_documento_sha256 ON dfe_documento (sha256) WHERE sha256 IS NOT NULL',
-                        'CREATE INDEX IF NOT EXISTS ix_dfe_evento_sha256 ON dfe_evento (sha256) WHERE sha256 IS NOT NULL',
-                        'CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_sha256 ON dfe_inutilizacao (sha256) WHERE sha256 IS NOT NULL'
-                    )
-
-                    foreach ($sql in $commands) {
-                        $cmd.CommandText = $sql
-                        $null = $cmd.ExecuteNonQuery()
-                    }
-
-                    $cmd.CommandText = 'PRAGMA user_version = 2'
-                    $null = $cmd.ExecuteNonQuery()
-                }
-
-                3 {
-                    # Current version. No migration needed.
+                    # No migration required.
                 }
 
                 default {
@@ -209,17 +227,25 @@ PRAGMA user_version = 1;
 
             $transaction.Commit()
         } catch {
-            try {
-                $transaction.Rollback()
-            } catch {
-                # Intentionally ignore rollback failure because the original
-                # database error must remain the terminating error.
-                $null = $_
+            if ($null -ne $transaction) {
+                try {
+                    $transaction.Rollback()
+                } catch {
+                    # Intentionally ignore rollback failure - the original
+                    # database error must remain the terminating error.
+                    $null = $_
+                }
             }
 
             throw
         } finally {
-            $transaction.Dispose()
+            if ($null -ne $command) {
+                $command.Dispose()
+            }
+
+            if ($null -ne $transaction) {
+                $transaction.Dispose()
+            }
         }
     } catch {
         $PSCmdlet.ThrowTerminatingError(
