@@ -353,14 +353,14 @@ Describe 'Initialize-DFeIndex' {
         # Schema version
         Context 'Schema version' {
 
-            It 'sets PRAGMA user_version to 1 on a new database' {
+            It 'sets PRAGMA user_version to 2 on a new database' {
                 $sqlParams = @{
                     Path = $Script:DbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 1
+                [int]$version | Should -Be 2
             }
         }
 
@@ -832,7 +832,7 @@ INSERT INTO dfe_document (
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 1
+                [int]$version | Should -Be 2
             }
         }
 
@@ -897,7 +897,7 @@ CREATE TABLE dfe_inutilizacao (
 CREATE INDEX ix_dfe_inutilizacao_modelo_serie
     ON dfe_inutilizacao (modelo, serie);
 
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 '@
             }
 
@@ -911,14 +911,14 @@ PRAGMA user_version = 1;
                 $path | Should -Be $Script:ExistingDbPath
             }
 
-            It 'leaves user_version unchanged at 1' {
+            It 'leaves user_version unchanged at 2' {
                 $sqlParams = @{
                     Path = $Script:ExistingDbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 1
+                [int]$version | Should -Be 2
             }
 
             It 'leaves all tables intact' {
@@ -978,14 +978,14 @@ CREATE TABLE dfe_document (
                     Should -Not -Throw
             }
 
-            It 'completes the schema to user_version = 1' {
+            It 'completes the schema to user_version = 2' {
                 $sqlParams = @{
                     Path = $Script:PartialDbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 1
+                [int]$version | Should -Be 2
             }
 
             It 'creates all remaining tables' {
