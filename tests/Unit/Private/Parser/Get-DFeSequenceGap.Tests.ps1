@@ -417,7 +417,8 @@ Describe 'Get-DFeSequenceGap' {
             It 'Returns exactly the documented properties' {
                 $props = @($Script:Result[0].PSObject.Properties.Name)
 
-                $props | Should -HaveCount 4
+                $props | Should -HaveCount 5
+                $props | Should -Contain 'Tipo'
                 $props | Should -Contain 'Especie'
                 $props | Should -Contain 'Serie'
                 $props | Should -Contain 'Inicial'
