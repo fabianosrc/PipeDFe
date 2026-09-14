@@ -1,5 +1,526 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Configuration>
     <ViewDefinitions>
+        <!-- ========================= PipeDFe.Company ========================= -->
+        <View>
+            <Name>PipeDFe.Company.Table</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.Company</TypeName>
+            </ViewSelectedBy>
+            <TableControl>
+                <TableHeaders>
+                    <TableColumnHeader>
+                        <Label>CNPJ</Label>
+                        <Width>18</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Razão Social</Label>
+                        <Width>40</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>UF</Label>
+                        <Width>4</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Ambiente</Label>
+                        <Width>12</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Ativo</Label>
+                        <Width>6</Width>
+                    </TableColumnHeader>
+                </TableHeaders>
+                <TableRowEntries>
+                    <TableRowEntry>
+                        <TableColumnItems>
+                            <TableColumnItem>
+                                <PropertyName>Cnpj</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>RazaoSocial</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Uf</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Ambiente</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>IsActive</PropertyName>
+                            </TableColumnItem>
+                        </TableColumnItems>
+                    </TableRowEntry>
+                </TableRowEntries>
+            </TableControl>
+        </View>
+        <View>
+            <Name>PipeDFe.Company.List</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.Company</TypeName>
+            </ViewSelectedBy>
+            <ListControl>
+                <ListEntries>
+                    <ListEntry>
+                        <ListItems>
+                            <ListItem>
+                                <Label>CNPJ</Label>
+                                <PropertyName>Cnpj</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Razão Social</Label>
+                                <PropertyName>RazaoSocial</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Nome Fantasia</Label>
+                                <PropertyName>NomeFantasia</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>IE</Label>
+                                <PropertyName>Ie</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>UF</Label>
+                                <PropertyName>Uf</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Ambiente</Label>
+                                <PropertyName>Ambiente</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Ativo</Label>
+                                <PropertyName>IsActive</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>XmlPath</Label>
+                                <PropertyName>XmlPath</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>OutputPath</Label>
+                                <PropertyName>OutputPath</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Certificado</Label>
+                                <ScriptBlock>$_.Certificado.Path</ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Criado em</Label>
+                                <ScriptBlock>
+                                    if ($_.CreatedAt) {
+                                        [System.DateTimeOffset]::Parse($_.CreatedAt).ToString('dd/MM/yyyy HH:mm:ss')
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Atualizado em</Label>
+                                <ScriptBlock>
+                                    if ($_.UpdatedAt) {
+                                        [System.DateTimeOffset]::Parse($_.UpdatedAt).ToString('dd/MM/yyyy HH:mm:ss')
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                        </ListItems>
+                    </ListEntry>
+                </ListEntries>
+            </ListControl>
+        </View>
+        <!-- ========================= PipeDFe.ResultadoInvoke ========================= -->
+        <View>
+            <Name>PipeDFe.ResultadoInvoke.List</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.ResultadoInvoke</TypeName>
+            </ViewSelectedBy>
+            <ListControl>
+                <ListEntries>
+                    <ListEntry>
+                        <ListItems>
+                            <ListItem>
+                                <Label>Sucesso</Label>
+                                <PropertyName>Success</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Executado em</Label>
+                                <ScriptBlock>
+                                    [System.DateTimeOffset]::Parse($_.ProcessedAt).ToString('dd/MM/yyyy HH:mm:ss')
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Período Inicial</Label>
+                                <ScriptBlock>
+                                    [System.DateTimeOffset]::Parse($_.PeriodStart).ToString('dd/MM/yyyy HH:mm:ss')
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Período Final</Label>
+                                <ScriptBlock>
+                                    [System.DateTimeOffset]::Parse($_.PeriodEnd).ToString('dd/MM/yyyy HH:mm:ss')
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Resultados</Label>
+                                <ScriptBlock>
+                                    $_.Results | ForEach-Object {
+                                        $r = $_
+                                        $avisos = if ($r.Avisos.Count -gt 0) {
+                                            " [$($r.Avisos.Count) aviso(s)]"
+                                        } else {
+                                            ''
+                                        }
+
+                                        $erro = if ($r.Erro) {
+                                            " — $($r.Erro)"
+                                        } else {
+                                            ''
+                                        }
+
+                                        "$($r.Cnpj) $($r.RazaoSocial) $($r.Status)$avisos$erro"
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                        </ListItems>
+                    </ListEntry>
+                </ListEntries>
+            </ListControl>
+        </View>
+        <!-- ========================= PipeDFe.ResultadoEmpresa ========================= -->
+        <View>
+            <Name>PipeDFe.ResultadoEmpresa.List</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.ResultadoEmpresa</TypeName>
+            </ViewSelectedBy>
+            <ListControl>
+                <ListEntries>
+                    <ListEntry>
+                        <ListItems>
+                            <ListItem>
+                                <Label>CNPJ</Label>
+                                <PropertyName>Cnpj</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Razão Social</Label>
+                                <PropertyName>RazaoSocial</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Status</Label>
+                                <PropertyName>Status</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Total Documentos</Label>
+                                <PropertyName>TotalDocumentos</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Arquivos Encontrados</Label>
+                                <ScriptBlock>$_.Scan.FilesFound</ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Arquivos Indexados</Label>
+                                <ScriptBlock>$_.Scan.FilesIndexed</ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Arquivos Pulados</Label>
+                                <ScriptBlock>$_.Scan.FilesSkipped</ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Arquivos Ignorados</Label>
+                                <ScriptBlock>$_.Scan.FilesIgnored</ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Gaps</Label>
+                                <PropertyName>Gaps</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Arquivos</Label>
+                                <ScriptBlock>
+                                    if ($_.Arquivos.Count -eq 0) {
+                                        '—'
+                                    } else {
+                                        $_.Arquivos -join ', '
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>E-mail Enviado</Label>
+                                <PropertyName>EmailEnviado</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Avisos</Label>
+                                <ScriptBlock>
+                                    if ($_.Avisos.Count -eq 0) {
+                                        '—'
+                                    } else {
+                                        $_.Avisos -join '; '
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Erro</Label>
+                                <ScriptBlock>
+                                    if ($_.Erro) {
+                                        $_.Erro
+                                    } else {
+                                        '—'
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                        </ListItems>
+                    </ListEntry>
+                </ListEntries>
+            </ListControl>
+        </View>
+        <View>
+            <Name>PipeDFe.ResultadoEmpresa.Table</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.ResultadoEmpresa</TypeName>
+            </ViewSelectedBy>
+            <TableControl>
+                <TableHeaders>
+                    <TableColumnHeader>
+                        <Label>CNPJ</Label>
+                        <Width>18</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Razão Social</Label>
+                        <Width>35</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Status</Label>
+                        <Width>7</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Docs</Label>
+                        <Width>6</Width>
+                        <Alignment>Right</Alignment>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Gaps</Label>
+                        <Width>6</Width>
+                        <Alignment>Right</Alignment>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>E-mail</Label>
+                        <Width>7</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Avisos</Label>
+                        <Width>7</Width>
+                        <Alignment>Right</Alignment>
+                    </TableColumnHeader>
+                </TableHeaders>
+                <TableRowEntries>
+                    <TableRowEntry>
+                        <TableColumnItems>
+                            <TableColumnItem>
+                                <PropertyName>Cnpj</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>RazaoSocial</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Status</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>TotalDocumentos</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Gaps</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>EmailEnviado</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <ScriptBlock>$_.Avisos.Count</ScriptBlock>
+                            </TableColumnItem>
+                        </TableColumnItems>
+                    </TableRowEntry>
+                </TableRowEntries>
+            </TableControl>
+        </View>
+        <!-- ========================= PipeDFe.SequenceGap ========================= -->
+        <View>
+            <Name>PipeDFe.SequenceGap.Table</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.SequenceGap</TypeName>
+            </ViewSelectedBy>
+            <TableControl>
+                <TableHeaders>
+                    <TableColumnHeader>
+                        <Label>Tipo</Label>
+                        <Width>12</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Espécie</Label>
+                        <Width>10</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Série</Label>
+                        <Width>8</Width>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Inicial</Label>
+                        <Width>10</Width>
+                        <Alignment>Right</Alignment>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Final</Label>
+                        <Width>10</Width>
+                        <Alignment>Right</Alignment>
+                    </TableColumnHeader>
+                    <TableColumnHeader>
+                        <Label>Qtd</Label>
+                        <Width>6</Width>
+                        <Alignment>Right</Alignment>
+                    </TableColumnHeader>
+                </TableHeaders>
+                <TableRowEntries>
+                    <TableRowEntry>
+                        <TableColumnItems>
+                            <TableColumnItem>
+                                <PropertyName>Tipo</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Especie</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Serie</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Inicial</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <PropertyName>Final</PropertyName>
+                            </TableColumnItem>
+                            <TableColumnItem>
+                                <ScriptBlock>$_.Final - $_.Inicial + 1</ScriptBlock>
+                            </TableColumnItem>
+                        </TableColumnItems>
+                    </TableRowEntry>
+                </TableRowEntries>
+            </TableControl>
+        </View>
+        <!-- ========================= PipeDFe.Smtp ========================= -->
+        <View>
+            <Name>PipeDFe.Smtp.List</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.Smtp</TypeName>
+            </ViewSelectedBy>
+            <ListControl>
+                <ListEntries>
+                    <ListEntry>
+                        <ListItems>
+                            <ListItem>
+                                <Label>Servidor</Label>
+                                <PropertyName>Server</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Porta</Label>
+                                <PropertyName>Port</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>SSL</Label>
+                                <PropertyName>Ssl</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Usuário</Label>
+                                <PropertyName>Username</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Senha</Label>
+                                <ScriptBlock>
+                                    if (-not [string]::IsNullOrWhiteSpace($_.Password)) {
+                                    '**************'
+                                } else {
+                                    '—'
+                                }
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Remetente</Label>
+                                <ScriptBlock>$_.From.Email</ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Timeout (s)</Label>
+                                <PropertyName>Timeout</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Criado em</Label>
+                                <ScriptBlock>
+                                    if ($_.CreatedAt) {
+                                        [System.DateTimeOffset]::Parse($_.CreatedAt).ToString('dd/MM/yyyy HH:mm:ss')
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Atualizado em</Label>
+                                <ScriptBlock>
+                                    if ($_.UpdatedAt) {
+                                        [System.DateTimeOffset]::Parse($_.UpdatedAt).ToString('dd/MM/yyyy HH:mm:ss')
+                                    } else {
+                                        '—'
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                        </ListItems>
+                    </ListEntry>
+                </ListEntries>
+            </ListControl>
+        </View>
+        <!-- =========================  PipeDFe.SmtpTestResult ========================= -->
+        <View>
+            <Name>PipeDFe.SmtpTestResult.List</Name>
+            <ViewSelectedBy>
+                <TypeName>PipeDFe.SmtpTestResult</TypeName>
+            </ViewSelectedBy>
+            <ListControl>
+                <ListEntries>
+                    <ListEntry>
+                        <ListItems>
+                            <ListItem>
+                                <Label>Sucesso</Label>
+                                <PropertyName>Success</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Fonte</Label>
+                                <PropertyName>Source</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Servidor</Label>
+                                <PropertyName>Server</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Porta</Label>
+                                <PropertyName>Port</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>SSL</Label>
+                                <PropertyName>Ssl</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Autenticado</Label>
+                                <PropertyName>Authenticated</PropertyName>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Estágio</Label>
+                                <ScriptBlock>
+                                    if ($_.FailureStage) {
+                                        $_.FailureStage
+                                    } else {
+                                        '—'
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                            <ListItem>
+                                <Label>Erro</Label>
+                                <ScriptBlock>
+                                    if ($_.ErrorMessage) {
+                                        $_.ErrorMessage
+                                    } else {
+                                        '—'
+                                    }
+                                </ScriptBlock>
+                            </ListItem>
+                        </ListItems>
+                    </ListEntry>
+                </ListEntries>
+            </ListControl>
+        </View>
     </ViewDefinitions>
 </Configuration>
