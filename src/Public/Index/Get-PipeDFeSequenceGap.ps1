@@ -60,6 +60,7 @@ Private dependencies:
   Get-StorePath
   Resolve-DateRange
   Get-DFeDocumentEntry
+  Get-DFeInutilizacaoEntry
   Get-DFeSequenceGap
 #>
 function Get-PipeDFeSequenceGap {
@@ -120,5 +121,6 @@ function Get-PipeDFeSequenceGap {
         return
     }
 
-    Get-DFeSequenceGap -Entries $entries
+    $inutilizacoes = @(Get-DFeInutilizacaoEntry -Cnpj $cnpjNormalized)
+    Get-DFeSequenceGap -Entries $entries -CoveredRanges $inutilizacoes
 }

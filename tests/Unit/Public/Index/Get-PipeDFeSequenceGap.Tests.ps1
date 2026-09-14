@@ -60,13 +60,16 @@ Describe 'Get-PipeDFeSequenceGap' {
             }
 
             $Script:Gap = [PSCustomObject]@{
+                Tipo    = 'Faltante'
                 Especie = 'NFe'
-                Serie   = '001'
-                Inicial = 2
-                Final   = 4
+                Serie   = '1'
+                Inicial = 101
+                Final   = 103
             }
 
-            $Script:ResolveDateRangeMock = { return $Script:dateRange }
+            $Script:ResolveDateRangeMock = {
+                return $Script:dateRange
+            }
         }
 
         #region Parameter contract
@@ -536,6 +539,10 @@ Describe 'Get-PipeDFeSequenceGap' {
                     return @($Script:Entry)
                 }
 
+                Mock -CommandName Get-DFeInutilizacaoEntry -MockWith {
+                    return @()
+                }
+
                 Mock -CommandName Get-DFeSequenceGap -MockWith {
                     return $Script:Gap
                 }
@@ -551,7 +558,8 @@ Describe 'Get-PipeDFeSequenceGap' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $null -ne $Entries -and $Entries.Count -eq 1
+                        $null -ne $Entries -and $Entries.Count -eq 1 -and
+                        $null -ne $CoveredRanges
                     }
                 }
 
@@ -560,6 +568,10 @@ Describe 'Get-PipeDFeSequenceGap' {
 
             It 'Emits each gap object to the pipeline' {
                 $Script:Output.Count | Should -Be 1
+            }
+
+            It 'Preserves Tipo' {
+                $Script:Output[0].Tipo | Should -Be $Script:Gap.Tipo
             }
 
             It 'Preserves Especie' {
@@ -597,6 +609,10 @@ Describe 'Get-PipeDFeSequenceGap' {
                     return @($Script:Entry)
                 }
 
+                Mock -CommandName Get-DFeInutilizacaoEntry -MockWith {
+                    return @()
+                }
+
                 Mock -CommandName Get-DFeSequenceGap -MockWith {
                     return @()
                 }
@@ -627,6 +643,10 @@ Describe 'Get-PipeDFeSequenceGap' {
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
                     return @($Script:Entry)
+                }
+
+                Mock -CommandName Get-DFeInutilizacaoEntry -MockWith {
+                    return @()
                 }
 
                 Mock -CommandName Get-DFeSequenceGap -MockWith {
