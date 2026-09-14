@@ -110,8 +110,9 @@ function Invoke-PipeDFeCompany {
         Write-Verbose -Message "[$cnpj] $totalDocumentos documento(s) encontrado(s) no período."
 
         if ($entries.Count -gt 0) {
-            $gapEntries = @(Get-DFeSequenceGap -Entries $entries)
-            $gaps       = $gapEntries.Count
+            $inutilizacoes = @(Get-DFeInutilizacaoEntry -Cnpj $cnpj)
+            $gapEntries    = @(Get-DFeSequenceGap -Entries $entries -CoveredRanges $inutilizacoes)
+            $gaps          = $gapEntries.Count
 
             if ($gaps -gt 0) {
                 Write-Verbose -Message "[$cnpj] $gaps gap(s) de sequência detectado(s)."
