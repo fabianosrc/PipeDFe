@@ -127,6 +127,10 @@ CREATE INDEX IF NOT EXISTS ix_dfe_document_modelo_serie
     ON dfe_document (modelo, serie)
     WHERE ndoc IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS ix_dfe_documento_sha256
+    ON dfe_documento (sha256)
+    WHERE sha256 IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS dfe_evento (
     chave_pai   TEXT NOT NULL,
     file_path   TEXT NOT NULL,
@@ -139,6 +143,10 @@ CREATE TABLE IF NOT EXISTS dfe_evento (
 
 CREATE INDEX IF NOT EXISTS ix_dfe_evento_chave_pai
     ON dfe_evento (chave_pai);
+
+CREATE INDEX IF NOT EXISTS ix_dfe_evento_sha256
+    ON dfe_evento (sha256)
+    WHERE sha256 IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dfe_inutilizacao (
     id_inut    TEXT    NOT NULL PRIMARY KEY,
@@ -154,6 +162,10 @@ CREATE TABLE IF NOT EXISTS dfe_inutilizacao (
 CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_modelo_serie
     ON dfe_inutilizacao (modelo, serie);
 
+CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_sha256
+    ON dfe_inutilizacao (sha256)
+    WHERE sha256 IS NOT NULL;
+
 PRAGMA user_version = 1;
 '@
                         $command.ExecuteNonQuery() | Out-Null
@@ -164,6 +176,28 @@ PRAGMA user_version = 1;
 
                 1 {
                     # Current schema version.
+                    # No migration needed before v2 was introduced.
+                    $null = $cmd.ExecuteNonQuery()
+                }
+
+                2 {
+                    $commands = @(
+                        'CREATE INDEX IF NOT EXISTS ix_dfe_documento_sha256 ON dfe_documento (sha256) WHERE sha256 IS NOT NULL',
+                        'CREATE INDEX IF NOT EXISTS ix_dfe_evento_sha256 ON dfe_evento (sha256) WHERE sha256 IS NOT NULL',
+                        'CREATE INDEX IF NOT EXISTS ix_dfe_inutilizacao_sha256 ON dfe_inutilizacao (sha256) WHERE sha256 IS NOT NULL'
+                    )
+
+                    foreach ($sql in $commands) {
+                        $cmd.CommandText = $sql
+                        $null = $cmd.ExecuteNonQuery()
+                    }
+
+                    $cmd.CommandText = 'PRAGMA user_version = 2'
+                    $null = $cmd.ExecuteNonQuery()
+                }
+
+                3 {
+                    # Current version. No migration needed.
                 }
 
                 default {
