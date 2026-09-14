@@ -229,11 +229,12 @@ function Get-DFeSequenceGap {
 
                 # Close the current range and open a new one.
                 [PSCustomObject]@{
-                    Tipo    = [string]$rangeTipo
-                    Especie = [string]$especie
-                    Serie   = [string]$serie
-                    Inicial = [int]$rangeInicial
-                    Final   = [int]$rangeFinal
+                    PSTypeName = 'PipeDFe.SequenceGap'
+                    Tipo       = [string]$rangeTipo
+                    Especie    = [string]$especie
+                    Serie      = [string]$serie
+                    Inicial    = [int]$rangeInicial
+                    Final      = [int]$rangeFinal
                 }
 
                 $rangeInicial = $n
@@ -245,11 +246,12 @@ function Get-DFeSequenceGap {
         # Close the last range.
         if ($null -ne $rangeTipo) {
             [PSCustomObject]@{
-                Tipo    = [string]$rangeTipo
-                Especie = [string]$especie
-                Serie   = [string]$serie
-                Inicial = [int]$rangeInicial
-                Final   = [int]$rangeFinal
+                PSTypeName = 'PipeDFe.SequenceGap'
+                Tipo       = [string]$rangeTipo
+                Especie    = [string]$especie
+                Serie      = [string]$serie
+                Inicial    = [int]$rangeInicial
+                Final      = [int]$rangeFinal
             }
         }
     }
