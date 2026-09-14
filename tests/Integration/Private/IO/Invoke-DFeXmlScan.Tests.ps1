@@ -571,17 +571,37 @@ Describe 'Invoke-DFeXmlScan' {
         }
         #endregion
 
-        #region No output
-        Context 'No output' {
+        #region Scan result
+        Context 'Scan result' {
 
-            It 'Produces no output' {
+            BeforeAll {
+
                 $scanParams = @{
                     Cnpj    = $Script:Cnpj
                     XmlPath = $Script:XmlDir
                 }
 
-                $result = Invoke-DFeXmlScan @scanParams
-                $result | Should -BeNullOrEmpty
+                $Script:ScanResult = Invoke-DFeXmlScan @scanParams
+            }
+
+            It 'Returns a scan result object' {
+                $Script:ScanResult | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Returns FilesFound as int' {
+                $Script:ScanResult.FilesFound | Should -BeOfType [int]
+            }
+
+            It 'Returns FilesIndexed as int' {
+                $Script:ScanResult.FilesIndexed | Should -BeOfType [int]
+            }
+
+            It 'Returns FilesSkipped as int' {
+                $Script:ScanResult.FilesSkipped | Should -BeOfType [int]
+            }
+
+            It 'Returns FilesIgnored as int' {
+                $Script:ScanResult.FilesIgnored | Should -BeOfType [int]
             }
         }
         #endregion

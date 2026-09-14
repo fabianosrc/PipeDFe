@@ -42,7 +42,7 @@ Private dependencies:
 #>
 function Invoke-DFeXmlScan {
     [CmdletBinding()]
-    [OutputType([void])]
+    [OutputType([pscustomobject])]
     param (
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -166,4 +166,11 @@ function Invoke-DFeXmlScan {
         "[$Cnpj] Scan completed - $indexed new, " +
         "$skipped already indexed, $ignored skipped."
     )
+
+    [PSCustomObject]@{
+        FilesFound   = [int]$files.Count
+        FilesIndexed = [int]$indexed
+        FilesSkipped = [int]$skipped
+        FilesIgnored = [int]$ignored
+    }
 }
