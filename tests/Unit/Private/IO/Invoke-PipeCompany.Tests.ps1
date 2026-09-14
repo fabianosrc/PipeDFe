@@ -169,9 +169,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -397,13 +400,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$XmlPath
-                    )
-
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -546,9 +548,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -686,9 +691,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -802,9 +810,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -916,9 +927,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -970,9 +984,6 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
                     throw [System.UnauthorizedAccessException]::new('Access denied.')
                 }
 
@@ -1025,9 +1036,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -1155,13 +1169,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$XmlPath
-                    )
-
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -1193,9 +1206,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param ([string]$Cnpj, [string]$XmlPath)
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
@@ -1268,13 +1284,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 }
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$XmlPath
-                    )
-
-                    $null = $Cnpj
-                    $null = $XmlPath
+                    return [PSCustomObject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
                 }
 
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {

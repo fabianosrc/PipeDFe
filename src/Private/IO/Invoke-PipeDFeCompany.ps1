@@ -55,6 +55,7 @@ Private dependencies:
   Initialize-DFeIndex
   Invoke-DFeXmlScan
   Get-DFeDocumentEntry
+  Get-DFeInutilizacaoEntry
   Get-DFeSequenceGap
   Resolve-DFeArchiveInfo
   New-DFeArchive
@@ -82,6 +83,7 @@ function Invoke-PipeDFeCompany {
     $gapEntries      = @()
     $arquivos        = @()
     $emailEnviado    = $false
+    $scanResult      = $null
 
     $periodoDisplay = (
         "$($DateRange.Start.ToString('dd/MM/yyyy')) a " +
@@ -96,7 +98,7 @@ function Invoke-PipeDFeCompany {
             XmlPath = $Company.XmlPath
         }
 
-        Invoke-DFeXmlScan @scanParams
+        $scanResult = Invoke-DFeXmlScan @scanParams
 
         $entryParams = @{
             Cnpj      = $cnpj
@@ -211,6 +213,7 @@ function Invoke-PipeDFeCompany {
 
         Write-Verbose -Message "[$cnpj] Concluído com status '$status'."
 
+        # Happy Path
         [PSCustomObject]@{
             PSTypeName      = 'PipeDFe.ResultadoEmpresa'
             Cnpj            = $cnpj
@@ -222,6 +225,12 @@ function Invoke-PipeDFeCompany {
             EmailEnviado    = $emailEnviado
             Avisos          = $avisos.ToArray()
             Erro            = $null
+            Scan            = [PSCustomObject]@{
+                FilesFound   = $scanResult.FilesFound
+                FilesIndexed = $scanResult.FilesIndexed
+                FilesSkipped = $scanResult.FilesSkipped
+                FilesIgnored = $scanResult.FilesIgnored
+            }
         }
 
     } catch {
@@ -239,6 +248,7 @@ function Invoke-PipeDFeCompany {
             EmailEnviado    = $false
             Avisos          = $avisos.ToArray()
             Erro            = $errMsg
+            Scan            = $scanResult
         }
     }
 }
