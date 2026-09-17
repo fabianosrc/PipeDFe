@@ -48,18 +48,18 @@ System.Management.Automation.PSCustomObject
 
 .EXAMPLE
 PS C:\> $params = @{
-            Company            = $company
-            DateRange          = $range
-            Smtp               = $smtp
-            Gaps               = $gaps
-            ZipFileDestination = @($archive.DestPath)
-        }
+    Company            = $company
+    DateRange          = $range
+    Smtp               = $smtp
+    Gaps               = $gaps
+    ZipFileDestination = @($archive.DestPath)
+}
 
 PS C:\> $result = Send-DFeNotification @params
 
-        if (-not $result.Success) {
-            Write-Warning "[$($result.FailedAt)] $($result.ErrorMessage)"
-        }
+if (-not $result.Success) {
+    Write-Warning "[$($result.FailedAt)] $($result.ErrorMessage)"
+}
 
 .NOTES
 Dependencies:
