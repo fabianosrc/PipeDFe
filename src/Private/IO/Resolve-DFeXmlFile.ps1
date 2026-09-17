@@ -70,10 +70,6 @@ function Resolve-DFeXmlFile {
     $unresolved    = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 
     foreach ($file in $Candidates) {
-        if ($null -eq $file) {
-            continue
-        }
-
         Write-Verbose -Message "Classifying '$($file.FullName)'"
 
         $metadata = $null
