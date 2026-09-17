@@ -257,6 +257,16 @@ Describe 'ConvertFrom-DnString' {
 
                 $results[0].Value | Should -Be 'ACME Café LTDA'
             }
+
+            It 'Falls back to ASCII for invalid UTF-8 bytes' {
+                # \80 is a bare UTF-8 continuation byte - invalid sequence.
+                # The strict UTF-8 decoder throws; the ASCII fallback replaces it with '?'.
+                $results = @(ConvertFrom-DnString -InputObject 'CN=Test\80,C=BR')
+
+                $results | Should -HaveCount 2
+
+                $results[0].Value | Should -Be 'Test?'
+            }
         }
         #endregion
 
