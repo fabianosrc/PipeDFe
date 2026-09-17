@@ -25,6 +25,14 @@ Coverage includes:
   - Uses RazaoSocial in subject when NomeFantasia is blank.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    'SmtpConfig',
+    Justification = 'Required by Send-Mail mock'
+)]
+
+param ()
+
 # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
 # because that's when Context/It are executed to register the test tree. If the
 # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
@@ -292,6 +300,57 @@ Describe 'Send-DFeNotification' {
 
             It 'Returns empty EmailsSent on send failure' {
                 $Script:SendResult.EmailsSent | Should -HaveCount 0
+            }
+        }
+        #endregion
+
+        #region Send stage exception
+        Context 'Send stage exception' {
+
+            BeforeAll {
+
+                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
+                    [PSCustomObject]@{
+                        Name  = 'Dest'
+                        Email = 'dest@example.com'
+                    }
+                }
+
+                Mock -CommandName Resolve-SmtpReplyTo -MockWith {
+                    $null
+                }
+
+                Mock -CommandName Build-MailBody -MockWith {
+                    '<html>body</html>'
+                }
+
+                Mock -CommandName Send-Mail -MockWith {
+                    param (
+                        [Parameter()]
+                        [pscustomobject]$SmtpConfig
+                    )
+
+
+                    throw [System.Net.Sockets.SocketException]::new('Connection failed.')
+                }
+
+                $Script:SendExceptionResult = Send-DFeNotification @Script:BaseParams
+            }
+
+            It 'Returns Success = false when Send-Mail throws' {
+                $Script:SendExceptionResult.Success | Should -BeFalse
+            }
+
+            It 'Returns FailedAt = Send when Send-Mail throws' {
+                $Script:SendExceptionResult.FailedAt | Should -Be 'Send'
+            }
+
+            It 'Surfaces the exception message when Send-Mail throws' {
+                $Script:SendExceptionResult.ErrorMessage | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Does not rethrow when Send-Mail throws' {
+                { Send-DFeNotification @Script:BaseParams } | Should -Not -Throw
             }
         }
         #endregion
