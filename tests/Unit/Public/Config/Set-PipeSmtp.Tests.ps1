@@ -117,94 +117,94 @@ Describe 'Set-PipeSmtp' {
 
             It 'Does not declare Server as mandatory' {
                 $attr = $Script:Command.Parameters['Server'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare Port as mandatory' {
                 $attr = $Script:Command.Parameters['Port'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare Ssl as mandatory' {
                 $attr = $Script:Command.Parameters['Ssl'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare Username as mandatory' {
                 $attr = $Script:Command.Parameters['Username'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare Password as mandatory' {
                 $attr = $Script:Command.Parameters['Password'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare From as mandatory' {
                 $attr = $Script:Command.Parameters['From'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare SenderAddress as mandatory' {
                 $attr = $Script:Command.Parameters['SenderAddress'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Does not declare ReplyTo as mandatory' {
                 $attr = $Script:Command.Parameters['ReplyTo'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ParameterAttribute] -and
-                        $_.Mandatory
-                    }
+                Where-Object {
+                    $_ -is [System.Management.Automation.ParameterAttribute] -and
+                    $_.Mandatory
+                }
 
                 $attr | Should -BeNullOrEmpty
             }
 
             It 'Supports ShouldProcess' {
                 $attr = $Script:Command.ScriptBlock.Ast.Body.ParamBlock.Attributes |
-                    Where-Object {
-                        $_.TypeName.Name -eq 'CmdletBinding'
-                    }
+                Where-Object {
+                    $_.TypeName.Name -eq 'CmdletBinding'
+                }
 
                 $arg = $attr.NamedArguments |
-                    Where-Object {
-                        $_.ArgumentName -eq 'SupportsShouldProcess'
-                    }
+                Where-Object {
+                    $_.ArgumentName -eq 'SupportsShouldProcess'
+                }
 
                 $arg.Argument.Value | Should -BeTrue
             }
@@ -540,7 +540,7 @@ Describe 'Set-PipeSmtp' {
 
                 $splat = $Script:ValidSplat.Clone()
                 $splat['SenderAddress'] = 'sender@example.com'
-                $splat['ReplyTo']       = 'replyto@example.com'
+                $splat['ReplyTo'] = 'replyto@example.com'
 
                 Set-PipeSmtp @splat | Out-Null
             }
@@ -548,10 +548,10 @@ Describe 'Set-PipeSmtp' {
             It 'Converts all three addresses' {
                 $invokeParams = @{
                     CommandName = 'ConvertTo-MailAddress'
-                    ModuleName = 'PipeDFe'
-                    Scope     = 'Context'
-                    Exactly   = $true
-                    Times     = 3
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 3
                 }
 
                 Should -Invoke @invokeParams
@@ -686,7 +686,7 @@ Describe 'Set-PipeSmtp' {
                 }
 
                 $splat = $Script:ValidSplat.Clone()
-                $splat['Server']   = '  smtp.example.com  '
+                $splat['Server'] = '  smtp.example.com  '
                 $splat['Username'] = '  user@example.com  '
 
                 Set-PipeSmtp @splat | Out-Null
@@ -748,12 +748,12 @@ Describe 'Set-PipeSmtp' {
 
             It 'Preserves CreatedAt from existing configuration' {
                 $Script:CapturedConfig.CreatedAt |
-                    Should -Be $Script:ExistingConfig.CreatedAt
+                Should -Be $Script:ExistingConfig.CreatedAt
             }
 
             It 'Does not preserve UpdatedAt from existing configuration' {
                 $Script:CapturedConfig.UpdatedAt |
-                    Should -Not -Be $Script:ExistingConfig.UpdatedAt
+                Should -Not -Be $Script:ExistingConfig.UpdatedAt
             }
         }
         #endregion
@@ -827,7 +827,7 @@ Describe 'Set-PipeSmtp' {
 
             It 'Sets UpdatedAt to null on first configuration' {
                 $Script:FirstConfigCaptured.UpdatedAt |
-                    Should -BeNullOrEmpty
+                Should -BeNullOrEmpty
             }
         }
         #endregion
@@ -1149,7 +1149,199 @@ Describe 'Set-PipeSmtp' {
 
             It 'Propagates SmtpConfigSaveFailed from Save-SmtpConfig' {
                 $Script:Exception.FullyQualifiedErrorId |
-                    Should -BeLike 'SmtpConfigSaveFailed*'
+                Should -BeLike 'SmtpConfigSaveFailed*'
+            }
+        }
+        #endregion
+
+        #region Error propagation - Get-SmtpConfig non-NotFound error
+        Context 'Error propagation - Get-SmtpConfig unexpected error' {
+
+            BeforeAll {
+
+                Mock -CommandName Get-SmtpConfig -MockWith {
+                    $PSCmdlet.ThrowTerminatingError(
+                        [System.Management.Automation.ErrorRecord]::new(
+                            [System.IO.IOException]::new('Disk read failure.'),
+                            'SmtpConfigReadFailed',
+                            [System.Management.Automation.ErrorCategory]::ReadError,
+                            'smtp.json'
+                        )
+                    )
+                }
+
+                Mock -CommandName ConvertTo-DpapiString   -MockWith { return 'ENCRYPTED' }
+                Mock -CommandName ConvertTo-MailAddress   -MockWith { return $Script:FakeFrom }
+                Mock -CommandName Save-SmtpConfig         -MockWith { }
+                Mock -CommandName Test-Smtp               -MockWith {
+                    return [PSCustomObject]@{ IsValid = $true; Errors = @() }
+                }
+
+                $Script:Exception = $null
+
+                try {
+                    Set-PipeSmtp @Script:ValidSplat
+                } catch {
+                    $Script:Exception = $_
+                }
+            }
+
+            It 'Propagates the original error when Get-SmtpConfig fails with a non-NotFound error' {
+                $Script:Exception.FullyQualifiedErrorId | Should -BeLike 'SmtpConfigReadFailed*'
+            }
+
+            It 'Does not call Save-SmtpConfig' {
+                Should -Invoke -CommandName Save-SmtpConfig -ModuleName PipeDFe `
+                    -Scope Context -Exactly -Times 0
+            }
+        }
+        #endregion
+
+        #region First configuration - missing required parameters
+        Context 'First configuration - missing required parameters' {
+
+            BeforeAll {
+
+                Mock -CommandName Get-SmtpConfig -MockWith {
+                    $PSCmdlet.ThrowTerminatingError(
+                        [System.Management.Automation.ErrorRecord]::new(
+                            [System.IO.FileNotFoundException]::new('smtp.json not found.'),
+                            'SmtpConfigNotFound',
+                            [System.Management.Automation.ErrorCategory]::ObjectNotFound,
+                            'smtp.json'
+                        )
+                    )
+                }
+
+                Mock -CommandName ConvertTo-DpapiString   -MockWith { return 'ENCRYPTED' }
+                Mock -CommandName ConvertTo-MailAddress   -MockWith { return $Script:FakeFrom }
+                Mock -CommandName Save-SmtpConfig         -MockWith { }
+                Mock -CommandName Test-Smtp               -MockWith {
+                    return [PSCustomObject]@{ IsValid = $true; Errors = @() }
+                }
+            }
+
+            It 'Throws SmtpInitialConfigIncomplete when Server is missing' {
+                $splat = @{
+                    Port     = 587
+                    Ssl      = $true
+                    Username = 'user@example.com'
+                    Password = $Script:SecurePassword
+                    From     = 'noreply@example.com'
+                    Confirm  = $false
+                }
+
+                $errorId = $null
+
+                try {
+                    Set-PipeSmtp @splat
+                } catch {
+                    $errorId = $_
+                }
+
+                $errorId.FullyQualifiedErrorId | Should -BeLike 'SmtpInitialConfigIncomplete*'
+            }
+
+            It 'Throws SmtpInitialConfigIncomplete when multiple required parameters are missing' {
+                $splat = @{
+                    Server  = 'smtp.example.com'
+                    Confirm = $false
+                }
+
+                $errorId = $null
+
+                try {
+                    Set-PipeSmtp @splat
+                } catch {
+                    $errorId = $_
+                }
+
+                $errorId.FullyQualifiedErrorId | Should -BeLike 'SmtpInitialConfigIncomplete*'
+            }
+
+            It 'Does not call Save-SmtpConfig when required parameters are missing' {
+
+                $splat = @{
+                    Port     = 587
+                    Ssl      = $true
+                    Username = 'user@example.com'
+                    Password = $Script:SecurePassword
+                    From     = 'noreply@example.com'
+                    Confirm  = $false
+                }
+
+                try {
+                    Set-PipeSmtp @splat
+                } catch {
+
+                }
+
+                Should -Invoke -CommandName Save-SmtpConfig -ModuleName PipeDFe `
+                    -Scope It -Exactly -Times 0
+            }
+        }
+        #endregion
+
+        #region First configuration - optional parameters
+        Context 'First configuration - with Timeout, SenderAddress and ReplyTo' {
+
+            BeforeAll {
+
+                Mock -CommandName Get-SmtpConfig -MockWith {
+                    $PSCmdlet.ThrowTerminatingError(
+                        [System.Management.Automation.ErrorRecord]::new(
+                            [System.IO.FileNotFoundException]::new('smtp.json not found.'),
+                            'SmtpConfigNotFound',
+                            [System.Management.Automation.ErrorCategory]::ObjectNotFound,
+                            'smtp.json'
+                        )
+                    )
+                }
+
+                Mock -CommandName ConvertTo-DpapiString -MockWith { return 'ENCRYPTED' }
+
+                Mock -CommandName ConvertTo-MailAddress -MockWith {
+                    return $Script:FakeFrom
+                }
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    return [PSCustomObject]@{ IsValid = $true; Errors = @() }
+                }
+
+                Mock -CommandName Get-PipeSmtp -MockWith {
+                    return $Script:PersistedConfig
+                }
+
+                $Script:CapturedConfig = $null
+
+                Mock -CommandName Save-SmtpConfig -MockWith {
+                    param ([pscustomobject]$Config)
+                    $Script:CapturedConfig = $Config
+                }
+
+                $splat = $Script:ValidSplat.Clone()
+                $splat['Timeout'] = 60
+                $splat['SenderAddress'] = 'sender@example.com'
+                $splat['ReplyTo'] = 'replyto@example.com'
+
+                Set-PipeSmtp @splat | Out-Null
+            }
+
+            It 'Stores the explicit Timeout on first configuration' {
+                $Script:CapturedConfig.Timeout | Should -Be 60
+            }
+
+            It 'Converts SenderAddress on first configuration' {
+                Should -Invoke -CommandName ConvertTo-MailAddress -ModuleName PipeDFe `
+                    -Scope Context -Exactly -Times 3
+            }
+
+            It 'Stores SenderAddress on first configuration' {
+                $Script:CapturedConfig.SenderAddress | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Stores ReplyTo on first configuration' {
+                $Script:CapturedConfig.ReplyTo | Should -Not -BeNullOrEmpty
             }
         }
         #endregion

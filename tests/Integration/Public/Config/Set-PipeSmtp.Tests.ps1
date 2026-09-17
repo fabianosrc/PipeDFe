@@ -280,5 +280,110 @@ Describe 'Set-PipeSmtp' -Tag 'Integration' {
             }
         }
         #endregion
+
+        #region Partial update - Port preserved when omitted
+        Context 'Partial update - Port preserved when omitted' {
+
+            BeforeAll {
+
+                Set-PipeSmtp @Script:BaseSplat | Out-Null
+
+                $Script:Result = Set-PipeSmtp -Server 'smtp.new.example.com' -Confirm:$false
+            }
+
+            AfterAll {
+
+                Remove-SmtpConfigFile
+            }
+
+            It 'Preserves Port from existing configuration when omitted' {
+                $Script:Result.Port | Should -Be 587
+            }
+        }
+        #endregion
+
+        #region Partial update - omitted parameters preserved
+        Context 'Partial update - omitted parameters preserved' {
+
+            BeforeAll {
+
+                # Write the initial full configuration.
+                Set-PipeSmtp @Script:BaseSplat | Out-Null
+
+                # Update only the Port - all other parameters should be preserved.
+                $Script:Result = Set-PipeSmtp -Port 465 -Confirm:$false
+            }
+
+            AfterAll {
+
+                Remove-SmtpConfigFile
+            }
+
+            It 'Preserves Server from existing configuration' {
+                $Script:Result.Server | Should -Be 'smtp.example.com'
+            }
+
+            It 'Updates Port to the new value' {
+                $Script:Result.Port | Should -Be 465
+            }
+
+            It 'Preserves Ssl from existing configuration' {
+                $Script:Result.Ssl | Should -BeTrue
+            }
+
+            It 'Preserves Username from existing configuration' {
+                $Script:Result.Username | Should -Be 'user@example.com'
+            }
+
+            It 'Preserves From from existing configuration' {
+                $Script:Result.From.Email | Should -Be 'noreply@example.com'
+            }
+
+            It 'Preserves Password from existing configuration' {
+                $Script:Result.Password | Should -Not -BeNullOrEmpty
+            }
+        }
+        #endregion
+
+        #region Validation failure
+        Context 'Validation failure on update' {
+
+            BeforeAll {
+
+                Mock -CommandName Test-Smtp -MockWith {
+                    [PSCustomObject]@{
+                        IsValid = $false
+                        Errors  = @(
+                            'SMTP server is invalid'
+                            'SMTP configuration is incomplete'
+                        )
+                    }
+                }
+
+                $Script:Exception = $null
+
+                try {
+                    Set-PipeSmtp @Script:BaseSplat
+                } catch {
+                    $Script:Exception = $_
+                }
+            }
+
+            It 'Throws SmtpConfigValidationFailed when the configuration is invalid' {
+                $Script:Exception | Should -Not -BeNullOrEmpty
+
+                $Script:Exception.FullyQualifiedErrorId |
+                    Should -BeLike 'SmtpConfigValidationFailed*'
+            }
+
+            It 'Includes all validation errors in the exception message' {
+                $Script:Exception.Exception.Message |
+                    Should -Match 'SMTP server is invalid'
+
+                $Script:Exception.Exception.Message |
+                    Should -Match 'SMTP configuration is incomplete'
+            }
+        }
+        #endregion
     }
 }
