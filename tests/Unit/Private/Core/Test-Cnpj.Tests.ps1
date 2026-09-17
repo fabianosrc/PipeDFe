@@ -183,6 +183,13 @@ Describe 'Test-Cnpj' {
                 $result = Test-Cnpj -Value $Script:ValidNumericOne -Ambiente Producao
                 $result | Should -BeOfType [bool]
             }
+
+            It 'Returns true for a valid CNPJ with a zero check digit' {
+                # 07526557000100 has both check digits equal to 0,
+                # exercising the remainder-lt-2 branch in Get-CheckDigit.
+                $result = Test-Cnpj -Value '07526557000100' -Ambiente Producao
+                $result | Should -BeTrue
+            }
         }
         #endregion
 
