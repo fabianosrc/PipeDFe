@@ -48,7 +48,7 @@ BeforeDiscovery {
 
 Describe 'Send-Mail' {
 
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
 
