@@ -20,6 +20,14 @@ Coverage includes:
   - Output contract: Attribute, Description, Values with correct types.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    'InputObject',
+    Justification = 'Required by ConvertFrom-DnString mock'
+)]
+
+param ()
+
 # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
 # because that's when Context/It are executed to register the test tree. If the
 # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
@@ -196,6 +204,72 @@ Describe 'ConvertFrom-CertificateSubject' {
 
             It 'Exposes Values as array' {
                 $Script:Sample.Values.GetType().IsArray | Should -BeTrue
+            }
+        }
+        #endregion
+
+        #region Empty DN key
+        Context 'Empty DN key - non-strict' {
+
+            BeforeAll {
+
+                Mock -CommandName ConvertFrom-DnString -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$InputObject
+                    )
+
+                    [PSCustomObject]@{
+                        Key   = ''
+                        Value = 'orphan'
+                    }
+                } -ModuleName PipeDFe
+
+                $Script:EmptyKeyResult = @(
+                    ConvertFrom-CertificateSubject -Subject 'CN=ACME'
+                )
+            }
+
+            It 'Emits no output for a pair with an empty key' {
+                $Script:EmptyKeyResult | Should -HaveCount 0
+            }
+        }
+
+        Context 'Empty DN key - strict' {
+
+            BeforeAll {
+
+                Mock -CommandName ConvertFrom-DnString -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$InputObject
+                    )
+
+                    [PSCustomObject]@{
+                        Key   = ''
+                        Value = 'orphan'
+                    }
+                } -ModuleName PipeDFe
+
+                $Script:EmptyKeyStrictThrown = $null
+
+                try {
+                    ConvertFrom-CertificateSubject -Subject 'CN=ACME' -Strict -ErrorAction Stop
+                } catch {
+                    $Script:EmptyKeyStrictThrown = $_
+                }
+            }
+
+            It 'Throws InvalidDnComponent in Strict mode for an empty key' {
+                $Script:EmptyKeyStrictThrown | Should -Not -BeNullOrEmpty
+
+                $Script:EmptyKeyStrictThrown.FullyQualifiedErrorId |
+                    Should -BeLike 'InvalidDnComponent*'
+            }
+
+            It 'Uses InvalidData category for InvalidDnComponent' {
+                $Script:EmptyKeyStrictThrown.CategoryInfo.Category |
+                    Should -Be ([System.Management.Automation.ErrorCategory]::InvalidData)
             }
         }
         #endregion
