@@ -324,6 +324,14 @@ Describe 'Resolve-DateRange' {
                 } catch {
                     $Script:StartAfterEndThrown = $_
                 }
+
+                $Script:FutureStartThrown = $null
+
+                try {
+                    Resolve-DateRange -StartDate '01/01/2099' -ErrorAction Stop
+                } catch {
+                    $Script:FutureStartThrown = $_
+                }
             }
 
             It 'Throws EndDateWithoutStartDate when only EndDate is supplied' {
@@ -356,6 +364,17 @@ Describe 'Resolve-DateRange' {
 
             It 'Exposes StartDate as TargetObject for StartDateAfterEndDate' {
                 $Script:StartAfterEndThrown.TargetObject | Should -Be '31/08/2026'
+            }
+
+            It 'Throws StartDateAfterEndDate when StartDate is in the future and no EndDate is supplied' {
+                $Script:FutureStartThrown | Should -Not -BeNullOrEmpty
+
+                $Script:FutureStartThrown.FullyQualifiedErrorId |
+                    Should -BeLike 'StartDateAfterEndDate*'
+            }
+
+            It 'Exposes StartDate as TargetObject for future StartDate without EndDate' {
+                $Script:FutureStartThrown.TargetObject | Should -Be '01/01/2099'
             }
         }
         #endregion
