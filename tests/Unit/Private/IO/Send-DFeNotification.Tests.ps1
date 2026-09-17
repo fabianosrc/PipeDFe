@@ -30,7 +30,7 @@ Coverage includes:
 # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
 # BeforeEach ever runs.
 BeforeDiscovery {
-    $moduleRoot = (Get-Item -LiteralPath $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
+    $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
     $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
 
@@ -39,7 +39,7 @@ BeforeDiscovery {
 
 Describe 'Send-DFeNotification' {
 
-    InModuleScope PipeDFe {
+    InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
 
@@ -49,15 +49,24 @@ Describe 'Send-DFeNotification' {
                 Cnpj         = '11222333000181'
                 Ie           = $null
                 Email        = [PSCustomObject]@{
-                    Para = @([PSCustomObject]@{ Name = 'Dest'; Email = 'dest@example.com' })
+                    Para = @(
+                        [PSCustomObject]@{
+                            Name  = 'Dest'
+                            Email = 'dest@example.com'
+                        }
+                    )
                     Cc   = @()
                     Cco  = @()
                 }
             }
 
             $Script:ValidDateRange = [PSCustomObject]@{
-                Start = [System.DateTimeOffset]::new(2026, 1,  1,  0,  0,  0, [System.TimeSpan]::Zero)
-                End   = [System.DateTimeOffset]::new(2026, 1, 31, 23, 59, 59, [System.TimeSpan]::Zero)
+                Start = [System.DateTimeOffset]::new(
+                    2026, 1,  1,  0,  0,  0, [System.TimeSpan]::Zero
+                )
+                End   = [System.DateTimeOffset]::new(
+                    2026, 1, 31, 23, 59, 59, [System.TimeSpan]::Zero
+                )
             }
 
             $Script:ValidSmtp = [PSCustomObject]@{
@@ -85,14 +94,23 @@ Describe 'Send-DFeNotification' {
         BeforeEach {
 
             Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                [PSCustomObject]@{ Name = 'Dest'; Email = 'dest@example.com' }
+                [PSCustomObject]@{
+                    Name  = 'Dest'
+                    Email = 'dest@example.com'
+                }
             }
 
-            Mock -CommandName Resolve-SmtpReplyTo -MockWith { $null }
+            Mock -CommandName Resolve-SmtpReplyTo -MockWith {
+                $null
+            }
 
-            Mock -CommandName Build-MailBody -MockWith { '<html>body</html>' }
+            Mock -CommandName Build-MailBody -MockWith {
+                '<html>body</html>'
+            }
 
-            Mock -CommandName Send-Mail -MockWith { $Script:SuccessMailResult }
+            Mock -CommandName Send-Mail -MockWith {
+                $Script:SuccessMailResult
+            }
         }
 
         #region Result object shape
@@ -117,7 +135,9 @@ Describe 'Send-DFeNotification' {
         Context 'Never throws' {
 
             It 'Does not throw when Build-MailBody throws' {
-                Mock -CommandName Build-MailBody -MockWith { throw 'render error' }
+                Mock -CommandName Build-MailBody -MockWith {
+                    throw 'render error'
+                }
 
                 { Send-DFeNotification @Script:BaseParams } | Should -Not -Throw
             }
@@ -141,9 +161,17 @@ Describe 'Send-DFeNotification' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith { }
-                Mock -CommandName Build-MailBody -MockWith { '<html>body</html>' }
-                Mock -CommandName Send-Mail -MockWith { $Script:SuccessMailResult }
+                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
+
+                }
+
+                Mock -CommandName Build-MailBody -MockWith {
+                    '<html>body</html>'
+                }
+
+                Mock -CommandName Send-Mail -MockWith {
+                    $Script:SuccessMailResult
+                }
 
                 $Script:ValidationResult = Send-DFeNotification @Script:BaseParams
             }
@@ -180,11 +208,23 @@ Describe 'Send-DFeNotification' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    [PSCustomObject]@{ Name = 'Dest'; Email = 'dest@example.com' }
+                    [PSCustomObject]@{
+                        Name  = 'Dest'
+                        Email = 'dest@example.com'
+                    }
                 }
-                Mock -CommandName Resolve-SmtpReplyTo -MockWith { $null }
-                Mock -CommandName Build-MailBody -MockWith { throw 'template missing' }
-                Mock -CommandName Send-Mail -MockWith { $Script:SuccessMailResult }
+
+                Mock -CommandName Resolve-SmtpReplyTo -MockWith {
+                    $null
+                }
+
+                Mock -CommandName Build-MailBody -MockWith {
+                    throw 'template missing'
+                }
+
+                Mock -CommandName Send-Mail -MockWith {
+                    $Script:SuccessMailResult
+                }
 
                 $Script:RenderResult = Send-DFeNotification @Script:BaseParams
             }
@@ -213,10 +253,20 @@ Describe 'Send-DFeNotification' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    [PSCustomObject]@{ Name = 'Dest'; Email = 'dest@example.com' }
+                    [PSCustomObject]@{
+                        Name  = 'Dest'
+                        Email = 'dest@example.com'
+                    }
                 }
-                Mock -CommandName Resolve-SmtpReplyTo -MockWith { $null }
-                Mock -CommandName Build-MailBody -MockWith { '<html>body</html>' }
+
+                Mock -CommandName Resolve-SmtpReplyTo -MockWith {
+                    $null
+                }
+
+                Mock -CommandName Build-MailBody -MockWith {
+                    '<html>body</html>'
+                }
+
                 Mock -CommandName Send-Mail -MockWith {
                     [PSCustomObject]@{
                         Success    = $false
@@ -252,11 +302,23 @@ Describe 'Send-DFeNotification' {
             BeforeAll {
 
                 Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    [PSCustomObject]@{ Name = 'Dest'; Email = 'dest@example.com' }
+                    [PSCustomObject]@{
+                        Name  = 'Dest'
+                        Email = 'dest@example.com'
+                    }
                 }
-                Mock -CommandName Resolve-SmtpReplyTo -MockWith { $null }
-                Mock -CommandName Build-MailBody -MockWith { '<html>body</html>' }
-                Mock -CommandName Send-Mail -MockWith { $Script:SuccessMailResult }
+
+                Mock -CommandName Resolve-SmtpReplyTo -MockWith {
+                    $null
+                }
+
+                Mock -CommandName Build-MailBody -MockWith {
+                    '<html>body</html>'
+                }
+
+                Mock -CommandName Send-Mail -MockWith {
+                    $Script:SuccessMailResult
+                }
 
                 $Script:HappyResult = Send-DFeNotification @Script:BaseParams
             }
@@ -293,12 +355,16 @@ Describe 'Send-DFeNotification' {
                 )
 
                 Mock -CommandName Build-MailBody -MockWith {
-                    param ($Context)
+                    param (
+                        [string]$Context
+                    )
+
                     $Context.NotasNaoLancadas | Should -HaveCount 1
                     '<html/>'
                 }
 
                 $gapParams = $Script:BaseParams.Clone()
+
                 $gapParams.Gaps = $gaps
 
                 Send-DFeNotification @gapParams | Out-Null
@@ -311,20 +377,31 @@ Describe 'Send-DFeNotification' {
                     Cnpj         = '11222333000181'
                     Ie           = $null
                     Email        = [PSCustomObject]@{
-                        Para = @([PSCustomObject]@{ Name = 'D'; Email = 'dest@example.com' })
+                        Para = @(
+                            [PSCustomObject]@{
+                                Name  = 'D'
+                                Email = 'dest@example.com'
+                            }
+                        )
                         Cc   = @()
                         Cco  = @()
                     }
                 }
 
                 $companyParams = $Script:BaseParams.Clone()
+
                 $companyParams.Company = $company
 
                 Send-DFeNotification @companyParams | Out-Null
 
-                Should -Invoke -CommandName Send-Mail -Times 1 -Exactly -ParameterFilter {
-                    $Subject -match 'EMPRESA'
+                $invokeParams = @{
+                    CommandName     = 'Send-Mail'
+                    Times           = 1
+                    Exactly         = $true
+                    ParameterFilter = { $Subject -match 'EMPRESA' }
                 }
+
+                Should -Invoke @invokeParams
             }
         }
         #endregion
