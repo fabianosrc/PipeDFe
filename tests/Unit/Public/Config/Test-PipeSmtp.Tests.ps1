@@ -1469,6 +1469,31 @@ Describe 'Test-PipeSmtp' {
 
                 $result.Ssl | Should -BeTrue
             }
+
+            It 'Uses InnerException message when the TCP probe throws a wrapped exception' {
+                Mock -CommandName Test-SmtpTcpConnection -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$Server,
+                        [Parameter()]
+                        [int]$Port,
+                        [Parameter()]
+                        [int]$TimeoutMs
+                    )
+
+                    $null = $Server
+                    $null = $Port
+                    $null = $TimeoutMs
+
+                    $inner = [System.Net.Sockets.SocketException]::new('Connection refused.')
+                    throw [System.Exception]::new('Wrapper exception.', $inner)
+                }
+
+                $result = Test-PipeSmtp -SmtpConfig $Script:FakeSmtpConfig
+
+                $result.FailureStage | Should -Be 'Connection'
+                $result.ErrorMessage | Should -Match 'Connection refused.'
+            }
         }
         #endregion
 
