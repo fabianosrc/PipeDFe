@@ -173,6 +173,16 @@ Describe 'Test-Smtp' {
                     "Expected '$($Script:SmtpSchemaVersion)'."
                 )
             }
+
+            It 'Returns an error when SchemaVersion is not an integer' {
+                $config = New-ValidSmtpConfig
+                $config.SchemaVersion = 'one'
+
+                $result = Test-Smtp -InputObject $config
+
+                $result.IsValid | Should -BeFalse
+                $result.Errors  | Should -Contain 'SchemaVersion must be an integer.'
+            }
         }
         #endregion
 
@@ -391,6 +401,46 @@ Describe 'Test-Smtp' {
         }
         #endregion
 
+        #region CreatedAt validation
+        Context 'CreatedAt validation' {
+
+            It 'Returns an error when CreatedAt is present but empty' {
+                $config = New-ValidSmtpConfig
+                $config.CreatedAt = ''
+
+                $result = Test-Smtp -InputObject $config
+
+                $result.IsValid | Should -BeFalse
+                $result.Errors  | Should -Contain 'CreatedAt cannot be empty.'
+            }
+
+            It 'Returns an error when CreatedAt is not a valid timestamp' {
+                $config = New-ValidSmtpConfig
+                $config.CreatedAt = 'not-a-date'
+
+                $result = Test-Smtp -InputObject $config
+
+                $result.IsValid | Should -BeFalse
+                $result.Errors  | Should -Contain 'CreatedAt must be a valid ISO-8601 timestamp.'
+            }
+        }
+        #endregion
+
+        #region UpdatedAt validation
+        Context 'UpdatedAt validation' {
+
+            It 'Returns an error when UpdatedAt is present and not a valid timestamp' {
+                $config = New-ValidSmtpConfig
+                $config.UpdatedAt = 'not-a-date'
+
+                $result = Test-Smtp -InputObject $config
+
+                $result.IsValid | Should -BeFalse
+                $result.Errors  | Should -Contain 'UpdatedAt must be a valid ISO-8601 timestamp.'
+            }
+        }
+        #endregion
+
         #region Address validation
         Context 'Address validation' {
 
@@ -500,6 +550,41 @@ Describe 'Test-Smtp' {
 
                 $result.IsValid | Should -BeFalse
                 $result.Errors  | Should -Contain 'ReplyTo must contain an Email value.'
+            }
+
+            It 'Returns an error when From is absent' {
+                $config = New-ValidSmtpConfig
+                $config.PSObject.Properties.Remove('From')
+
+                $result = Test-Smtp -InputObject $config
+
+                $result.IsValid | Should -BeFalse
+                $result.Errors  | Should -Contain 'From is required.'
+            }
+        }
+        #endregion
+
+        #region Ssl validation
+        Context 'Ssl validation' {
+
+            It 'Returns an error when Ssl is absent' {
+                $config = New-ValidSmtpConfig
+                $config.PSObject.Properties.Remove('Ssl')
+
+                $result = Test-Smtp -InputObject $config
+
+                $result.IsValid | Should -BeFalse
+                $result.Errors  | Should -Contain 'Ssl property is required.'
+            }
+
+            It 'Returns an error when Ssl is not a boolean' {
+                $config = New-ValidSmtpConfig
+                $config.Ssl = 'yes'
+
+                $result = Test-Smtp -InputObject $config
+
+                $result.IsValid | Should -BeFalse
+                $result.Errors  | Should -Contain 'Ssl must be a boolean value.'
             }
         }
         #endregion
