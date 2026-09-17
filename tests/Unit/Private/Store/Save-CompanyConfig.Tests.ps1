@@ -16,6 +16,14 @@ Covers the persistence contract of Save-CompanyConfig:
   - Throws CompanyConfigSaveFailed on serialization failure.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    'Scope',
+    Justification = 'Required by Get-StorePath Scope'
+)]
+
+param ()
+
 # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
 # because that's when Context/It are executed to register the test tree. If the
 # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
@@ -235,6 +243,153 @@ Describe 'Save-CompanyConfig' {
 
             It 'Persists the correct Ambiente' {
                 $Script:Saved.Ambiente | Should -Be 'Producao'
+            }
+        }
+        #endregion
+
+        #region Write failure
+        Context 'Write failure' {
+
+            BeforeAll {
+
+                Mock -CommandName Get-StorePath -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$Scope,
+
+                        [Parameter()]
+                        [string]$Cnpj
+                    )
+
+                    [System.IO.Path]::Combine($TestDrive, $Cnpj, 'config')
+                } -ParameterFilter {
+                    $Scope -eq 'Config'
+                }
+
+                $Script:FailCnpj = '11222333000181'
+
+                $configPath = [System.IO.Path]::Combine(
+                    $TestDrive,
+                    $Script:FailCnpj,
+                    'config'
+                )
+
+                $targetParams = @{
+                    Path      = $configPath
+                    ChildPath = ('{0}.json' -f $Script:FailCnpj)
+                }
+
+                $targetPath  = Join-Path @targetParams
+                $blockedTemp = '{0}.tmp' -f $targetPath
+
+                [System.IO.Directory]::CreateDirectory($configPath)  | Out-Null
+
+                # Create the .tmp file as read-only to force WriteAllText to fail
+                # when the file already exists as Leaf.
+                [System.IO.File]::WriteAllText($blockedTemp, 'placeholder')
+                $fileInfo = [System.IO.FileInfo]::new($blockedTemp)
+                $fileInfo.IsReadOnly = $true
+
+                $Script:WriteFailThrown = $null
+
+                $writeFailCompany = [PSCustomObject]@{
+                    Cnpj      = $Script:FailCnpj
+                    UpdatedAt = $null
+                    Email     = [PSCustomObject]@{
+                        Para = @()
+                        Cc   = @()
+                        Cco  = @()
+                    }
+                }
+
+                try {
+                    Save-CompanyConfig -Company $writeFailCompany -ErrorAction Stop
+                } catch {
+                    $Script:WriteFailThrown = $_
+                }
+            }
+
+            It 'Throws CompanyConfigSaveFailed on write failure' {
+                $Script:WriteFailThrown | Should -Not -BeNullOrEmpty
+
+                $Script:WriteFailThrown.FullyQualifiedErrorId |
+                    Should -BeLike 'CompanyConfigSaveFailed*'
+            }
+
+            It 'Uses WriteError category on write failure' {
+                $Script:WriteFailThrown.CategoryInfo.Category |
+                    Should -Be ([System.Management.Automation.ErrorCategory]::WriteError)
+            }
+        }
+        #endregion
+
+
+        #region Promotion failure
+        Context 'Promotion failure' {
+
+            BeforeAll {
+
+                Mock -CommandName Get-StorePath -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$Scope,
+
+                        [Parameter()]
+                        [string]$Cnpj
+                    )
+
+                    [System.IO.Path]::Combine($TestDrive, $Cnpj, 'config')
+                } -ParameterFilter {
+                    $Scope -eq 'Config'
+                }
+
+                $Script:PromoteCnpj = '12345678000195'
+
+                $configPath = [System.IO.Path]::Combine(
+                    $TestDrive,
+                    $Script:PromoteCnpj,
+                    'config'
+                )
+
+                $targetParams = @{
+                    Path      = $configPath
+                    ChildPath = '{0}.json' -f $Script:PromoteCnpj
+                }
+
+                $targetPath   = Join-Path @targetParams
+
+                [System.IO.Directory]::CreateDirectory($configPath) | Out-Null
+                [System.IO.Directory]::CreateDirectory($targetPath) | Out-Null
+
+                $Script:PromoteFailThrown = $null
+
+                $promoteFailCompany = [PSCustomObject]@{
+                    Cnpj      = $Script:PromoteCnpj
+                    UpdatedAt = $null
+                    Email     = [PSCustomObject]@{
+                        Para = @()
+                        Cc   = @()
+                        Cco  = @()
+                    }
+                }
+
+                try {
+                    Save-CompanyConfig -Company $promoteFailCompany -ErrorAction Stop
+                } catch {
+                    $Script:PromoteFailThrown = $_
+                }
+            }
+
+            It 'Throws CompanyConfigSaveFailed on promotion failure' {
+                $Script:PromoteFailThrown | Should -Not -BeNullOrEmpty
+
+                $Script:PromoteFailThrown.FullyQualifiedErrorId |
+                    Should -BeLike 'CompanyConfigSaveFailed*'
+            }
+
+            It 'Uses WriteError category on promotion failure' {
+                $Script:PromoteFailThrown.CategoryInfo.Category |
+                    Should -Be ([System.Management.Automation.ErrorCategory]::WriteError)
             }
         }
         #endregion

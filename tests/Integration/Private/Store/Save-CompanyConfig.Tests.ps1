@@ -33,7 +33,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Save-CompanyConfig' {
+Describe 'Save-CompanyConfig' -Tag 'Integration' {
 
     InModuleScope PipeDFe {
 
@@ -313,8 +313,8 @@ Describe 'Save-CompanyConfig' {
                     UpdatedAt = $null
                     Email     = [PSCustomObject]@{
                         Para = @($recipient)
-                        Cc   = @()
-                        Cco  = @()
+                        Cc   = @($recipient)
+                        Cco  = @($recipient)
                     }
                 }
 
