@@ -297,6 +297,32 @@ Describe 'Resolve-DFeXmlFile' {
 
                 $result.Unresolved | Should -HaveCount 1
             }
+
+            It 'Adds a file to Unresolved when Tipo property is null' {
+                $file = New-FakeFile -Name 'nulltipo.xml'
+
+                Mock -CommandName Get-DFeXmlMetadata -MockWith {
+                    [PSCustomObject]@{ Tipo = $null }
+                }
+
+                $result = Resolve-DFeXmlFile -Candidates @($file)
+
+                $result.Unresolved | Should -HaveCount 1
+            }
+
+            It 'Adds a file to Unresolved for an unsupported TipoXmlDFe value' {
+                $file = New-FakeFile -Name 'desconhecido.xml'
+
+                Mock -CommandName Get-DFeXmlMetadata -MockWith {
+                    [PSCustomObject]@{
+                        Tipo = [TipoXmlDFe]::Desconhecido
+                    }
+                }
+
+                $result = Resolve-DFeXmlFile -Candidates @($file)
+
+                $result.Unresolved | Should -HaveCount 1
+            }
         }
         #endregion
 
