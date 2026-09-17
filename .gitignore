@@ -40,3 +40,6 @@ Desktop.ini
 *.cer
 *.crt
 *.key
+
+# Smtp Integration Test
+tests/Fixtures/smtp-secrets.json
