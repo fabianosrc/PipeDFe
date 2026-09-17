@@ -285,6 +285,18 @@ Describe 'ConvertTo-MailAddress' {
                 $thrown.FullyQualifiedErrorId | Should -BeLike 'InvalidMailAddress*'
             }
 
+            It 'Throws InvalidMailAddress in Strict mode for a quoted local-part with spaces' {
+                # [MailAddress] accepts '"user name"@domain.com' but the strict pattern
+                # rejects it because Address contains whitespace inside the quoted local-part.
+                $mailParams = @{
+                    InputObject = '"user name"@domain.com'
+                    Strict      = $true
+                    ErrorAction = 'Stop'
+                }
+
+                { ConvertTo-MailAddress @mailParams } | Should -Throw
+            }
+
             It 'Uses InvalidData category in strict mode' {
                 $thrown = $null
 
