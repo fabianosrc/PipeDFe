@@ -44,7 +44,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Save-SmtpConfig' {
+Describe 'Save-SmtpConfig' -Tag 'Integration' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -245,6 +245,53 @@ Describe 'Save-SmtpConfig' {
                 $secondTime = [System.DateTimeOffset]$Script:SecondWriteUpdatedAt
 
                 $secondTime | Should -BeGreaterOrEqual $firstTime
+            }
+        }
+        #endregion
+
+        #region Corrupted existing config
+        Context 'Corrupted existing config' {
+
+            BeforeAll {
+
+                $smtpParams = @{
+                    Path      = (Get-StorePath -Scope Root)
+                    ChildPath = 'smtp.json'
+                }
+
+                $smtpPath = Join-Path @smtpParams
+
+                [System.IO.Directory]::CreateDirectory(
+                    [System.IO.Path]::GetDirectoryName($smtpPath)
+                ) | Out-Null
+
+                # Write invalid JSON so ConvertFrom-Json throws when Save-SmtpConfig
+                # tries to read CreatedAt from the existing file.
+                [System.IO.File]::WriteAllText($smtpPath, '{ invalid json !!!')
+
+                $Script:CorruptedThrown = $null
+
+                try {
+                    Save-SmtpConfig -Config (New-ValidSmtpConfig) -ErrorAction Stop
+                } catch {
+                    $Script:CorruptedThrown = $_
+                }
+            }
+
+            AfterAll {
+
+                $smtpPath = Join-Path -Path (Get-StorePath -Scope Root) -ChildPath 'smtp.json'
+
+                Remove-Item -LiteralPath $smtpPath -Force -ErrorAction SilentlyContinue
+            }
+
+            It 'Throws when the existing smtp.json cannot be parsed' {
+                $Script:CorruptedThrown | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Wraps the parse error in an IOException' {
+                $Script:CorruptedThrown.Exception |
+                    Should -BeOfType [System.IO.IOException]
             }
         }
         #endregion
