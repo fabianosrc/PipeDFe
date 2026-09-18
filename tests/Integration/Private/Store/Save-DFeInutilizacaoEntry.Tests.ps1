@@ -57,11 +57,13 @@ Describe 'Save-DFeInutilizacaoEntry' {
         #region Infrastructure
         BeforeAll {
 
+            $testID = [guid]::NewGuid().ToString('N')
+
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
 
             $joinPathParams = @{
                 Path      = [System.IO.Path]::GetTempPath()
-                ChildPath = 'PipeDFe.Save-DFeInutilizacaoEntry.Tests-' + [guid]::NewGuid().ToString('N')
+                ChildPath = 'PipeDFe.Save-DFeInutilizacaoEntry.Tests-{0}' -f $testID
             }
 
             $Script:TestRoot = Join-Path @joinPathParams
@@ -84,7 +86,7 @@ Describe 'Save-DFeInutilizacaoEntry' {
 
                 $joinPathParams = @{
                     Path      = $Script:TestRoot
-                    ChildPath = [guid]::NewGuid().ToString('N') + '.xml'
+                    ChildPath = '{0}.xml' -f [guid]::NewGuid().ToString('N')
                 }
 
                 $path = Join-Path @joinPathParams
@@ -727,6 +729,80 @@ WHERE  id_inut = @id_inut;
             }
 
             It 'Reports InutilizacaoEntrySaveFailed as ErrorId on connection failure' {
+                $file = New-TestXmlFile -Content '<inutNFe>fail</inutNFe>'
+                $meta = New-TestInutilizacaoMetadata -File $file
+
+                try {
+                    Save-DFeInutilizacaoEntry -Cnpj $Script:Cnpj -Metadata $meta -ErrorAction Stop
+                    throw 'Expected Save-DFeInutilizacaoEntry to fail.'
+                } catch {
+                    $_.FullyQualifiedErrorId | Should -BeLike 'InutilizacaoEntrySaveFailed*'
+                }
+            }
+        }
+        #endregion
+
+        #region Write failure
+        Context 'Write failure with failed rollback' {
+
+            BeforeAll {
+
+                Mock -CommandName Open-DFeIndexConnection -MockWith {
+                    param($Cnpj)
+                    $null = $Cnpj
+
+                    $fakeConn = [PSCustomObject]@{}
+
+                    $fakeConn | Add-Member -MemberType ScriptMethod -Name BeginTransaction -Value {
+                        $tx = [PSCustomObject]@{}
+
+                        $tx | Add-Member -MemberType ScriptMethod -Name Rollback -Value {
+                            throw [System.InvalidOperationException]::new('Simulated rollback failure.')
+                        }
+
+                        $tx | Add-Member -MemberType ScriptMethod -Name Commit  -Value {}
+                        $tx | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                        return $tx
+                    }
+
+                    $fakeConn | Add-Member -MemberType ScriptMethod -Name CreateCommand -Value {
+                        $cmd = [PSCustomObject]@{}
+
+                        $fakeParams = [PSCustomObject]@{}
+                        $fakeParams | Add-Member -MemberType ScriptMethod -Name AddWithValue -Value {
+                            param($n, $v)
+                            $null = $n
+                            $null = $v
+                        }
+
+                        $cmd | Add-Member -MemberType NoteProperty -Name Parameters  -Value $fakeParams
+                        $cmd | Add-Member -MemberType NoteProperty -Name Transaction -Value $null
+                        $cmd | Add-Member -MemberType NoteProperty -Name CommandText -Value [string]::Empty
+
+                        $cmd | Add-Member -MemberType ScriptMethod -Name ExecuteReader -Value {
+                            $r = [PSCustomObject]@{}
+                            $r | Add-Member -MemberType ScriptMethod -Name Read    -Value { $false }
+                            $r | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+                            return $r
+                        }
+
+                        $cmd | Add-Member -MemberType ScriptMethod -Name ExecuteNonQuery -Value {
+                            throw [System.InvalidOperationException]::new('Simulated execute failure.')
+                        }
+
+                        $cmd | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                        return $cmd
+                    }
+
+                    $fakeConn | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                    return $fakeConn
+                }
+            }
+
+            It 'Silences rollback failure and still throws InutilizacaoEntrySaveFailed' {
                 $file = New-TestXmlFile -Content '<inutNFe>fail</inutNFe>'
                 $meta = New-TestInutilizacaoMetadata -File $file
 
