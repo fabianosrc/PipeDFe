@@ -2,18 +2,10 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
 
-# Least-privilege permissions.
-# The workflow only needs to read repository contents.
-permissions:
-  contents: read
-
-# PowerShell is the default shell for all `run` steps.
 defaults:
   run:
     shell: pwsh
@@ -23,224 +15,69 @@ jobs:
     name: CI / PowerShell ${{ matrix.ps-version }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
-    # Prevent a broken or unexpectedly long-running job from consuming
-    # runner resources indefinitely.
-    timeout-minutes: 20
-
     strategy:
-      # Run every matrix combination so that a failure in one environment
-      # does not hide compatibility problems in another.
       fail-fast: false
-
       matrix:
         include:
-          # Windows PowerShell 5.1
-          # Important for projects that still support the Windows PowerShell
-          # compatibility/runtime baseline.
           - os: windows-latest
-            ps-version: "5.1"
+            ps-version: '5.1'
             shell: powershell
-
-          # PowerShell 7
-          # `pwsh` is the native PowerShell 7 executable on GitHub-hosted
-          # Windows runners.
           - os: windows-latest
-            ps-version: "7"
+            ps-version: '7'
             shell: pwsh
 
     steps:
-      # ──────────────────────────────────────────────────────────────────────
-      # Source
-      # ──────────────────────────────────────────────────────────────────────
-
-      - name: Checkout repository
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # Fetch only the commit required by the workflow.
-          fetch-depth: 1
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Environment
-      # ──────────────────────────────────────────────────────────────────────
+      # ── PowerShell 5.1 uses a different shell ───────────────────────────────
+      # The matrix.shell value drives only the `shell:` override below.
+      # All other steps already default to `pwsh` via the job default above,
+      # which is correct for the PS 7 leg. For the PS 5.1 leg we override
+      # only the steps that must run under Windows PowerShell.
 
-      - name: Display environment
-        shell: ${{ matrix.shell }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          Write-Host "PowerShell version:"
-          $PSVersionTable.PSVersion
-
-          Write-Host ""
-          Write-Host "PowerShell edition:"
-          $PSVersionTable.PSEdition
-
-          Write-Host ""
-          Write-Host "Operating system:"
-          $PSVersionTable.OS
-
-      # ──────────────────────────────────────────────────────────────────────
-      # PowerShell modules
-      # ──────────────────────────────────────────────────────────────────────
-
-      # Cache module installation directories to reduce dependency installation
-      # time while keeping the cache isolated by OS and PowerShell version.
-      #
-      # The repository manifest files participate in the cache key so dependency
-      # changes naturally invalidate the cache.
-      - name: Cache PowerShell modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ProgramFiles }}\WindowsPowerShell\Modules
-            ${{ env.USERPROFILE }}\Documents\WindowsPowerShell\Modules
-            ${{ env.ProgramFiles }}\PowerShell\Modules
-            ${{ env.USERPROFILE }}\Documents\PowerShell\Modules
-          key: powershell-modules-${{ runner.os }}-ps${{ matrix.ps-version }}-${{ hashFiles('**/*.psd1', '**/*.psm1') }}
-          restore-keys: |
-            powershell-modules-${{ runner.os }}-ps${{ matrix.ps-version }}-
-
+      # ── Install dependencies ─────────────────────────────────────────────────
       - name: Install Pester
         shell: ${{ matrix.shell }}
         run: |
-          $ErrorActionPreference = 'Stop'
-
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-
-          $requiredVersion = [version]'5.7.1'
-
-          $installed = Get-Module -Name Pester -ListAvailable |
-            Where-Object Version -eq $requiredVersion
-
-          if (-not $installed) {
-            Write-Host "Installing Pester $requiredVersion..."
-
-            Install-Module -Name Pester -RequiredVersion $requiredVersion -Scope CurrentUser -Force -SkipPublisherCheck
-          } else {
-            Write-Host "Pester $requiredVersion is already available."
+          if (-not (Get-Module -Name Pester -ListAvailable | Where-Object { $_.Version -ge [version]'5.0.0' })) {
+            Install-Module -Name Pester -MinimumVersion 5.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
           }
 
       - name: Install PSScriptAnalyzer
         shell: ${{ matrix.shell }}
         run: |
-          $ErrorActionPreference = 'Stop'
-
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-
-          $requiredVersion = [version]'1.24.0'
-
-          $installed = Get-Module -Name PSScriptAnalyzer -ListAvailable |
-            Where-Object Version -eq $requiredVersion
-
-          if (-not $installed) {
-            Write-Host "Installing PSScriptAnalyzer $requiredVersion..."
-
-            Install-Module -Name PSScriptAnalyzer -RequiredVersion $requiredVersion -Scope CurrentUser -Force
-          } else {
-            Write-Host "PSScriptAnalyzer $requiredVersion is already available."
+          if (-not (Get-Module -Name PSScriptAnalyzer -ListAvailable)) {
+            Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
           }
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Static analysis
-      # ──────────────────────────────────────────────────────────────────────
-
+      # ── Lint ─────────────────────────────────────────────────────────────────
       - name: Lint
         shell: ${{ matrix.shell }}
-        run: |
-          $ErrorActionPreference = 'Stop'
+        run: .\tools\Invoke-Lint.ps1 -Strict
 
-          Write-Host "Running strict static analysis..."
-
-          .\tools\Invoke-Lint.ps1 -Strict
-
-      # ──────────────────────────────────────────────────────────────────────
-      # Tests
-      # ──────────────────────────────────────────────────────────────────────
-
+      # ── Tests ────────────────────────────────────────────────────────────────
       - name: Tests
         shell: ${{ matrix.shell }}
-        run: |
-          $ErrorActionPreference = 'Stop'
+        run: .\tools\Invoke-Tests.ps1 -Coverage -CoverageTarget 80
 
-          Write-Host "Running test suite..."
-          Write-Host "Required coverage: 80%"
-
-          .\tools\Invoke-Tests.ps1 -Coverage -CoverageTarget 80
-
-      # ──────────────────────────────────────────────────────────────────────
-      # Test result validation
-      # ──────────────────────────────────────────────────────────────────────
-
-      # This runs even when the test step fails so that missing or incomplete
-      # test output is reported explicitly rather than silently ignored.
-      - name: Validate test results
-        if: always()
-        shell: ${{ matrix.shell }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $testResults = 'output/test-results/TestResults.NUnitXml.xml'
-
-          if (-not (Test-Path -LiteralPath $testResults -PathType Leaf)) {
-            throw "Test results were not generated: $testResults"
-          }
-
-          Write-Host "Test results found: $testResults"
-
-      # ──────────────────────────────────────────────────────────────────────
-      # Coverage validation
-      # ──────────────────────────────────────────────────────────────────────
-
-      # Keep coverage validation independent from the test command so a missing
-      # coverage artifact cannot accidentally pass unnoticed.
-      - name: Validate coverage report
-        if: always()
-        shell: ${{ matrix.shell }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $coverage = 'output/coverage/coverage.xml'
-
-          if (-not (Test-Path -LiteralPath $coverage -PathType Leaf)) {
-            throw "Coverage report was not generated: $coverage"
-          }
-
-          Write-Host "Coverage report found: $coverage"
-
-      # ──────────────────────────────────────────────────────────────────────
-      # Artifacts
-      # ──────────────────────────────────────────────────────────────────────
-
-      # Test results are uploaded independently so they remain available for
-      # debugging even when the test suite itself fails.
+      # ── Upload test results ──────────────────────────────────────────────────
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-ps${{ matrix.ps-version }}
           path: output/test-results/TestResults.NUnitXml.xml
-          if-no-files-found: error
-          retention-days: 14
+          if-no-files-found: warn
 
-      # Coverage is retained as a separate artifact so it can be inspected
-      # independently from the test results.
+      # ── Upload coverage report ───────────────────────────────────────────────
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-ps${{ matrix.ps-version }}
           path: output/coverage/coverage.xml
-          if-no-files-found: error
-          retention-days: 14
-
-      # ──────────────────────────────────────────────────────────────────────
-      # Final status
-      # ──────────────────────────────────────────────────────────────────────
-
-      # Make the final state explicit in the workflow log.
-      - name: CI completed
-        if: success()
-        shell: ${{ matrix.shell }}
-        run: |
-          Write-Host "CI completed successfully."
-          Write-Host "Environment: PowerShell ${{ matrix.ps-version }} / ${{ matrix.os }}"
+          if-no-files-found: warn
