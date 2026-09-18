@@ -52,18 +52,20 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Save-DFeDocumentEntry' {
+Describe 'Save-DFeDocumentEntry' -Tag 'Integration' {
 
     InModuleScope -ModuleName PipeDFe {
 
         #region Infrastructure
         BeforeAll {
 
+            $testID = [guid]::NewGuid().ToString('N')
+
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
 
             $joinPathParams = @{
                 Path      = [System.IO.Path]::GetTempPath()
-                ChildPath = 'PipeDFe.Save-DFeDocumentEntry.Tests-' + [guid]::NewGuid().ToString('N')
+                ChildPath = 'PipeDFe.Save-DFeDocumentEntry.Tests-{0}' -f $testID
             }
 
             $Script:TestRoot = Join-Path @joinPathParams
@@ -71,8 +73,8 @@ Describe 'Save-DFeDocumentEntry' {
             New-Item -ItemType Directory -Path $Script:TestRoot -Force -ErrorAction Stop |
                 Out-Null
 
-            $env:LOCALAPPDATA   = $Script:TestRoot
-            $Script:Cnpj        = '12345678000199'
+            $env:LOCALAPPDATA = $Script:TestRoot
+            $Script:Cnpj = '12345678000199'
             $Script:ChaveAcesso = '35260812345678000199550010000000011234567890'
 
             Initialize-DFeIndex -Cnpj $Script:Cnpj | Out-Null
@@ -86,7 +88,7 @@ Describe 'Save-DFeDocumentEntry' {
 
                 $joinPathParams = @{
                     Path      = $Script:TestRoot
-                    ChildPath = [guid]::NewGuid().ToString('N') + '.xml'
+                    ChildPath = '{0}.xml' -f [guid]::NewGuid().ToString('N')
                 }
 
                 $path = Join-Path @joinPathParams
@@ -305,7 +307,7 @@ WHERE  chave_acesso = @chave;
             BeforeAll {
 
                 $Script:NullableChave = '35260812345678000199550010000000021234567890'
-                $Script:NullableFile  = New-TestXmlFile -Content '<nfe>nullable</nfe>'
+                $Script:NullableFile = New-TestXmlFile -Content '<nfe>nullable</nfe>'
 
                 $metaParams = @{
                     File  = $Script:NullableFile
@@ -336,7 +338,7 @@ WHERE  chave_acesso = @chave;
 
             It 'Stores NULL for empty DhEmi' {
                 $chave = '35260812345678000199550010000000031234567890'
-                $file  = New-TestXmlFile -Content '<nfe>emptydhemi</nfe>'
+                $file = New-TestXmlFile -Content '<nfe>emptydhemi</nfe>'
 
                 $metaParams = @{
                     File  = $file
@@ -358,7 +360,7 @@ WHERE  chave_acesso = @chave;
 
             BeforeAll {
 
-                $Script:Rule1Chave    = '35260812345678000199550010000000041234567890'
+                $Script:Rule1Chave = '35260812345678000199550010000000041234567890'
                 $Script:Rule1BareFile = New-TestXmlFile -Content '<nfe>bare</nfe>'
                 $Script:Rule1ProcFile = New-TestXmlFile -Content '<nfeProc>proc</nfeProc>'
 
@@ -408,7 +410,7 @@ WHERE  chave_acesso = @chave;
 
             BeforeAll {
 
-                $Script:Rule2Chave    = '35260812345678000199550010000000051234567890'
+                $Script:Rule2Chave = '35260812345678000199550010000000051234567890'
                 $Script:Rule2ProcFile = New-TestXmlFile -Content '<nfeProc>proc</nfeProc>'
                 $Script:Rule2BareFile = New-TestXmlFile -Content '<nfe>bare</nfe>'
 
@@ -465,7 +467,7 @@ WHERE  chave_acesso = @chave;
             BeforeAll {
 
                 $Script:Rule3Chave = '35260812345678000199550010000000061234567890'
-                $Script:Rule3File  = New-TestXmlFile -Content '<nfe>same</nfe>'
+                $Script:Rule3File = New-TestXmlFile -Content '<nfe>same</nfe>'
 
                 $metaParams = @{
                     File  = $Script:Rule3File
@@ -505,7 +507,7 @@ WHERE  chave_acesso = @chave;
 
             BeforeAll {
 
-                $Script:Rule4Chave  = '35260812345678000199550010000000071234567890'
+                $Script:Rule4Chave = '35260812345678000199550010000000071234567890'
                 $Script:Rule4FileV1 = New-TestXmlFile -Content '<nfe>v1</nfe>'
 
                 $metaParams = @{
@@ -737,9 +739,9 @@ WHERE  chave_acesso = @chave;
                 $parameter.Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute]
-                    } | Select-Object -ExpandProperty Mandatory |
+                    } |
 
-                    Should -Contain $true
+                    Select-Object -ExpandProperty Mandatory | Should -Contain $true
             }
 
             It 'Declares Metadata as a mandatory parameter' {
@@ -748,9 +750,9 @@ WHERE  chave_acesso = @chave;
                 $parameter.Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute]
-                    } | Select-Object -ExpandProperty Mandatory |
+                    } |
 
-                    Should -Contain $true
+                    Select-Object -ExpandProperty Mandatory | Should -Contain $true
             }
         }
         #endregion
@@ -789,5 +791,76 @@ WHERE  chave_acesso = @chave;
             }
         }
         #endregion
+
+        Context 'Write failure with failed rollback' {
+            BeforeAll {
+
+                Mock -CommandName Open-DFeIndexConnection -MockWith {
+                    param($Cnpj)
+                    $null = $Cnpj
+
+                    $fakeConn = [PSCustomObject]@{}
+
+                    $fakeConn | Add-Member -MemberType ScriptMethod -Name BeginTransaction -Value {
+                        $tx = [PSCustomObject]@{}
+
+                        $tx | Add-Member -MemberType ScriptMethod -Name Rollback -Value {
+                            throw [System.InvalidOperationException]::new('Simulated rollback failure.')
+                        }
+
+                        $tx | Add-Member -MemberType ScriptMethod -Name Commit  -Value {}
+                        $tx | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                        return $tx
+                    }
+
+                    $fakeConn | Add-Member -MemberType ScriptMethod -Name CreateCommand -Value {
+                        $cmd = [PSCustomObject]@{}
+
+                        $fakeParams = [PSCustomObject]@{}
+                        $fakeParams | Add-Member -MemberType ScriptMethod -Name AddWithValue -Value {
+                            param($n, $v)
+                            $null = $n
+                            $null = $v
+                        }
+
+                        $cmd | Add-Member -MemberType NoteProperty -Name Parameters  -Value $fakeParams
+                        $cmd | Add-Member -MemberType NoteProperty -Name Transaction -Value $null
+                        $cmd | Add-Member -MemberType NoteProperty -Name CommandText -Value [string]::Empty
+
+                        $cmd | Add-Member -MemberType ScriptMethod -Name ExecuteReader -Value {
+                            $r = [PSCustomObject]@{}
+                            $r | Add-Member -MemberType ScriptMethod -Name Read    -Value { $false }
+                            $r | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+                            return $r
+                        }
+
+                        $cmd | Add-Member -MemberType ScriptMethod -Name ExecuteNonQuery -Value {
+                            throw [System.InvalidOperationException]::new('Simulated execute failure.')
+                        }
+
+                        $cmd | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                        return $cmd
+                    }
+
+                    $fakeConn | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                    return $fakeConn
+                } -Verifiable
+            }
+
+            It 'Silences rollback failure and still throws DocumentEntrySaveFailed' {
+                $file = New-TestXmlFile -Content '<nfe>fail</nfe>'
+                $meta = New-TestDocumentMetadata -File $file
+
+                try {
+                    Save-DFeDocumentEntry -Cnpj $Script:Cnpj -Metadata $meta -ErrorAction Stop
+                    throw 'Expected Save-DFeDocumentEntry to fail.'
+                } catch {
+                    $_.FullyQualifiedErrorId | Should -BeLike 'DocumentEntrySaveFailed*'
+                }
+            }
+        }
     }
 }
