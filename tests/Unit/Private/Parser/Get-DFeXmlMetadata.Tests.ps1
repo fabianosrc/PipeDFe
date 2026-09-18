@@ -1573,8 +1573,4 @@ Describe 'Get-DFeXmlMetadata' {
         }
         #endregion
     }
-
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
-    }
 }
