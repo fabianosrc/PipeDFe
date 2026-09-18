@@ -38,6 +38,11 @@ Private dependencies:
   ConvertTo-FormattedCnpj
 #>
 function Build-MailBody {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSUseApprovedVerbs',
+        '',
+        Justification = 'Build- is semantically correct for template rendering. Format- refers to output formatting. New- implies object creation without template dependency.'
+    )]
     [CmdletBinding()]
     [OutputType([string])]
     param (
