@@ -11,169 +11,181 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ci-ps51:
-    name: CI / PowerShell 5.1
+  ci:
+    name: CI / PowerShell ${{ matrix.ps-version }}
     runs-on: windows-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: powershell
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ps-version: '5.1'
+            shell: powershell
+
+          - ps-version: '7'
+            shell: pwsh
 
     steps:
+      # ──────────────────────────────────────────────────────────────────────
+      # Checkout
+      # ──────────────────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Display environment
+      # ──────────────────────────────────────────────────────────────────────
+      # Environment
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Show environment
+        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
-          Write-Host "Edition           : $($PSVersionTable.PSEdition)"
 
-      - name: Cache modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ProgramFiles }}\WindowsPowerShell\Modules
-            ${{ env.USERPROFILE }}\Documents\WindowsPowerShell\Modules
-          key: psmodules-ps51-${{ hashFiles('**/*.psd1') }}
-          restore-keys: psmodules-ps51-
+          Write-Host "PowerShell version:"
+          $PSVersionTable | Format-List
 
+          Write-Host "Working directory:"
+          Get-Location
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Install Pester
+      # ──────────────────────────────────────────────────────────────────────
       - name: Install Pester
+        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          if (-not (Get-Module -Name Pester -ListAvailable | Where-Object { $_.Version -ge '5.7.1' })) {
-            Install-Module -Name Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+
+          Set-PSRepository `
+            -Name 'PSGallery' `
+            -InstallationPolicy 'Trusted'
+
+          $pester = Get-Module -Name 'Pester' -ListAvailable |
+            Where-Object { $_.Version -ge [version]'5.0.0' } |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+
+          if (-not $pester) {
+            Write-Host 'Installing Pester 5+...'
+
+            Install-Module `
+              -Name 'Pester' `
+              -MinimumVersion '5.0.0' `
+              -Scope 'CurrentUser' `
+              -Force `
+              -SkipPublisherCheck `
+              -AllowClobber
+          }
+          else {
+            Write-Host "Pester $($pester.Version) already available."
           }
 
+          Import-Module Pester -MinimumVersion 5.0.0 -Force
+
+          Write-Host 'Installed Pester versions:'
+          Get-Module -Name Pester -ListAvailable |
+            Sort-Object Version -Descending |
+            Select-Object Name, Version, Path |
+            Format-Table -AutoSize
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Install PSScriptAnalyzer
+      # ──────────────────────────────────────────────────────────────────────
       - name: Install PSScriptAnalyzer
+        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          if (-not (Get-Module -Name PSScriptAnalyzer -ListAvailable | Where-Object { $_.Version -ge '1.24.0' })) {
-            Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
+
+          Set-PSRepository `
+            -Name 'PSGallery' `
+            -InstallationPolicy 'Trusted'
+
+          $analyzer = Get-Module -Name 'PSScriptAnalyzer' -ListAvailable |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+
+          if (-not $analyzer) {
+            Write-Host 'Installing PSScriptAnalyzer...'
+
+            Install-Module `
+              -Name 'PSScriptAnalyzer' `
+              -Scope 'CurrentUser' `
+              -Force `
+              -AllowClobber
+          }
+          else {
+            Write-Host "PSScriptAnalyzer $($analyzer.Version) already available."
           }
 
+          Import-Module PSScriptAnalyzer -Force
+
+          Write-Host 'Installed PSScriptAnalyzer versions:'
+          Get-Module -Name PSScriptAnalyzer -ListAvailable |
+            Sort-Object Version -Descending |
+            Select-Object Name, Version, Path |
+            Format-Table -AutoSize
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Lint
+      # ──────────────────────────────────────────────────────────────────────
       - name: Lint
-        run: .\tools\Invoke-Lint.ps1 -Strict
+        shell: ${{ matrix.shell }}
+        run: |
+          $ErrorActionPreference = 'Stop'
 
+          if (-not (Test-Path -LiteralPath '.\tools\Invoke-Lint.ps1')) {
+            throw 'tools\Invoke-Lint.ps1 was not found.'
+          }
+
+          & '.\tools\Invoke-Lint.ps1' -Strict
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Tests + Coverage
+      # ──────────────────────────────────────────────────────────────────────
       - name: Tests
-        run: .\tools\Invoke-Tests.ps1 -Coverage -CoverageTarget 80
-
-      - name: Validate test results
-        if: always()
+        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path 'output/test-results/TestResults.NUnitXml.xml')) {
-            throw 'Test results not found'
+
+          if (-not (Test-Path -LiteralPath '.\tools\Invoke-Tests.ps1')) {
+            throw 'tools\Invoke-Tests.ps1 was not found.'
           }
 
-      - name: Validate coverage
-        if: always()
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path 'output/coverage/coverage.xml')) {
-            throw 'Coverage report not found'
+          & '.\tools\Invoke-Tests.ps1' `
+            -Coverage `
+            -CoverageTarget 80
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
           }
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Upload test results
+      # ──────────────────────────────────────────────────────────────────────
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-ps51
+          name: test-results-ps${{ matrix.ps-version }}
           path: output/test-results/TestResults.NUnitXml.xml
+          if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload coverage
+      # ──────────────────────────────────────────────────────────────────────
+      # Upload coverage
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-ps51
+          name: coverage-ps${{ matrix.ps-version }}
           path: output/coverage/coverage.xml
-          retention-days: 14
-
-  ci-ps7:
-    name: CI / PowerShell 7
-    runs-on: windows-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: pwsh
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Display environment
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
-          Write-Host "Edition           : $($PSVersionTable.PSEdition)"
-
-      - name: Cache modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ProgramFiles }}\PowerShell\Modules
-            ${{ env.USERPROFILE }}\Documents\PowerShell\Modules
-          key: psmodules-ps7-${{ hashFiles('**/*.psd1') }}
-          restore-keys: psmodules-ps7-
-
-      - name: Install Pester
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          if (-not (Get-Module -Name Pester -ListAvailable | Where-Object { $_.Version -ge '5.7.1' })) {
-            Install-Module -Name Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
-          }
-
-      - name: Install PSScriptAnalyzer
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          if (-not (Get-Module -Name PSScriptAnalyzer -ListAvailable | Where-Object { $_.Version -ge '1.24.0' })) {
-            Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
-          }
-
-      - name: Lint
-        run: .\tools\Invoke-Lint.ps1 -Strict
-
-      - name: Tests
-        run: .\tools\Invoke-Tests.ps1 -Coverage -CoverageTarget 80
-
-      - name: Validate test results
-        if: always()
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path 'output/test-results/TestResults.NUnitXml.xml')) {
-            throw 'Test results not found'
-          }
-
-      - name: Validate coverage
-        if: always()
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path 'output/coverage/coverage.xml')) {
-            throw 'Coverage report not found'
-          }
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-ps7
-          path: output/test-results/TestResults.NUnitXml.xml
-          retention-days: 14
-
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-ps7
-          path: output/coverage/coverage.xml
+          if-no-files-found: warn
           retention-days: 14
