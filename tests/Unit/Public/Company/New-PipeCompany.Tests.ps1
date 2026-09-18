@@ -307,6 +307,149 @@ Describe 'New-PipeCompany' {
         }
         #endregion
 
+        #region Phase 2 - Optional parameters forwarded to factory
+        Context 'Phase 2 - Optional parameters forwarded to factory' {
+
+            BeforeAll {
+
+                Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
+                    $Script:Cnpj
+                }
+
+                Mock -CommandName Assert-CompanyInput -MockWith {
+
+                }
+
+                Mock -CommandName Get-StorePath -MockWith {
+                    $Script:OutputPath
+                }
+
+                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
+
+                }
+
+                Mock -CommandName ConvertTo-CompanyObject -MockWith {
+                    $Script:FakeCompany
+                }
+
+                Mock -CommandName Save-CompanyConfig -MockWith {
+
+                }
+
+                Mock -CommandName Get-CompanyConfig -MockWith {
+                    $Script:FakeCompany
+                }
+
+                $Script:XmlPathNfse    = Join-Path -Path $TestDrive -ChildPath 'xml-nfse'
+                $Script:XmlPathEntrada = Join-Path -Path $TestDrive -ChildPath 'xml-entrada'
+                $Script:SmtpConfig     = [PSCustomObject]@{ Host = 'smtp.example.com' }
+
+                New-Item -Path $Script:XmlPathNfse    -ItemType Directory -Force | Out-Null
+                New-Item -Path $Script:XmlPathEntrada -ItemType Directory -Force | Out-Null
+
+                $optionalParams = @{
+                    Cnpj           = $Script:Cnpj
+                    RazaoSocial    = 'ACME'
+                    Uf             = 'SP'
+                    Ambiente       = 'Producao'
+                    XmlPath        = $Script:XmlPath
+                    OutputPath     = $Script:OutputPath
+                    XmlPathNfse    = $Script:XmlPathNfse
+                    XmlPathEntrada = $Script:XmlPathEntrada
+                    NomeFantasia   = 'ACME FANTASIA'
+                    Ie             = '123456789'
+                    Smtp           = $Script:SmtpConfig
+                }
+
+                $null = New-PipeCompany @optionalParams
+            }
+
+            It 'Forwards XmlPathNfse to Assert-CompanyInput' {
+                $invokeParams = @{
+                    CommandName     = 'Assert-CompanyInput'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $XmlPathNfse -eq $Script:XmlPathNfse }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Forwards XmlPathEntrada to Assert-CompanyInput' {
+                $invokeParams = @{
+                    CommandName     = 'Assert-CompanyInput'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $XmlPathEntrada -eq $Script:XmlPathEntrada }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Forwards XmlPathNfse to ConvertTo-CompanyObject' {
+                $invokeParams = @{
+                    CommandName     = 'ConvertTo-CompanyObject'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $XmlPathNfse -eq $Script:XmlPathNfse }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Forwards XmlPathEntrada to ConvertTo-CompanyObject' {
+                $invokeParams = @{
+                    CommandName     = 'ConvertTo-CompanyObject'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $XmlPathEntrada -eq $Script:XmlPathEntrada }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Forwards NomeFantasia to ConvertTo-CompanyObject' {
+                $invokeParams = @{
+                    CommandName     = 'ConvertTo-CompanyObject'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $NomeFantasia -eq 'ACME FANTASIA' }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Forwards Ie to ConvertTo-CompanyObject' {
+                $invokeParams = @{
+                    CommandName     = 'ConvertTo-CompanyObject'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $Ie -eq '123456789' }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Forwards Smtp to ConvertTo-CompanyObject' {
+                $invokeParams = @{
+                    CommandName     = 'ConvertTo-CompanyObject'
+                    Scope           = 'Context'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $Smtp.Host -eq 'smtp.example.com' }
+                }
+
+                Should -Invoke @invokeParams
+            }
+        }
+        #endregion
+
         #region Phase 3 - Persistence
         Context 'Phase 3 - Persistence' {
 
