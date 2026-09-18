@@ -2,82 +2,178 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
-defaults:
-  run:
-    shell: pwsh
+permissions:
+  contents: read
 
 jobs:
-  ci:
-    name: CI / PowerShell ${{ matrix.ps-version }} / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            ps-version: '5.1'
-            shell: powershell
-          - os: windows-latest
-            ps-version: '7'
-            shell: pwsh
+  ci-ps51:
+    name: CI / PowerShell 5.1
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
 
     steps:
-      # ── Checkout ────────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      # ── PowerShell 5.1 uses a different shell ───────────────────────────────
-      # The matrix.shell value drives only the `shell:` override below.
-      # All other steps already default to `pwsh` via the job default above,
-      # which is correct for the PS 7 leg. For the PS 5.1 leg we override
-      # only the steps that must run under Windows PowerShell.
-
-      # ── Install dependencies ─────────────────────────────────────────────────
-      - name: Install Pester
-        shell: ${{ matrix.shell }}
+      - name: Display environment
         run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+          Write-Host "Edition           : $($PSVersionTable.PSEdition)"
+
+      - name: Cache modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ProgramFiles }}\WindowsPowerShell\Modules
+            ${{ env.USERPROFILE }}\Documents\WindowsPowerShell\Modules
+          key: psmodules-ps51-${{ hashFiles('**/*.psd1') }}
+          restore-keys: psmodules-ps51-
+
+      - name: Install Pester
+        run: |
+          $ErrorActionPreference = 'Stop'
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          if (-not (Get-Module -Name Pester -ListAvailable | Where-Object { $_.Version -ge [version]'5.0.0' })) {
-            Install-Module -Name Pester -MinimumVersion 5.0.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          if (-not (Get-Module -Name Pester -ListAvailable | Where-Object { $_.Version -ge '5.7.1' })) {
+            Install-Module -Name Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
           }
 
       - name: Install PSScriptAnalyzer
-        shell: ${{ matrix.shell }}
         run: |
+          $ErrorActionPreference = 'Stop'
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          if (-not (Get-Module -Name PSScriptAnalyzer -ListAvailable)) {
-            Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+          if (-not (Get-Module -Name PSScriptAnalyzer -ListAvailable | Where-Object { $_.Version -ge '1.24.0' })) {
+            Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
           }
 
-      # ── Lint ─────────────────────────────────────────────────────────────────
       - name: Lint
-        shell: ${{ matrix.shell }}
         run: .\tools\Invoke-Lint.ps1 -Strict
 
-      # ── Tests ────────────────────────────────────────────────────────────────
       - name: Tests
-        shell: ${{ matrix.shell }}
         run: .\tools\Invoke-Tests.ps1 -Coverage -CoverageTarget 80
 
-      # ── Upload test results ──────────────────────────────────────────────────
+      - name: Validate test results
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path 'output/test-results/TestResults.NUnitXml.xml')) {
+            throw 'Test results not found'
+          }
+
+      - name: Validate coverage
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path 'output/coverage/coverage.xml')) {
+            throw 'Coverage report not found'
+          }
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-ps${{ matrix.ps-version }}
+          name: test-results-ps51
           path: output/test-results/TestResults.NUnitXml.xml
-          if-no-files-found: warn
+          retention-days: 14
 
-      # ── Upload coverage report ───────────────────────────────────────────────
-      - name: Upload coverage report
+      - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-ps${{ matrix.ps-version }}
+          name: coverage-ps51
           path: output/coverage/coverage.xml
-          if-no-files-found: warn
+          retention-days: 14
+
+  ci-ps7:
+    name: CI / PowerShell 7
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Display environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+          Write-Host "Edition           : $($PSVersionTable.PSEdition)"
+
+      - name: Cache modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ProgramFiles }}\PowerShell\Modules
+            ${{ env.USERPROFILE }}\Documents\PowerShell\Modules
+          key: psmodules-ps7-${{ hashFiles('**/*.psd1') }}
+          restore-keys: psmodules-ps7-
+
+      - name: Install Pester
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          if (-not (Get-Module -Name Pester -ListAvailable | Where-Object { $_.Version -ge '5.7.1' })) {
+            Install-Module -Name Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+          }
+
+      - name: Install PSScriptAnalyzer
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          if (-not (Get-Module -Name PSScriptAnalyzer -ListAvailable | Where-Object { $_.Version -ge '1.24.0' })) {
+            Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
+          }
+
+      - name: Lint
+        run: .\tools\Invoke-Lint.ps1 -Strict
+
+      - name: Tests
+        run: .\tools\Invoke-Tests.ps1 -Coverage -CoverageTarget 80
+
+      - name: Validate test results
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path 'output/test-results/TestResults.NUnitXml.xml')) {
+            throw 'Test results not found'
+          }
+
+      - name: Validate coverage
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path 'output/coverage/coverage.xml')) {
+            throw 'Coverage report not found'
+          }
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-ps7
+          path: output/test-results/TestResults.NUnitXml.xml
+          retention-days: 14
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-ps7
+          path: output/coverage/coverage.xml
+          retention-days: 14
