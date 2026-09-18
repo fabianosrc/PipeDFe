@@ -164,5 +164,69 @@ Describe 'ConvertTo-DpapiString' {
             }
         }
         #endregion
+
+        #region Successful encryption
+        Context 'Successful encryption' {
+
+            BeforeEach {
+
+                Mock -CommandName ConvertFrom-SecureString -MockWith {
+                    return $Script:EncryptedBlob
+                }
+            }
+
+            It 'Returns the encrypted string from ConvertFrom-SecureString' {
+                $result = ConvertTo-DpapiString -SecureString $Script:SecureValue
+
+                $result | Should -Be $Script:EncryptedBlob
+            }
+
+            It 'Returns a string' {
+                $result = ConvertTo-DpapiString -SecureString $Script:SecureValue
+
+                $result | Should -BeOfType [string]
+            }
+
+            It 'Calls ConvertFrom-SecureString exactly once' {
+                ConvertTo-DpapiString -SecureString $Script:SecureValue | Out-Null
+
+                $invokeParams = @{
+                    CommandName = 'ConvertFrom-SecureString'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 1
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Throws DpapiEncryptFailed when ConvertFrom-SecureString returns empty' {
+                Mock -CommandName ConvertFrom-SecureString -MockWith {
+                    return [string]::Empty
+                }
+
+                try {
+                    ConvertTo-DpapiString -SecureString $Script:SecureValue -ErrorAction Stop
+                    throw 'Expected ConvertTo-DpapiString to fail.'
+                } catch {
+                    $_.FullyQualifiedErrorId | Should -BeLike 'DpapiEncryptFailed*'
+                }
+            }
+
+            It 'Throws DpapiEncryptFailed when ConvertFrom-SecureString returns whitespace' {
+                Mock -CommandName ConvertFrom-SecureString -MockWith {
+                    return '   '
+                }
+
+                try {
+                    ConvertTo-DpapiString -SecureString $Script:SecureValue -ErrorAction Stop
+                    throw 'Expected ConvertTo-DpapiString to fail.'
+                } catch {
+                    $_.FullyQualifiedErrorId | Should -BeLike 'DpapiEncryptFailed*'
+                }
+            }
+        }
+        #endregion
     }
 }
