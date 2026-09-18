@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
@@ -15,56 +16,77 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+
+# ============================================================================
+# PowerShell 5.1
+# ============================================================================
 jobs:
-  ci:
-    name: CI / PowerShell ${{ matrix.ps-version }}
+
+  powershell-5-1:
+    name: CI / PowerShell 5.1
     runs-on: windows-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - ps-version: '5.1'
-            shell: powershell
-
-          - ps-version: '7'
-            shell: pwsh
+    defaults:
+      run:
+        shell: powershell
 
     steps:
-      # ──────────────────────────────────────────────────────────────────────
+
+      # ----------------------------------------------------------------------
       # Checkout
-      # ──────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ──────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------------
       # Environment
-      # ──────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------------
       - name: Show environment
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
 
-          Write-Host "PowerShell version:"
+          Write-Host '========================================'
+          Write-Host 'PowerShell 5.1 CI'
+          Write-Host '========================================'
+
           $PSVersionTable | Format-List
 
-          Write-Host "Working directory:"
-          Get-Location
+          Write-Host "Working directory: $(Get-Location)"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Install Pester
-      # ──────────────────────────────────────────────────────────────────────
-      - name: Install Pester
-        shell: ${{ matrix.shell }}
+      # ----------------------------------------------------------------------
+      # Prepare PowerShell Gallery
+      # ----------------------------------------------------------------------
+      - name: Prepare PowerShell Gallery
         run: |
           $ErrorActionPreference = 'Stop'
 
-          Set-PSRepository `
-            -Name 'PSGallery' `
-            -InstallationPolicy 'Trusted'
+          [Net.ServicePointManager]::SecurityProtocol = `
+            [Net.ServicePointManager]::SecurityProtocol -bor `
+            [Net.SecurityProtocolType]::Tls12
 
-          $pester = Get-Module -Name 'Pester' -ListAvailable |
-            Where-Object { $_.Version -ge [version]'5.0.0' } |
+          if (-not (Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue)) {
+            Install-PackageProvider `
+              -Name NuGet `
+              -MinimumVersion '2.8.5.201' `
+              -Force `
+              -Scope CurrentUser
+          }
+
+          Set-PSRepository `
+            -Name PSGallery `
+            -InstallationPolicy Trusted
+
+      # ----------------------------------------------------------------------
+      # Install Pester 5+
+      # ----------------------------------------------------------------------
+      - name: Install Pester
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $pester = Get-Module Pester -ListAvailable |
+            Where-Object {
+              $_.Version -ge [version]'5.0.0'
+            } |
             Sort-Object Version -Descending |
             Select-Object -First 1
 
@@ -72,38 +94,31 @@ jobs:
             Write-Host 'Installing Pester 5+...'
 
             Install-Module `
-              -Name 'Pester' `
+              -Name Pester `
               -MinimumVersion '5.0.0' `
-              -Scope 'CurrentUser' `
+              -Scope CurrentUser `
               -Force `
               -SkipPublisherCheck `
               -AllowClobber
           }
           else {
-            Write-Host "Pester $($pester.Version) already available."
+            Write-Host "Pester $($pester.Version) already installed."
           }
 
           Import-Module Pester -MinimumVersion 5.0.0 -Force
 
-          Write-Host 'Installed Pester versions:'
-          Get-Module -Name Pester -ListAvailable |
-            Sort-Object Version -Descending |
-            Select-Object Name, Version, Path |
-            Format-Table -AutoSize
+          $loadedPester = Get-Module Pester
 
-      # ──────────────────────────────────────────────────────────────────────
+          Write-Host "Using Pester $($loadedPester.Version)"
+
+      # ----------------------------------------------------------------------
       # Install PSScriptAnalyzer
-      # ──────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------------
       - name: Install PSScriptAnalyzer
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
 
-          Set-PSRepository `
-            -Name 'PSGallery' `
-            -InstallationPolicy 'Trusted'
-
-          $analyzer = Get-Module -Name 'PSScriptAnalyzer' -ListAvailable |
+          $analyzer = Get-Module PSScriptAnalyzer -ListAvailable |
             Sort-Object Version -Descending |
             Select-Object -First 1
 
@@ -111,54 +126,54 @@ jobs:
             Write-Host 'Installing PSScriptAnalyzer...'
 
             Install-Module `
-              -Name 'PSScriptAnalyzer' `
-              -Scope 'CurrentUser' `
+              -Name PSScriptAnalyzer `
+              -Scope CurrentUser `
               -Force `
               -AllowClobber
           }
           else {
-            Write-Host "PSScriptAnalyzer $($analyzer.Version) already available."
+            Write-Host "PSScriptAnalyzer $($analyzer.Version) already installed."
           }
 
           Import-Module PSScriptAnalyzer -Force
 
-          Write-Host 'Installed PSScriptAnalyzer versions:'
-          Get-Module -Name PSScriptAnalyzer -ListAvailable |
-            Sort-Object Version -Descending |
-            Select-Object Name, Version, Path |
-            Format-Table -AutoSize
+          $loadedAnalyzer = Get-Module PSScriptAnalyzer
 
-      # ──────────────────────────────────────────────────────────────────────
+          Write-Host "Using PSScriptAnalyzer $($loadedAnalyzer.Version)"
+
+      # ----------------------------------------------------------------------
       # Lint
-      # ──────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------------
       - name: Lint
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
 
-          if (-not (Test-Path -LiteralPath '.\tools\Invoke-Lint.ps1')) {
-            throw 'tools\Invoke-Lint.ps1 was not found.'
+          $script = Join-Path $PWD 'tools\Invoke-Lint.ps1'
+
+          if (-not (Test-Path -LiteralPath $script)) {
+            throw "Lint script not found: $script"
           }
 
-          & '.\tools\Invoke-Lint.ps1' -Strict
+          & $script -Strict
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Tests + Coverage
-      # ──────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------------
+      # Tests
+      # ----------------------------------------------------------------------
       - name: Tests
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
 
-          if (-not (Test-Path -LiteralPath '.\tools\Invoke-Tests.ps1')) {
-            throw 'tools\Invoke-Tests.ps1 was not found.'
+          $script = Join-Path $PWD 'tools\Invoke-Tests.ps1'
+
+          if (-not (Test-Path -LiteralPath $script)) {
+            throw "Test script not found: $script"
           }
 
-          & '.\tools\Invoke-Tests.ps1' `
+          & $script `
             -Coverage `
             -CoverageTarget 80
 
@@ -166,26 +181,213 @@ jobs:
             exit $LASTEXITCODE
           }
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Upload test results
-      # ──────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------------
+      # Test results
+      # ----------------------------------------------------------------------
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-ps${{ matrix.ps-version }}
+          name: test-results-ps5.1
           path: output/test-results/TestResults.NUnitXml.xml
           if-no-files-found: warn
           retention-days: 14
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Upload coverage
-      # ──────────────────────────────────────────────────────────────────────
-      - name: Upload coverage report
+      # ----------------------------------------------------------------------
+      # Coverage
+      # ----------------------------------------------------------------------
+      - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-ps${{ matrix.ps-version }}
+          name: coverage-ps5.1
+          path: output/coverage/coverage.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+
+  # ==========================================================================
+  # PowerShell 7
+  # ==========================================================================
+
+  powershell-7:
+    name: CI / PowerShell 7
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+
+      # ----------------------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------------
+      # Environment
+      # ----------------------------------------------------------------------
+      - name: Show environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          Write-Host '========================================'
+          Write-Host 'PowerShell 7 CI'
+          Write-Host '========================================'
+
+          $PSVersionTable | Format-List
+
+          Write-Host "Working directory: $(Get-Location)"
+
+      # ----------------------------------------------------------------------
+      # Prepare PowerShell Gallery
+      # ----------------------------------------------------------------------
+      - name: Prepare PowerShell Gallery
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          [Net.ServicePointManager]::SecurityProtocol = `
+            [Net.SecurityProtocolType]::Tls12
+
+          if (-not (Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue)) {
+            Install-PackageProvider `
+              -Name NuGet `
+              -MinimumVersion '2.8.5.201' `
+              -Force `
+              -Scope CurrentUser
+          }
+
+          Set-PSRepository `
+            -Name PSGallery `
+            -InstallationPolicy Trusted
+
+      # ----------------------------------------------------------------------
+      # Install Pester 5+
+      # ----------------------------------------------------------------------
+      - name: Install Pester
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $pester = Get-Module Pester -ListAvailable |
+            Where-Object {
+              $_.Version -ge [version]'5.0.0'
+            } |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+
+          if (-not $pester) {
+            Write-Host 'Installing Pester 5+...'
+
+            Install-Module `
+              -Name Pester `
+              -MinimumVersion '5.0.0' `
+              -Scope CurrentUser `
+              -Force `
+              -SkipPublisherCheck `
+              -AllowClobber
+          }
+          else {
+            Write-Host "Pester $($pester.Version) already installed."
+          }
+
+          Import-Module Pester -MinimumVersion 5.0.0 -Force
+
+          $loadedPester = Get-Module Pester
+
+          Write-Host "Using Pester $($loadedPester.Version)"
+
+      # ----------------------------------------------------------------------
+      # Install PSScriptAnalyzer
+      # ----------------------------------------------------------------------
+      - name: Install PSScriptAnalyzer
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $analyzer = Get-Module PSScriptAnalyzer -ListAvailable |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+
+          if (-not $analyzer) {
+            Write-Host 'Installing PSScriptAnalyzer...'
+
+            Install-Module `
+              -Name PSScriptAnalyzer `
+              -Scope CurrentUser `
+              -Force `
+              -AllowClobber
+          }
+          else {
+            Write-Host "PSScriptAnalyzer $($analyzer.Version) already installed."
+          }
+
+          Import-Module PSScriptAnalyzer -Force
+
+          $loadedAnalyzer = Get-Module PSScriptAnalyzer
+
+          Write-Host "Using PSScriptAnalyzer $($loadedAnalyzer.Version)"
+
+      # ----------------------------------------------------------------------
+      # Lint
+      # ----------------------------------------------------------------------
+      - name: Lint
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $script = Join-Path $PWD 'tools\Invoke-Lint.ps1'
+
+          if (-not (Test-Path -LiteralPath $script)) {
+            throw "Lint script not found: $script"
+          }
+
+          & $script -Strict
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      # ----------------------------------------------------------------------
+      # Tests
+      # ----------------------------------------------------------------------
+      - name: Tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $script = Join-Path $PWD 'tools\Invoke-Tests.ps1'
+
+          if (-not (Test-Path -LiteralPath $script)) {
+            throw "Test script not found: $script"
+          }
+
+          & $script `
+            -Coverage `
+            -CoverageTarget 80
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      # ----------------------------------------------------------------------
+      # Test results
+      # ----------------------------------------------------------------------
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-ps7
+          path: output/test-results/TestResults.NUnitXml.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ----------------------------------------------------------------------
+      # Coverage
+      # ----------------------------------------------------------------------
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-ps7
           path: output/coverage/coverage.xml
           if-no-files-found: warn
           retention-days: 14
