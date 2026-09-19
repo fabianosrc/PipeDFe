@@ -5,27 +5,22 @@
 Unit tests for ConvertFrom-DpapiString.
 
 .DESCRIPTION
-Verifies that ConvertFrom-DpapiString delegates to ConvertTo-SecureString
-and wraps failures in a structured terminating error.
+Verifies that ConvertFrom-DpapiString decrypts machine-scoped DPAPI values,
+preserves compatibility with legacy DPAPI values, and wraps decryption
+failures in a structured terminating error.
 
 Coverage includes:
   - Value is mandatory.
   - Value rejects null and empty string.
-  - Returns the SecureString produced by ConvertTo-SecureString.
-  - Returns a SecureString instance.
-  - Throws DpapiDecryptFailed when ConvertTo-SecureString fails.
+  - Machine-scoped values use the DPAPI-MACHINE prefix.
+  - Machine-scoped values are decrypted into a SecureString.
+  - Machine-scoped values support a successful round trip.
+  - Legacy DPAPI values remain supported.
+  - DpapiDecryptFailed is raised when decryption fails.
   - DpapiDecryptFailed uses SecurityError category.
   - DpapiDecryptFailed preserves the original exception.
   - DpapiDecryptFailed exposes the encrypted string as TargetObject.
 #>
-
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
-    'PSAvoidUsingConvertToSecureStringWithPlainText',
-    '',
-    Justification = 'Plain text is acceptable in test context.'
-)]
-
-param ()
 
 # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
 # because that's when Context/It are executed to register the test tree. If the
@@ -39,22 +34,29 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'ConvertFrom-DpapiString' {
+Describe 'ConvertFrom-DpapiString' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
 
-            $Script:Command        = Get-Command -Name ConvertFrom-DpapiString -ErrorAction Stop
+            $secureParams = @{
+                String      = 'PipeDFe-Test-Secret-123!'
+                AsPlainText = $true
+                Force       = $true
+            }
+
+            $Script:ExpectedSecure = ConvertTo-SecureString @secureParams
             $Script:EncryptedBlob  = 'encrypted-blob-placeholder'
-            $Script:ExpectedSecure = ConvertTo-SecureString -String 'vgqTHH9Gyci9UG' -AsPlainText -Force
         }
 
         #region Parameter contract
         Context 'Parameter contract' {
 
             It 'Declares Value as mandatory' {
-                $mandatory = $Script:Command.Parameters['Value'].Attributes |
+                $command = Get-Command -Name ConvertFrom-DpapiString
+
+                $mandatory = $command.Parameters['Value'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
@@ -64,7 +66,9 @@ Describe 'ConvertFrom-DpapiString' {
             }
 
             It 'Declares Value as string' {
-                $Script:Command.Parameters['Value'].ParameterType | Should -Be ([string])
+                $command = Get-Command -Name ConvertFrom-DpapiString
+
+                $command.Parameters['Value'].ParameterType | Should -Be ([string])
             }
 
             It 'Rejects a null Value' {
@@ -77,10 +81,51 @@ Describe 'ConvertFrom-DpapiString' {
         }
         #endregion
 
-        #region Successful decryption
-        Context 'Successful decryption' {
+        #region Machine-scoped decryption
+        Context 'Machine-scoped decryption' {
 
-            It 'Returns the SecureString from ConvertTo-SecureString' {
+            BeforeEach {
+
+                $Script:MachineEncryptedValue = $null
+
+                if ($Script:IsWindowsPlatform) {
+                    $expected = @{ SecureString = $Script:ExpectedSecure }
+
+                    $Script:MachineEncryptedValue = ConvertTo-DpapiString @expected
+                }
+            }
+
+            It 'Prefixes the encrypted value with DPAPI-MACHINE' -Skip:(
+                -not $Script:IsWindowsPlatform
+            ) {
+                $Script:MachineEncryptedValue | Should -BeLike 'DPAPI-MACHINE:*'
+            }
+
+            It 'Returns a SecureString' -Skip:(-not $Script:IsWindowsPlatform) {
+                $result = ConvertFrom-DpapiString -Value $Script:MachineEncryptedValue
+
+                $result | Should -BeOfType [System.Security.SecureString]
+            }
+
+            It 'Successfully decrypts a machine-scoped value' -Skip:(
+                -not $Script:IsWindowsPlatform
+            ) {
+                $result = ConvertFrom-DpapiString -Value $Script:MachineEncryptedValue
+
+                $plainText = [System.Net.NetworkCredential]::new(
+                    [string]::Empty,
+                    $result
+                ).Password
+
+                $plainText | Should -Be 'PipeDFe-Test-Secret-123!'
+            }
+        }
+        #endregion
+
+        #region Legacy decryption
+        Context 'Legacy decryption' {
+
+            It 'Supports a legacy DPAPI value' {
                 Mock -CommandName ConvertTo-SecureString -MockWith {
                     $Script:ExpectedSecure
                 }
@@ -90,7 +135,7 @@ Describe 'ConvertFrom-DpapiString' {
                 $result | Should -Be $Script:ExpectedSecure
             }
 
-            It 'Returns a SecureString' {
+            It 'Returns a SecureString for a legacy value' {
                 Mock -CommandName ConvertTo-SecureString -MockWith {
                     $Script:ExpectedSecure
                 }
@@ -100,14 +145,21 @@ Describe 'ConvertFrom-DpapiString' {
                 $result | Should -BeOfType [System.Security.SecureString]
             }
 
-            It 'Passes the encrypted string to ConvertTo-SecureString' {
+            It 'Passes the legacy value to ConvertTo-SecureString exactly once' {
                 Mock -CommandName ConvertTo-SecureString -MockWith {
                     $Script:ExpectedSecure
                 }
 
-                ConvertFrom-DpapiString -Value $Script:EncryptedBlob
+                ConvertFrom-DpapiString -Value $Script:EncryptedBlob | Out-Null
 
-                Should -Invoke -CommandName ConvertTo-SecureString -Times 1 -Exactly
+                $invokeParams = @{
+                    CommandName = 'ConvertTo-SecureString'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 1
+                }
+
+                Should -Invoke @invokeParams
             }
         }
         #endregion
@@ -116,6 +168,7 @@ Describe 'ConvertFrom-DpapiString' {
         Context 'Decryption failure' {
 
             BeforeAll {
+
                 $Script:OriginalException = [System.Exception]::new('DPAPI unavailable.')
 
                 Mock -CommandName ConvertTo-SecureString -MockWith {
@@ -133,17 +186,18 @@ Describe 'ConvertFrom-DpapiString' {
 
             It 'Throws DpapiDecryptFailed' {
                 $Script:Thrown | Should -Not -BeNullOrEmpty
+
                 $Script:Thrown.FullyQualifiedErrorId | Should -BeLike 'DpapiDecryptFailed*'
             }
 
             It 'Uses SecurityError category' {
-                $Script:Thrown.CategoryInfo.Category |
-                    Should -Be ([System.Management.Automation.ErrorCategory]::SecurityError)
+                $expected = [System.Management.Automation.ErrorCategory]::SecurityError
+
+                $Script:Thrown.CategoryInfo.Category | Should -Be $expected
             }
 
             It 'Preserves the original exception' {
-                $Script:Thrown.Exception.Message |
-                    Should -Be $Script:OriginalException.Message
+                $Script:Thrown.Exception.InnerException | Should -Be $Script:OriginalException
             }
 
             It 'Exposes the encrypted string as TargetObject' {

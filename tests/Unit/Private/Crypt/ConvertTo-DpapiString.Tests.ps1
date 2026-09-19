@@ -43,11 +43,8 @@ Describe 'ConvertTo-DpapiString' {
     InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
-
-            $Script:Command = Get-Command -Name ConvertTo-DpapiString -ErrorAction Stop
-
-            $secureStringParams = @{
-                String      = 'vgqTHH9Gyci9UG'
+            $secureValueParams = @{
+                String      = 'PipeDFe-Test-Secret-123!'
                 AsPlainText = $true
                 Force       = $true
             }
@@ -58,7 +55,6 @@ Describe 'ConvertTo-DpapiString' {
         }
 
         AfterAll {
-
             Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
         }
 
