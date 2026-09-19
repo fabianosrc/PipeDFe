@@ -3,6 +3,19 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+#region Platform Detection
+$Script:IsWindowsPlatform = (
+    [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+)
+
+if (-not $Script:IsWindowsPlatform) {
+    throw [System.PlatformNotSupportedException]::new(
+        "PipeDFe requires Windows. " +
+        "Detected platform: $([System.Environment]::OSVersion.Platform)"
+    )
+}
+#endregion
+
 #region Module State
 $Script:NativeDllDirectoryInitialized = $false
 $Script:NativeDllDirectoryCookie      = [System.IntPtr]::Zero
@@ -128,14 +141,15 @@ if ($assemblyName.Version -lt $Script:SQLite.MinimumVersion) {
 # Layers are loaded sequentially, while scripts within each layer are loaded
 # alphabetically to ensure deterministic initialization.
 $dotSourceLayers = [ordered]@{
-    Enum    = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Enum'
-    Core    = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Core'
-    Company = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Company'
-    Crypt   = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Crypt'
-    IO      = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/IO'
-    Parser  = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Parser'
-    Store   = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Store'
-    Public  = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Public'
+    Enum      = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Enum'
+    Core      = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Core'
+    Company   = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Company'
+    Crypt     = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Crypt'
+    Execution = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Execution'
+    IO        = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/IO'
+    Parser    = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Parser'
+    Store     = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Private/Store'
+    Public    = Join-Path -Path $Script:ModuleRoot -ChildPath 'src/Public'
 }
 
 foreach ($layer in $dotSourceLayers.GetEnumerator()) {
