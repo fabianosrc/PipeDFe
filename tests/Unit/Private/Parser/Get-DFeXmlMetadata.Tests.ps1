@@ -1183,8 +1183,8 @@ Describe 'Get-DFeXmlMetadata' {
             It 'Returns enum-backed fields using their declared enum types' {
                 $result = Get-DFeXmlMetadata -Path 'test.xml'
 
-                $result.Tipo | Should -BeOfType [TipoXmlDFe]
-                $result.Modelo | Should -BeOfType [ModeloDFe]
+                $result.Tipo.GetType().Name   | Should -Be 'TipoXmlDFe'
+                $result.Modelo.GetType().Name | Should -Be 'ModeloDFe'
             }
 
             It 'Returns all expected properties in stable order' {
