@@ -105,13 +105,17 @@ function Get-SmtpConfig {
     # written by Save-SmtpConfig. Casting to [datetime] or [DateTimeOffset]
     # here would lose the offset on .NET Framework and break the round-trip
     # contract with Save-SmtpConfig.
-    $createdAt = if ($null -ne $config.CreatedAt) {
+    $createdAt = if ($config.CreatedAt -is [datetime]) {
+        $config.CreatedAt.ToUniversalTime().ToString('o')
+    } elseif ($null -ne $config.CreatedAt) {
         [string]$config.CreatedAt
     } else {
         $null
     }
 
-    $updatedAt = if ($null -ne $config.UpdatedAt) {
+    $updatedAt = if ($config.UpdatedAt -is [datetime]) {
+        $config.UpdatedAt.ToUniversalTime().ToString('o')
+    } elseif ($null -ne $config.UpdatedAt) {
         [string]$config.UpdatedAt
     } else {
         $null
