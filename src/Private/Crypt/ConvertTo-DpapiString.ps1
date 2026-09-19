@@ -40,6 +40,9 @@ Returns a machine-scoped DPAPI payload.
 Private dependencies:
   None.
 #>
+
+Add-Type -AssemblyName 'System.Security'
+
 function ConvertTo-DpapiString {
     [CmdletBinding()]
     [OutputType([string])]

@@ -41,6 +41,9 @@ PS C:\> $secure = ConvertFrom-DpapiString -Value $encrypted
 Private dependencies:
   None.
 #>
+
+Add-Type -AssemblyName 'System.Security'
+
 function ConvertFrom-DpapiString {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
         'PSAvoidUsingConvertToSecureStringWithPlainText',
