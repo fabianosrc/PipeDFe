@@ -100,16 +100,16 @@ Describe 'Get-DFeXmlMetadata' {
                 $Metadata.PSObject.Properties.Name | Should -HaveCount 18
 
                 $Metadata.File | Should -BeOfType [System.IO.FileInfo]
-                $Metadata.Tipo | Should -BeOfType [TipoXmlDFe]
+                $Metadata.Tipo.GetType().Name | Should -Be 'TipoXmlDFe'
 
                 if ($null -ne $Metadata.Modelo) {
-                    $Metadata.Modelo | Should -BeOfType [ModeloDFe]
+                    $Metadata.Modelo.GetType().Name | Should -Be 'ModeloDFe'
                 }
 
                 $Metadata.IsProc | Should -BeOfType [bool]
 
                 if ($null -ne $Metadata.EventoTipo) {
-                    $Metadata.EventoTipo | Should -BeOfType [DFeEvento]
+                    $Metadata.EventoTipo.GetType().Name | Should -Be 'DFeEvento'
                 }
 
                 foreach ($propertyName in @(
