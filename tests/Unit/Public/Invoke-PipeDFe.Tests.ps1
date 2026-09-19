@@ -49,7 +49,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Invoke-PipeDFe' {
+Describe 'Invoke-PipeDFe' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -85,6 +85,20 @@ Describe 'Invoke-PipeDFe' {
                 Cnpj         = $Script:CnpjTwo
                 RazaoSocial  = 'EMPRESA BETA LTDA'
                 NomeFantasia = [string]::Empty
+                IsActive     = $true
+                XmlPath      = 'C:\xml'
+                OutputPath   = 'C:\output'
+                Email        = [PSCustomObject]@{
+                    Para = @()
+                    Cc   = @()
+                    Cco  = @()
+                }
+            }
+
+            $Script:CompanyActiveWithNomeFantasia = [PSCustomObject]@{
+                Cnpj         = $Script:CnpjOne
+                RazaoSocial  = 'EMPRESA ALPHA LTDA'
+                NomeFantasia = 'ALPHA'
                 IsActive     = $true
                 XmlPath      = 'C:\xml'
                 OutputPath   = 'C:\output'
@@ -492,36 +506,18 @@ Describe 'Invoke-PipeDFe' {
             BeforeAll {
 
                 Mock -CommandName Resolve-DateRange -MockWith {
-                    param (
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
-
-                    $null = $StartDate
-                    $null = $EndDate
                     return $Script:DateRange
                 }
 
                 Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
-                    param ([string]$Value)
-                    $null = $Value
                     return $Script:CnpjOne
                 }
 
                 Mock -CommandName Get-CompanyConfig -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
                     return $Script:CompanyActiveOne
                 }
 
                 Mock -CommandName Invoke-PipeDFeCompany -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $Company
-                    $null = $DateRange
                     return $Script:ResultadoOK
                 }
 
@@ -575,6 +571,18 @@ Describe 'Invoke-PipeDFe' {
 
             It 'Returns Success true when the company result is OK' {
                 $Script:Result.Success | Should -BeTrue
+            }
+
+            It 'Uses NomeFantasia as display name when it is not blank' {
+                Mock -CommandName Get-CompanyConfig -MockWith {
+                    return $Script:CompanyActiveWithNomeFantasia
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    return $Script:ResultadoOK
+                }
+
+                { Invoke-PipeDFe -Cnpj $Script:CnpjOne } | Should -Not -Throw
             }
         }
         #endregion
@@ -881,6 +889,170 @@ Describe 'Invoke-PipeDFe' {
                     Scope       = 'Context'
                     Exactly     = $true
                     Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+        }
+        #endregion
+
+        #region Execution lock
+        Context 'Execution lock' {
+
+            BeforeAll {
+
+                Mock -CommandName Resolve-DateRange -MockWith {
+                    return $Script:DateRange
+                }
+
+                Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
+                    return $Script:CnpjOne
+                }
+
+                Mock -CommandName Get-CompanyConfig -MockWith {
+                    return $Script:CompanyActiveOne
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    return $Script:ResultadoOK
+                }
+            }
+
+            It 'Acquires and releases the execution lock around pipeline execution' {
+                $events = [System.Collections.Generic.List[string]]::new()
+
+                Mock -CommandName Enter-PipeDFeExecutionLock -MockWith {
+
+                    $events.Add('Enter')
+
+                    return [PSCustomObject]@{
+                        PSTypeName = 'PipeDFe.ExecutionLock'
+                        Name       = 'Global\PipeDFe.Execution'
+                        Mutex      = $null
+                        Acquired   = $true
+                        Abandoned  = $false
+                    }
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    $events.Add('Company')
+
+                    return $Script:ResultadoOK
+                }
+
+                Mock -CommandName Exit-PipeDFeExecutionLock -MockWith {
+                    $events.Add('Exit')
+                }
+
+                Invoke-PipeDFe -Cnpj $Script:CnpjOne | Out-Null
+
+                $events | Should -Be @('Enter', 'Company', 'Exit')
+            }
+
+            It 'Does not acquire the execution lock when WhatIf is used' {
+                Mock -CommandName Enter-PipeDFeExecutionLock -MockWith {
+                    throw 'Execution lock should not be acquired under WhatIf.'
+                }
+
+                $pipeParams = @{
+                    Cnpj   = $Script:CnpjOne
+                    WhatIf = $true
+                }
+
+                { Invoke-PipeDFe @pipeParams } | Should -Not -Throw
+
+                $invokeParams = @{
+                    CommandName = 'Enter-PipeDFeExecutionLock'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Propagates LockAlreadyHeld before processing companies' {
+                Mock -CommandName Enter-PipeDFeExecutionLock -MockWith {
+                    $PSCmdlet.ThrowTerminatingError(
+                        [System.Management.Automation.ErrorRecord]::new(
+                            [System.InvalidOperationException]::new(
+                                'A PipeDFe execution is already in progress.'
+                            ),
+                            'LockAlreadyHeld',
+                            [System.Management.Automation.ErrorCategory]::ResourceBusy,
+                            'Global\PipeDFe.Execution'
+                        )
+                    )
+                }
+
+                Mock -CommandName Exit-PipeDFeExecutionLock -MockWith {
+
+                }
+
+                { Invoke-PipeDFe -Cnpj $Script:CnpjOne -ErrorAction Stop } |
+                    Should -Throw -ErrorId 'LockAlreadyHeld'
+
+                $invokeParams = @{
+                    CommandName = 'Invoke-PipeDFeCompany'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+
+                $invokeParams = @{
+                    CommandName = 'Exit-PipeDFeExecutionLock'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Releases the execution lock when date resolution fails' {
+                Mock -CommandName Enter-PipeDFeExecutionLock -MockWith {
+
+                    return [PSCustomObject]@{
+                        PSTypeName = 'PipeDFe.ExecutionLock'
+                        Name       = 'Global\PipeDFe.Execution'
+                        Mutex      = $null
+                        Acquired   = $true
+                        Abandoned  = $false
+                    }
+                }
+
+                Mock -CommandName Resolve-DateRange -MockWith {
+
+                    $PSCmdlet.ThrowTerminatingError(
+                        [System.Management.Automation.ErrorRecord]::new(
+                            [System.ArgumentException]::new(
+                                'Invalid date range.'
+                            ),
+                            'InvalidDateRange',
+                            [System.Management.Automation.ErrorCategory]::InvalidArgument,
+                            $null
+                        )
+                    )
+                }
+
+                Mock -CommandName Exit-PipeDFeExecutionLock -MockWith {
+
+                }
+
+                { Invoke-PipeDFe -Cnpj $Script:CnpjOne -StartDate 'invalid' } |
+                    Should -Throw -ErrorId 'InvalidDateRange'
+
+                $invokeParams = @{
+                    CommandName = 'Exit-PipeDFeExecutionLock'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 1
                 }
 
                 Should -Invoke @invokeParams
