@@ -1032,6 +1032,120 @@ AND requested_period IS NULL;
         }
         #endregion
 
+        #region Complete-DFeAuditExecution
+        Context 'Complete-DFeAuditExecution' {
+
+            BeforeAll {
+
+                $executionParams = @{
+                    Cnpj            = $Script:Cnpj
+                    Mode            = 'Manual'
+                    RequestedPeriod = '2026-08'
+                    ModuleVersion   = '0.1.0-test'
+                }
+
+                $Script:CompletionExecutionId = Start-DFeAuditExecution @executionParams
+
+            }
+
+            It 'Completes a running execution successfully' {
+                $completeParams = @{
+                    Cnpj        = $Script:Cnpj
+                    ExecutionId = $Script:CompletionExecutionId
+                    Status      = 'Succeeded'
+                }
+
+                Complete-DFeAuditExecution @completeParams
+
+                $querySql = @'
+SELECT
+    completed_at || '|' ||
+    status || '|' ||
+    COALESCE(error_summary, '')
+FROM audit_execution
+WHERE execution_id = @execution_id;
+'@
+
+                $invokeParams = @{
+                    Path       = $Script:DbPath
+                    Sql        = $querySql
+                    Parameters = @{
+                        '@execution_id' = $Script:CompletionExecutionId
+                    }
+                }
+
+                $result = Invoke-TestScalar @invokeParams
+
+                $result.ToString() | Should -Match '\|Succeeded\|$'
+            }
+
+            It 'Persists a UTC completion timestamp' {
+                $querySql = @'
+SELECT completed_at
+FROM audit_execution
+WHERE execution_id = @execution_id;
+'@
+
+                $invokeParams = @{
+                    Path       = $Script:DbPath
+                    Sql        = $querySql
+                    Parameters = @{
+                        '@execution_id' = $Script:CompletionExecutionId
+                    }
+                }
+
+                $completedAt = Invoke-TestScalar @invokeParams
+
+                $completedAt.ToString() | Should -Match '^\d{4}-\d{2}-\d{2}T'
+                $completedAt.ToString() | Should -Match '\+00:00$'
+            }
+
+            It 'Produces no output' {
+                $startParams = @{
+                    Cnpj          = $Script:Cnpj
+                    Mode          = 'Manual'
+                    ModuleVersion = '0.1.0-test'
+                }
+
+                $executionId = Start-DFeAuditExecution @startParams
+
+                $completeParams = @{
+                    Cnpj        = $Script:Cnpj
+                    ExecutionId = $executionId
+                    Status      = 'Succeeded'
+                }
+
+                $result = Complete-DFeAuditExecution @completeParams
+
+                $result | Should -BeNullOrEmpty
+            }
+
+            It 'Rejects an execution identifier that does not exist' {
+                $unknownExecutionId = '0123456789abcdef0123456789abcdef'
+
+                $thrown = $null
+
+                try {
+                    $completeParams = @{
+                        Cnpj        = $Script:Cnpj
+                        ExecutionId = $unknownExecutionId
+                        Status      = 'Succeeded'
+                        ErrorAction = 'Stop'
+                    }
+
+                    Complete-DFeAuditExecution @completeParams
+
+                } catch {
+                    $thrown = $_
+                }
+
+                $thrown | Should -Not -BeNullOrEmpty
+                $thrown.FullyQualifiedErrorId |
+                    Should -BeLike 'AuditExecutionCompletionFailed*'
+            }
+        }
+        #endregion
+
         #region Foreign-key enforcement
         Context 'Foreign-key enforcement' {
 
@@ -1200,7 +1314,80 @@ WHERE execution_id = 'execution-does-not-exist';
 
                 { Start-DFeAuditExecution @params } | Should -Throw
             }
+
+            It 'Rejects an invalid execution identifier' {
+                $completeParams = @{
+                    Cnpj        = $Script:Cnpj
+                    ExecutionId = 'invalid'
+                    Status      = 'Succeeded'
+                }
+
+                { Complete-DFeAuditExecution @completeParams } | Should -Throw
+            }
+
+            It 'Rejects an unsupported final status' {
+                $completeParams = @{
+                    Cnpj       =  $Script:Cnpj
+                    ExecutionId=  '012345678bcdef0123456789abcdef'
+                    Status     =  'Running'
+                }
+
+                { Complete-DFeAuditExecution @completeParams } | Should -Throw
+            }
+
+            It 'Rejects an invalid CNPJ' {
+                $completeParams = @{
+                    Cnpj        = 'INVALID'
+                    ExecutionId = '0123456789abcdef0123456789abcdef'
+                    Status      = 'Succeeded'
+                }
+
+                { Complete-DFeAuditExecution @completeParams } | Should -Throw
+            }
         }
         #endregion
+
+        #region Failed execution
+        Context 'Failed execution' {
+
+            It 'Completes an execution with Failed status and error information' {
+                $startParams = @{
+                    Cnpj          = $Script:Cnpj
+                    Mode          = 'Manual'
+                    ModuleVersion = '0.1.0-test'
+                }
+
+                $executionId = Start-DFeAuditExecution @startParams
+
+                $completeParams = @{
+                    Cnpj         = $Script:Cnpj
+                    ExecutionId  = $executionId
+                    Status       = 'Failed'
+                    ErrorSummary = 'DFeDownloadFailed: Unable to download the DFe.'
+                }
+
+                Complete-DFeAuditExecution @completeParams
+
+                $querySql = @'
+SELECT
+    status || '|' ||
+    COALESCE(error_summary, '')
+FROM audit_execution
+WHERE execution_id = @execution_id;
+'@
+
+                $invokeParams = @{
+                    Path       = $Script:DbPath
+                    Sql        = $querySql
+                    Parameters = @{ '@execution_id' = $executionId }
+                }
+
+                $result = Invoke-TestScalar @invokeParams
+
+                $result.ToString() |
+                    Should -Be 'Failed|DFeDownloadFailed: Unable to download the DFe.'
+            }
+        }
     }
+    #endregion
 }
