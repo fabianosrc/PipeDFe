@@ -870,6 +870,168 @@ AND duration_ms IS NULL;
         }
         #endregion
 
+        #region Start-DFeAuditExecution
+        Context 'Start-DFeAuditExecution' {
+
+            BeforeAll {
+
+                $Script:StartExecutionParams = @{
+                    Cnpj            = $Script:Cnpj
+                    Mode            = 'Manual'
+                    RequestedPeriod = '2026-08'
+                    ModuleVersion   = '0.1.0-test'
+                }
+
+                $Script:StartedExecutionId = Start-DFeAuditExecution @startExecutionParams
+
+                $querySql = @'
+SELECT
+    execution_id || '|' ||
+    started_at || '|' ||
+    mode || '|' ||
+    COALESCE(requested_period, '') || '|' ||
+    status || '|' ||
+    COALESCE(module_version, '')
+FROM audit_execution
+WHERE execution_id = @execution_id;
+'@
+
+                $invokeParams = @{
+                    Path       = $Script:DbPath
+                    Sql        = $querySql
+                    Parameters = @{
+                        '@execution_id' = $Script:StartedExecutionId
+                    }
+                }
+
+                $Script:StartedExecution = Invoke-TestScalar @invokeParams
+            }
+
+            It 'Returns an execution identifier' {
+                $Script:StartedExecutionId | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Returns a GUID formatted without separators' {
+                $Script:StartedExecutionId | Should -Match '^[0-9a-f]{32}$'
+            }
+
+            It 'Persists the execution record' {
+                $Script:StartedExecution | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Persists the execution identifier' {
+                $pattern = [regex]::Escape($Script:StartedExecutionId)
+
+                $Script:StartedExecution.ToString() | Should -Match $pattern
+            }
+
+            It 'Persists the mode' {
+                $Script:StartedExecution.ToString() | Should -Match '\|Manual\|'
+            }
+
+            It 'Persists the requested period' {
+                $Script:StartedExecution.ToString() | Should -Match '\|2026-08\|'
+            }
+
+            It 'Starts the execution with Running status' {
+                $Script:StartedExecution.ToString() | Should -Match '\|Running\|'
+            }
+
+            It 'Persists the module version' {
+                $Script:StartedExecution.ToString() | Should -Match '\|0\.1\.0-test$'
+            }
+
+            It 'Persists a UTC start timestamp' {
+                $timestamp = $Script:StartedExecution.ToString().Split('|')[1]
+
+                $timestamp | Should -Match '^\d{4}-\d{2}-\d{2}T'
+                $timestamp | Should -Match '\+00:00$'
+            }
+
+            It 'Generates different identifiers for different executions' {
+                $secondExecutionId = Start-DFeAuditExecution @Script:StartExecutionParams
+
+                $secondExecutionId | Should -Not -Be $Script:StartedExecutionId
+            }
+        }
+        #endregion
+
+        #region Start-DFeAuditExecution optional fields
+        Context 'Start-DFeAuditExecution optional fields' {
+
+            BeforeAll {
+
+                $executionParams = @{
+                    Cnpj          = $Script:Cnpj
+                    Mode          = 'Automatic'
+                    ModuleVersion = '0.1.0-test'
+                }
+
+                $Script:NullableExecutionId = Start-DFeAuditExecution @executionParams
+
+                $querySql = @'
+SELECT COUNT(*)
+FROM audit_execution
+WHERE execution_id = @execution_id
+AND requested_period IS NULL;
+'@
+
+                $invokeParams = @{
+                    Path       = $Script:DbPath
+                    Sql        = $querySql
+                    Parameters = @{
+                        '@execution_id' = $Script:NullableExecutionId
+                    }
+                }
+
+                $Script:NullablePeriodCount = Invoke-TestScalar @invokeParams
+            }
+
+            It 'Stores an omitted requested period as NULL' {
+                [int]$Script:NullablePeriodCount | Should -Be 1
+            }
+        }
+        #endregion
+
+        #region Start-DFeAuditExecution failure
+        Context 'Start-DFeAuditExecution failure' {
+
+            BeforeAll {
+
+                Mock -CommandName Open-SqliteConnection -MockWith {
+                    throw [System.IO.IOException]::new('Simulated connection failure.')
+                }
+
+                $Script:StartFailThrown = $null
+
+                try {
+                    $startParams = @{
+                        Cnpj          = $Script:Cnpj
+                        Mode          = 'Manual'
+                        ModuleVersion = '0.1.0-test'
+                    }
+
+                    Start-DFeAuditExecution @startParams -ErrorAction Stop
+                } catch {
+                    $Script:StartFailThrown = $_
+                }
+            }
+
+            It 'Throws AuditExecutionStartFailed on connection failure' {
+                $Script:StartFailThrown | Should -Not -BeNullOrEmpty
+
+                $Script:StartFailThrown.FullyQualifiedErrorId |
+                    Should -BeLike 'AuditExecutionStartFailed*'
+            }
+
+            It 'Uses WriteError category' {
+                $expected = ([System.Management.Automation.ErrorCategory]::WriteError)
+
+                $Script:StartFailThrown.CategoryInfo.Category | Should -Be  $expected
+            }
+        }
+        #endregion
+
         #region Foreign-key enforcement
         Context 'Foreign-key enforcement' {
 
@@ -1007,6 +1169,36 @@ WHERE execution_id = 'execution-does-not-exist';
                 }
 
                 { Save-DFeAuditEvent @saveParams } | Should -Throw
+            }
+
+            It 'Rejects an invalid Start-DFeAuditExecution CNPJ' {
+                $params = @{
+                    Cnpj          = 'INVALID'
+                    Mode          = 'Manual'
+                    ModuleVersion = '0.1.0-test'
+                }
+
+                { Start-DFeAuditExecution @params } | Should -Throw
+            }
+
+            It 'Rejects a missing execution mode' {
+                $params = @{
+                    Cnpj          = $Script:Cnpj
+                    Mode          = [string]::Empty
+                    ModuleVersion = '0.1.0-test'
+                }
+
+                { Start-DFeAuditExecution @params } | Should -Throw
+            }
+
+            It 'Rejects a missing module version' {
+                $params = @{
+                    Cnpj          = $Script:Cnpj
+                    Mode          = 'Manual'
+                    ModuleVersion = [string]::Empty
+                }
+
+                { Start-DFeAuditExecution @params } | Should -Throw
             }
         }
         #endregion
