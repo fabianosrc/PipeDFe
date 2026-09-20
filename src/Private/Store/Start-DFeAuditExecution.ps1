@@ -161,14 +161,14 @@ INSERT INTO audit_execution (
             }
         }
 
-        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-            $_.Exception,
-            'AuditExecutionStartFailed',
-            [System.Management.Automation.ErrorCategory]::WriteError,
-            $databasePath
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                $_.Exception,
+                'AuditExecutionStartFailed',
+                [System.Management.Automation.ErrorCategory]::WriteError,
+                $databasePath
+            )
         )
-
-        $PSCmdlet.ThrowTerminatingError($errorRecord)
     } finally {
         if ($null -ne $command) {
             $command.Dispose()
