@@ -15,13 +15,21 @@ Orchestrates the DFe pipeline execution for N companies:
      or more CNPJs are supplied. Inactive companies are skipped with a warning.
   4. For each company, applies ShouldProcess and delegates the full pipeline
      to Invoke-PipeDFeCompany.
-  5. Aggregates per-company results into a single ResultadoInvoke object.
-  6. Releases the global execution lock after pipeline execution.
+  5. Creates and completes a durable audit execution for each processed
+     company.
+  6. Aggregates per-company results into a single ResultadoInvoke object.
+  7. Releases the global execution lock after pipeline execution.
 
 Period or company-list resolution failures are global errors that terminate
 execution and propagate the original exception. Per-company failures are
-isolated: Invoke-PipeDFeCompany never throws, returning Status = 'Falha', and
-processing continues for remaining companies.
+isolated: Invoke-PipeDFeCompany normally returns Status = 'Falha', and
+processing continues for remaining companies. Unexpected exceptions raised
+during company processing are also isolated to the affected company.
+
+Audit persistence is performed per company because audit.db is scoped to the
+company CNPJ. Failure to initialize or start the audit execution prevents
+that company from being processed. The failure is recorded in the aggregated
+company result and processing continues for remaining companies.
 
 The global execution lock prevents concurrent PipeDFe executions on the same
 machine. The lock is intentionally not acquired when -WhatIf is used.
@@ -77,13 +85,18 @@ Private dependencies:
   Enter-PipeDFeExecutionLock
   Exit-PipeDFeExecutionLock
   Get-CompanyConfig
+  Initialize-DFeAudit
   Resolve-DateRange
+  Start-DFeAuditExecution
+  Complete-DFeAuditExecution
   Invoke-PipeDFeCompany
 
 The global execution lock prevents concurrent PipeDFe executions on the
 same machine.
 
 The lock is intentionally not acquired when -WhatIf is used.
+
+Audit executions are scoped per company because audit.db is scoped by CNPJ.
 
 The mutex is handled defensively for the possibility of an
 AbandonedMutexException being reported by WaitOne().
@@ -187,8 +200,8 @@ function Invoke-PipeDFe {
         )
 
         # Process each company
-        # Failures are isolated by Invoke-PipeDFeCompany.
-        $results  = [System.Collections.Generic.List[pscustomobject]]::new()
+        # Failures are isolated by company.
+        $results = [System.Collections.Generic.List[pscustomobject]]::new()
         $activity = 'Invoke-PipeDFe'
 
         try {
@@ -215,10 +228,7 @@ function Invoke-PipeDFe {
                 Write-Progress @progressParams -CurrentOperation 'Iniciando...'
                 Write-Verbose -Message "[$cnpjNormalized] Processando '$displayName'."
 
-                if (-not $PSCmdlet.ShouldProcess(
-                        $cnpjNormalized, "Executar pipeline DFe para '$displayName'"
-                    )
-                ) {
+                if (-not $PSCmdlet.ShouldProcess($cnpjNormalized, "Executar pipeline DFe para '$displayName'")) {
                     $results.Add(
                         [PSCustomObject]@{
                             PSTypeName      = 'PipeDFe.ResultadoEmpresa'
@@ -237,12 +247,95 @@ function Invoke-PipeDFe {
                     continue
                 }
 
-                $companyParams = @{
-                    Company   = $company
-                    DateRange = $dateRange
+                $auditExecutionId = $null
+                $companyResult = $null
+
+                try {
+                    Initialize-DFeAudit -Cnpj $cnpjNormalized | Out-Null
+
+                    $moduleVersion = if (
+                        $null -ne $MyInvocation.MyCommand.Module
+                    ) {
+                        $MyInvocation.MyCommand.Module.Version.ToString()
+                    } else {
+                        'Unknown'
+                    }
+
+                    $requestedPeriod = '{0}/{1}' -f (
+                        $dateRange.Start.ToString('yyyy-MM-dd'),
+                        $dateRange.End.ToString('yyyy-MM-dd')
+                    )
+
+                    $startAuditParams = @{
+                        Cnpj            = $cnpjNormalized
+                        Mode            = 'Invoke-PipeDFe'
+                        RequestedPeriod = $requestedPeriod
+                        ModuleVersion   = $moduleVersion
+                    }
+
+                    $auditExecutionId = Start-DFeAuditExecution @startAuditParams
+
+                    $companyParams = @{
+                        Company   = $company
+                        DateRange = $dateRange
+                    }
+
+                    $companyResult = Invoke-PipeDFeCompany @companyParams
+                } catch {
+                    $companyResult = [PSCustomObject]@{
+                        PSTypeName      = 'PipeDFe.ResultadoEmpresa'
+                        Cnpj            = $cnpjNormalized
+                        RazaoSocial     = $company.RazaoSocial
+                        Status          = 'Falha'
+                        TotalDocumentos = 0
+                        Gaps            = 0
+                        Arquivos        = @()
+                        EmailEnviado    = $false
+                        Avisos          = @()
+                        Erro            = $_.Exception.Message
+                    }
+
+                    Write-Warning -Message (
+                        "[$cnpjNormalized] Falha no processamento de '$displayName': " +
+                        $_.Exception.Message
+                    )
                 }
 
-                $results.Add((Invoke-PipeDFeCompany @companyParams))
+                if ($null -ne $auditExecutionId) {
+                    try {
+                        if ($companyResult.Status -eq 'Falha') {
+                            $errorSummary = $companyResult.Erro
+
+                            if ([string]::IsNullOrWhiteSpace($errorSummary)) {
+                                $errorSummary = 'Company processing returned Status = Falha.'
+                            }
+
+                            $completeAuditParams = @{
+                                Cnpj         = $cnpjNormalized
+                                ExecutionId  = $auditExecutionId
+                                Status       = 'Failed'
+                                ErrorSummary = $errorSummary
+                            }
+
+                            Complete-DFeAuditExecution @completeAuditParams
+                        } else {
+                            $completeAuditParams = @{
+                                Cnpj        = $cnpjNormalized
+                                ExecutionId = $auditExecutionId
+                                Status      = 'Succeeded'
+                            }
+
+                            Complete-DFeAuditExecution @completeAuditParams
+                        }
+                    } catch {
+                        Write-Warning -Message (
+                            "[$cnpjNormalized] Falha ao concluir a auditoria: " +
+                            $_.Exception.Message
+                        )
+                    }
+                }
+
+                $results.Add($companyResult)
 
                 Write-Progress @progressParams -CurrentOperation 'Concluído.'
             }
