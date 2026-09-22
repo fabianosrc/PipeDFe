@@ -353,14 +353,14 @@ Describe 'Initialize-DFeIndex' {
         # Schema version
         Context 'Schema version' {
 
-            It 'sets PRAGMA user_version to 2 on a new database' {
+            It 'sets PRAGMA user_version to 3 on a new database' {
                 $sqlParams = @{
                     Path = $Script:DbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 2
+                [int]$version | Should -Be 3
             }
         }
 
@@ -420,19 +420,28 @@ Describe 'Initialize-DFeIndex' {
             }
 
             It 'contains exactly the expected columns' {
-                @($Script:DocumentColumns.Keys | Sort-Object) |
-                    Should -Be @(
-                        'chave_acesso'
-                        'dh_emi'
-                        'file_path'
-                        'indexed_at'
-                        'is_proc'
-                        'modelo'
-                        'ndoc'
-                        'serie'
-                        'sha256'
-                    )
+                $expectedColumns = @(
+                    'chave_acesso'
+                    'dh_emi'
+                    'file_path'
+                    'indexed_at'
+                    'is_proc'
+                    'modelo'
+                    'ndoc'
+                    'serie'
+                    'sha256'
+                    'processing_status'
+                    'processing_started_at'
+                    'processed_at'
+                    'processing_error'
+                )
+
+                $actualColumns = @($Script:DocumentColumns.Keys | Sort-Object)
+                $expectedColumns = @($expectedColumns | Sort-Object)
+
+                $actualColumns | Should -Be $expectedColumns
             }
+
 
             It 'defines chave_acesso as the primary key' {
                 $Script:DocumentColumns['chave_acesso'].Primary | Should -Be 1
@@ -832,7 +841,7 @@ INSERT INTO dfe_document (
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 2
+                [int]$version | Should -Be 3
             }
         }
 
@@ -911,14 +920,14 @@ PRAGMA user_version = 2;
                 $path | Should -Be $Script:ExistingDbPath
             }
 
-            It 'leaves user_version unchanged at 2' {
+            It 'leaves user_version unchanged at 3' {
                 $sqlParams = @{
                     Path = $Script:ExistingDbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 2
+                [int]$version | Should -Be 3
             }
 
             It 'leaves all tables intact' {
@@ -978,14 +987,14 @@ CREATE TABLE dfe_document (
                     Should -Not -Throw
             }
 
-            It 'completes the schema to user_version = 2' {
+            It 'completes the schema to user_version = 3' {
                 $sqlParams = @{
                     Path = $Script:PartialDbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 2
+                [int]$version | Should -Be 3
             }
 
             It 'creates all remaining tables' {
