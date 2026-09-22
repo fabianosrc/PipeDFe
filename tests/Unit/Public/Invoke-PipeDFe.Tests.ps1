@@ -26,6 +26,14 @@ Coverage includes:
   - Returns Success = $false when any company returns Status = 'Falha'.
   - Propagates errors from Resolve-DateRange (global failure).
   - Propagates errors from Get-CompanyConfig (global failure).
+  - Acquires and releases the global execution lock.
+  - Does not acquire the execution lock under -WhatIf.
+  - Initializes and starts audit per processed company.
+  - Completes audit as Succeeded for successful company processing.
+  - Completes audit as Failed when Invoke-PipeDFeCompany returns Status = 'Falha'.
+  - Completes audit as Failed when an unexpected company exception occurs.
+  - Does not start audit for inactive companies or -WhatIf execution.
+  - Continues processing remaining companies when one company fails.
   - Returns correct ResultadoInvoke property types.
 #>
 
@@ -55,7 +63,7 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
 
         BeforeAll {
 
-            $Script:CnpjOne  = '12345678000199'
+            $Script:CnpjOne = '12345678000199'
             $Script:CnpjTwo = '98765432000100'
 
             $Script:DateRange = [PSCustomObject]@{
@@ -148,6 +156,18 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 Avisos          = @()
                 Erro            = 'Index failure.'
             }
+
+            Mock -CommandName Initialize-DFeAudit -MockWith {
+
+            }
+
+            Mock -CommandName Start-DFeAuditExecution -MockWith {
+                return '0123456789abcdef0123456789abcdef'
+            }
+
+            Mock -CommandName Complete-DFeAuditExecution -MockWith {
+
+            }
         }
 
         AfterAll {
@@ -229,7 +249,8 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $StartDate -eq '01/08/2026' -and $EndDate -eq '31/08/2026'
+                        $StartDate -eq '01/08/2026' -and
+                        $EndDate   -eq '31/08/2026'
                     }
                 }
 
@@ -309,7 +330,6 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
             }
 
             It 'Calls ConvertTo-NormalizedCnpj once per supplied Cnpj' {
-
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
                     $null = $Cnpj
@@ -389,11 +409,18 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
                     $null = $Cnpj
-                    return @($Script:CompanyActiveOne, $Script:CompanyActiveTwo)
+                    return @(
+                        $Script:CompanyActiveOne,
+                        $Script:CompanyActiveTwo
+                    )
                 }
 
                 Mock -CommandName Invoke-PipeDFeCompany -MockWith {
-                    param ([pscustomobject]$Company, [pscustomobject]$DateRange)
+                    param (
+                        [pscustomobject]$Company,
+                        [pscustomobject]$DateRange
+                    )
+
                     $null = $Company
                     $null = $DateRange
                     return $Script:ResultadoOK
@@ -423,7 +450,9 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = { -not $PSBoundParameters.ContainsKey('Cnpj') }
+                    ParameterFilter = {
+                        -not $PSBoundParameters.ContainsKey('Cnpj')
+                    }
                 }
 
                 Should -Invoke @invokeParams
@@ -490,6 +519,18 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 Should -Invoke @invokeParams
             }
 
+            It 'Does not initialize audit for an inactive company' {
+                $invokeParams = @{
+                    CommandName = 'Initialize-DFeAudit'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+
             It 'Returns an empty Results array' {
                 $Script:Result.Results | Should -HaveCount 0
             }
@@ -543,7 +584,9 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                     Scope           = 'Context'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = { $Company.Cnpj -eq $Script:CnpjOne }
+                    ParameterFilter = {
+                        $Company.Cnpj -eq $Script:CnpjOne
+                    }
                 }
 
                 Should -Invoke @invokeParams
@@ -582,7 +625,9 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                     return $Script:ResultadoOK
                 }
 
-                { Invoke-PipeDFe -Cnpj $Script:CnpjOne } | Should -Not -Throw
+                {
+                    Invoke-PipeDFe -Cnpj $Script:CnpjOne
+                } | Should -Not -Throw
             }
         }
         #endregion
@@ -676,6 +721,42 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 Should -Invoke @invokeParams
             }
 
+            It 'Initializes audit once per active company' {
+                $invokeParams = @{
+                    CommandName = 'Initialize-DFeAudit'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 2
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Starts audit once per active company' {
+                $invokeParams = @{
+                    CommandName = 'Start-DFeAuditExecution'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 2
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Completes audit once per active company' {
+                $invokeParams = @{
+                    CommandName = 'Complete-DFeAuditExecution'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 2
+                }
+
+                Should -Invoke @invokeParams
+            }
+
             It 'Includes one result per company in Results' {
                 $Script:Result.Results | Should -HaveCount 2
             }
@@ -740,12 +821,336 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 Should -Invoke @invokeParams
             }
 
+            It 'Does not initialize audit under -WhatIf' {
+                $invokeParams = @{
+                    CommandName = 'Initialize-DFeAudit'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Does not start audit under -WhatIf' {
+                $invokeParams = @{
+                    CommandName = 'Start-DFeAuditExecution'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'Context'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+
             It 'Returns a placeholder result with Status OK under -WhatIf' {
                 $Script:Result.Results[0].Status | Should -Be 'OK'
             }
 
             It 'Returns a placeholder result with TotalDocumentos 0 under -WhatIf' {
                 $Script:Result.Results[0].TotalDocumentos | Should -Be 0
+            }
+        }
+        #endregion
+
+        #region Audit lifecycle
+        Context 'Audit lifecycle' {
+
+            BeforeAll {
+
+                Mock -CommandName Resolve-DateRange -MockWith {
+                    return $Script:DateRange
+                }
+
+                Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
+                    return $Script:CnpjOne
+                }
+
+                Mock -CommandName Get-CompanyConfig -MockWith {
+                    return $Script:CompanyActiveOne
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    return $Script:ResultadoOK
+                }
+            }
+
+            It 'Initializes audit before starting audit execution' {
+                $events = [System.Collections.Generic.List[string]]::new()
+
+                Mock -CommandName Initialize-DFeAudit -MockWith {
+                    $events.Add('Initialize')
+                }
+
+                Mock -CommandName Start-DFeAuditExecution -MockWith {
+                    $events.Add('Start')
+
+                    return '0123456789abcdef0123456789abcdef'
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    $events.Add('Company')
+
+                    return $Script:ResultadoOK
+                }
+
+                Mock -CommandName Complete-DFeAuditExecution -MockWith {
+                    $events.Add('Complete')
+                }
+
+                Invoke-PipeDFe -Cnpj $Script:CnpjOne | Out-Null
+
+                $events | Should -Be @(
+                    'Initialize'
+                    'Start'
+                    'Company'
+                    'Complete'
+                )
+            }
+
+            It 'Passes the company Cnpj to audit initialization' {
+                Invoke-PipeDFe -Cnpj $Script:CnpjOne | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Initialize-DFeAudit'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:CnpjOne
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Starts audit with the expected execution metadata' {
+                Invoke-PipeDFe -Cnpj $Script:CnpjOne | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Start-DFeAuditExecution'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:CnpjOne -and
+                        $Mode -eq 'Invoke-PipeDFe' -and
+                        $RequestedPeriod -eq '2026-08-01/2026-08-31' -and
+                        -not [string]::IsNullOrWhiteSpace($ModuleVersion)
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Completes audit as Succeeded when company processing succeeds' {
+                Invoke-PipeDFe -Cnpj $Script:CnpjOne | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Complete-DFeAuditExecution'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:CnpjOne -and
+                        $ExecutionId -eq '0123456789abcdef0123456789abcdef' -and
+                        $Status -eq 'Succeeded' -and
+                        [string]::IsNullOrEmpty($ErrorSummary)
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Completes audit as Failed when company processing returns Falha' {
+                Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
+                    param ([string]$Value)
+                    $null = $Value
+                    return $Script:CnpjOne
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    return $Script:ResultadoFalha
+                }
+
+                Invoke-PipeDFe -Cnpj $Script:CnpjOne | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Complete-DFeAuditExecution'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:CnpjOne -and
+                        $ExecutionId -eq '0123456789abcdef0123456789abcdef' -and
+                        $Status -eq 'Failed' -and
+                        $ErrorSummary -eq 'Index failure.'
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Completes audit as Failed when company processing throws unexpectedly' {
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    throw [System.InvalidOperationException]::new(
+                        'Unexpected company processing failure.'
+                    )
+                }
+
+                $result = Invoke-PipeDFe -Cnpj $Script:CnpjOne
+
+                $result.Success | Should -BeFalse
+                $result.Results | Should -HaveCount 1
+                $result.Results[0].Status | Should -Be 'Falha'
+                $result.Results[0].Erro |
+                    Should -Be 'Unexpected company processing failure.'
+
+                $invokeParams = @{
+                    CommandName     = 'Complete-DFeAuditExecution'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:CnpjOne -and
+                        $ExecutionId -eq '0123456789abcdef0123456789abcdef' -and
+                        $Status -eq 'Failed' -and
+                        $ErrorSummary -eq 'Unexpected company processing failure.'
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Continues processing when one company fails' {
+                Mock -CommandName Get-CompanyConfig -MockWith {
+                    param ([string]$Cnpj)
+
+                    if ($Cnpj -eq $Script:CnpjOne) {
+                        return $Script:CompanyActiveOne
+                    }
+
+                    return $Script:CompanyActiveTwo
+                }
+
+                Mock -CommandName ConvertTo-NormalizedCnpj -MockWith {
+                    param ([string]$Value)
+                    return $Value
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    param ([pscustomobject]$Company)
+
+                    if ($Company.Cnpj -eq $Script:CnpjOne) {
+                        return $Script:ResultadoFalha
+                    }
+
+                    return $Script:ResultadoOK
+                }
+
+                $result = Invoke-PipeDFe -Cnpj $Script:CnpjOne, $Script:CnpjTwo
+
+                $result.Results | Should -HaveCount 2
+                $result.Success | Should -BeFalse
+            }
+
+            It 'Does not complete audit when audit initialization fails' {
+                Mock -CommandName Initialize-DFeAudit -MockWith {
+                    throw [System.InvalidOperationException]::new(
+                        'Audit initialization failure.'
+                    )
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    throw 'Company processing should not start.'
+                }
+
+                $result = Invoke-PipeDFe -Cnpj $Script:CnpjOne
+
+                $result.Success | Should -BeFalse
+                $result.Results[0].Status | Should -Be 'Falha'
+                $result.Results[0].Erro |
+                    Should -Be 'Audit initialization failure.'
+
+                $invokeParams = @{
+                    CommandName = 'Start-DFeAuditExecution'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+
+                $invokeParams = @{
+                    CommandName = 'Invoke-PipeDFeCompany'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+
+                $invokeParams = @{
+                    CommandName = 'Complete-DFeAuditExecution'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Does not complete audit when audit execution could not be started' {
+                Mock -CommandName Start-DFeAuditExecution -MockWith {
+                    throw [System.InvalidOperationException]::new(
+                        'Audit execution start failure.'
+                    )
+                }
+
+                Mock -CommandName Invoke-PipeDFeCompany -MockWith {
+                    throw 'Company processing should not start.'
+                }
+
+                $result = Invoke-PipeDFe -Cnpj $Script:CnpjOne
+
+                $result.Success | Should -BeFalse
+                $result.Results[0].Status | Should -Be 'Falha'
+                $result.Results[0].Erro |
+                    Should -Be 'Audit execution start failure.'
+
+                $invokeParams = @{
+                    CommandName     = 'Complete-DFeAuditExecution'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Preserves company isolation when audit completion fails' {
+                Mock -CommandName Complete-DFeAuditExecution -MockWith {
+                    throw [System.InvalidOperationException]::new(
+                        'Audit completion failure.'
+                    )
+                }
+
+                $result = Invoke-PipeDFe -Cnpj $Script:CnpjOne
+
+                $result.Success | Should -BeTrue
+                $result.Results | Should -HaveCount 1
+                $result.Results[0].Status | Should -Be 'OK'
             }
         }
         #endregion
@@ -763,6 +1168,7 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
 
                     $null = $StartDate
                     $null = $EndDate
+
                     $PSCmdlet.ThrowTerminatingError(
                         [System.Management.Automation.ErrorRecord]::new(
                             [System.ArgumentException]::new('Invalid date range.'),
@@ -848,9 +1254,12 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 Mock -CommandName Get-CompanyConfig -MockWith {
                     param ([string]$Cnpj)
                     $null = $Cnpj
+
                     $PSCmdlet.ThrowTerminatingError(
                         [System.Management.Automation.ErrorRecord]::new(
-                            [System.IO.FileNotFoundException]::new('Company not found.'),
+                            [System.IO.FileNotFoundException]::new(
+                                'Company not found.'
+                            ),
                             'CompanyNotFound',
                             [System.Management.Automation.ErrorCategory]::ObjectNotFound,
                             $Script:CnpjOne
@@ -922,10 +1331,9 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 $events = [System.Collections.Generic.List[string]]::new()
 
                 Mock -CommandName Enter-PipeDFeExecutionLock -MockWith {
-
                     $events.Add('Enter')
 
-                    return [PSCustomObject]@{
+                    [PSCustomObject]@{
                         PSTypeName = 'PipeDFe.ExecutionLock'
                         Name       = 'Global\PipeDFe.Execution'
                         Mutex      = $null
@@ -1016,8 +1424,7 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
 
             It 'Releases the execution lock when date resolution fails' {
                 Mock -CommandName Enter-PipeDFeExecutionLock -MockWith {
-
-                    return [PSCustomObject]@{
+                    [PSCustomObject]@{
                         PSTypeName = 'PipeDFe.ExecutionLock'
                         Name       = 'Global\PipeDFe.Execution'
                         Mutex      = $null
@@ -1027,7 +1434,6 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 }
 
                 Mock -CommandName Resolve-DateRange -MockWith {
-
                     $PSCmdlet.ThrowTerminatingError(
                         [System.Management.Automation.ErrorRecord]::new(
                             [System.ArgumentException]::new(
@@ -1103,7 +1509,8 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
             }
 
             It 'Returns a PipeDFe.ResultadoInvoke object' {
-                $Script:Result.PSTypeNames | Should -Contain 'PipeDFe.ResultadoInvoke'
+                $Script:Result.PSTypeNames |
+                    Should -Contain 'PipeDFe.ResultadoInvoke'
             }
 
             It 'Success is a bool' {
