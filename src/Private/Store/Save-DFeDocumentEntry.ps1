@@ -39,11 +39,11 @@ Write failures always throw - never return silently.
 .PARAMETER Metadata
 A Documento metadata object as returned by Get-DFeXmlMetadata.
 Must satisfy:
-  Tipo          = [TipoXmlDFe]::Documento
-  Chave         non-null, non-empty
-  Modelo        non-null
-  File          non-null
-  File.FullName non-null, non-empty, resolvable on disk
+  Tipo          - [TipoXmlDFe]::Documento
+  Chave         - non-null, non-empty
+  Modelo        - non-null
+  File          - non-null
+  File.FullName - non-null, non-empty, resolvable on disk
 
 .OUTPUTS
 None.
@@ -198,19 +198,47 @@ WHERE chave_acesso = @chave;
         $upsertCmd.Transaction = $transaction
         $upsertCmd.CommandText = @'
 INSERT INTO dfe_document (
-    chave_acesso, modelo, file_path, is_proc, ndoc, serie, dh_emi, sha256, indexed_at
+    chave_acesso,
+    modelo,
+    file_path,
+    is_proc,
+    ndoc,
+    serie,
+    dh_emi,
+    sha256,
+    indexed_at,
+    processing_status,
+    processing_started_at,
+    processed_at,
+    processing_error
 ) VALUES (
-    @chave, @modelo, @file_path, @is_proc, @ndoc, @serie, @dh_emi, @sha256, @indexed_at
+    @chave,
+    @modelo,
+    @file_path,
+    @is_proc,
+    @ndoc,
+    @serie,
+    @dh_emi,
+    @sha256,
+    @indexed_at,
+    'Indexed',
+    NULL,
+    NULL,
+    NULL
 )
 ON CONFLICT (chave_acesso) DO UPDATE SET
-    modelo     = excluded.modelo,
-    file_path  = excluded.file_path,
-    is_proc    = excluded.is_proc,
-    ndoc       = excluded.ndoc,
-    serie      = excluded.serie,
-    dh_emi     = excluded.dh_emi,
-    sha256     = excluded.sha256,
-    indexed_at = excluded.indexed_at;
+    modelo                = excluded.modelo,
+    file_path             = excluded.file_path,
+    is_proc               = excluded.is_proc,
+    ndoc                  = excluded.ndoc,
+    serie                 = excluded.serie,
+    dh_emi                = excluded.dh_emi,
+    sha256                = excluded.sha256,
+    indexed_at            = excluded.indexed_at,
+    processing_status     = 'Indexed',
+    processing_started_at = NULL,
+    processed_at          = NULL,
+    processing_error      = NULL;
 '@
 
         $upsertCmd.Parameters.AddWithValue('@chave',      $Metadata.Chave)         | Out-Null
