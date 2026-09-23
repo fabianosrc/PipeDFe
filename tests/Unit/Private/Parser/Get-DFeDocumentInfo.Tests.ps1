@@ -7,7 +7,7 @@ Unit tests for Get-DFeDocumentInfo.
 .DESCRIPTION
 Covers DFe document information resolution based on XML root elements.
 
-Contexts:
+Coverages includes:
   Document resolution - supported DFe document roots
   Event resolution    - supported DFe event roots
   Inutilizacao        - supported inutilizacao roots
@@ -31,7 +31,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Get-DFeDocumentInfo' {
+Describe 'Get-DFeDocumentInfo' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -42,7 +42,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
 
@@ -51,7 +51,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
 
@@ -60,7 +60,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::CTe)
             }
 
@@ -69,7 +69,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::CTe)
             }
 
@@ -78,7 +78,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::CTeOS)
             }
 
@@ -87,7 +87,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::CTeOS)
             }
 
@@ -96,7 +96,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::MDFe)
             }
 
@@ -105,8 +105,106 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::MDFe)
+            }
+
+            It 'Identifies NFCom from NFCom root' {
+                [xml]$xml = '<NFCom />'
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFCom)
+            }
+
+            It 'Identifies NFCom from nfcomProc root' {
+                [xml]$xml = '<nfcomProc />'
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFCom)
+            }
+
+            It 'Identifies NFe model 55 from ide/mod' {
+                [xml]$xml = @'
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe>
+        <ide>
+            <mod>55</mod>
+        </ide>
+    </infNFe>
+</NFe>
+'@
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFe)
+            }
+
+            It 'Identifies NFCe model 65 from ide/mod' {
+                [xml]$xml = @'
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe>
+        <ide>
+            <mod>65</mod>
+        </ide>
+    </infNFe>
+</NFe>
+'@
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFCe)
+            }
+
+            It 'Identifies NFCe model 65 from nfeProc' {
+                [xml]$xml = @'
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
+    <NFe>
+        <infNFe>
+            <ide>
+                <mod>65</mod>
+            </ide>
+        </infNFe>
+    </NFe>
+</nfeProc>
+'@
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFCe)
+            }
+
+            It 'Returns no output when NFe family contains an unsupported explicit model' {
+                [xml]$xml = @'
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe>
+        <ide>
+            <mod>99</mod>
+        </ide>
+    </infNFe>
+</NFe>
+'@
+
+                Get-DFeDocumentInfo -Xml $xml | Should -BeNullOrEmpty
+            }
+
+            It 'Falls back to map model when ide/mod is absent' {
+                [xml]$xml = @'
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe />
+</NFe>
+'@
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
         }
 
@@ -117,7 +215,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Evento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Evento)
                 $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
 
@@ -126,7 +224,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Evento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Evento)
                 $result.Modelo | Should -Be ([ModeloDFe]::CTe)
             }
 
@@ -135,8 +233,17 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Evento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Evento)
                 $result.Modelo | Should -Be ([ModeloDFe]::MDFe)
+            }
+
+            It 'Identifies NFCom events from procEventoNFCom root' {
+                [xml]$xml = '<procEventoNFCom />'
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Evento)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFCom)
             }
         }
 
@@ -147,7 +254,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Inutilizacao)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Inutilizacao)
                 $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
 
@@ -156,7 +263,16 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Inutilizacao)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Inutilizacao)
+                $result.Modelo | Should -Be ([ModeloDFe]::NFe)
+            }
+
+            It 'Identifies NFe inutilizacao from procInutNFe root' {
+                [xml]$xml = '<procInutNFe />'
+
+                $result = Get-DFeDocumentInfo -Xml $xml
+
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Inutilizacao)
                 $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
         }
@@ -196,7 +312,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Not -BeNullOrEmpty
+                $result.Tipo   | Should -Not -BeNullOrEmpty
                 $result.Modelo | Should -Not -BeNullOrEmpty
             }
         }
@@ -204,22 +320,18 @@ Describe 'Get-DFeDocumentInfo' {
         Context 'Namespace handling' {
 
             It 'Identifies a document using a default XML namespace' {
-                [xml]$xml = @'
-<NFe xmlns="http://www.portalfiscal.inf.br/nfe" />
-'@
+                [xml]$xml = '<NFe xmlns="http://www.portalfiscal.inf.br/nfe" />'
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
 
             It 'Identifies a document using a prefixed XML namespace' {
-                [xml]$xml = @'
-<nfe:NFe xmlns:nfe="http://www.portalfiscal.inf.br/nfe" />
-'@
+                [xml]$xml = '<nfe:NFe xmlns:nfe="http://www.portalfiscal.inf.br/nfe" />'
                 $result = Get-DFeDocumentInfo -Xml $xml
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::NFe)
             }
         }
@@ -258,7 +370,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $result = $xml | Get-DFeDocumentInfo
 
-                $result.Tipo | Should -Be ([TipoXmlDFe]::Documento)
+                $result.Tipo   | Should -Be ([TipoXmlDFe]::Documento)
                 $result.Modelo | Should -Be ([ModeloDFe]::CTe)
             }
 
@@ -269,7 +381,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $results = @($xml1, $xml2, $xml3) | Get-DFeDocumentInfo
 
-                $results.Count | Should -Be 3
+                $results | Should -HaveCount 3
 
                 $results[0].Modelo | Should -Be ([ModeloDFe]::NFe)
                 $results[1].Modelo | Should -Be ([ModeloDFe]::CTe)
@@ -283,7 +395,7 @@ Describe 'Get-DFeDocumentInfo' {
 
                 $results = @($xml1, $xml2, $xml3) | Get-DFeDocumentInfo
 
-                $results.Count | Should -Be 2
+                $results | Should -HaveCount 2
 
                 $results[0].Modelo | Should -Be ([ModeloDFe]::NFe)
                 $results[1].Modelo | Should -Be ([ModeloDFe]::CTe)
@@ -333,9 +445,5 @@ Describe 'Get-DFeDocumentInfo' {
                 { Get-DFeDocumentInfo -Xml $null } | Should -Throw
             }
         }
-    }
-
-    AfterAll {
-        Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
     }
 }
