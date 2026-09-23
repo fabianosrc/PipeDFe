@@ -3,35 +3,31 @@
 Gets the document type and fiscal model from a DFe XML document.
 
 .DESCRIPTION
-Identifies the DFe document based on the XML root element.
+Identifies the DFe document based on its XML structure.
 
-Accepts pipeline input and returns an object containing the
-document type and fiscal model.
+For document families whose XML root uniquely identifies the fiscal model,
+the model is resolved directly from DFeDocumentMap.
 
-If the document cannot be identified, no object is returned.
+NF-e and NFC-e share the same NFe/nfeProc XML root family. When the document
+contains ide/mod, that value is therefore authoritative for distinguishing:
+
+    55 -> NF-e
+    65 -> NFC-e
+
+When ide/mod is absent, the root mapping is retained as a compatibility
+fallback. This preserves classification of structural/minimal XML documents
+used by existing callers and tests.
+
+If an explicit ide/mod value is present for the NFe family but is unsupported,
+no document information is returned.
 
 .PARAMETER Xml
-The XML document to inspect. Accepts pipeline input, allowing
-multiple documents to be processed in a single call.
+The XML document to inspect.
 
 .OUTPUTS
 PSCustomObject
-
-.EXAMPLE
-PS C:\>  $xml | Get-DFeDocumentInfo
-
-Returns the document type and fiscal model of the XML document.
-
-.EXAMPLE
-PS C:\>  $documents | Get-DFeDocumentInfo
-
-Processes multiple XML documents from the pipeline.
-
-.EXAMPLE
-PS C:\>  $info = Get-DFeDocumentInfo -Xml $xml
-PS C:\>  $info.Modelo
-
-Returns the fiscal model of the document.
+  Tipo   [TipoXmlDFe]
+  Modelo [ModeloDFe]
 #>
 function Get-DFeDocumentInfo {
     [CmdletBinding()]
@@ -55,9 +51,41 @@ function Get-DFeDocumentInfo {
             return
         }
 
-        [PSCustomObject]@{
+        $modelo = $mapping.Modelo
+
+        # NF-e and NFC-e share the same XML root family. Root name alone
+        # cannot distinguish model 55 from model 65.
+        if ($root.LocalName -in @('NFe', 'nfeProc')) {
+            $modNode = $Xml.SelectSingleNode(
+                "//*[local-name()='infNFe']" +
+                "/*[local-name()='ide']" +
+                "/*[local-name()='mod']"
+            )
+
+            if ($null -ne $modNode -and
+                -not [string]::IsNullOrWhiteSpace($modNode.InnerText)) {
+
+                $modelo = switch ($modNode.InnerText.Trim()) {
+                    '55' {
+                        [ModeloDFe]::NFe
+                        break
+                    }
+
+                    '65' {
+                        [ModeloDFe]::NFCe
+                        break
+                    }
+
+                    default {
+                        return
+                    }
+                }
+            }
+        }
+
+        [pscustomobject]@{
             Tipo   = $mapping.Tipo
-            Modelo = $mapping.Modelo
+            Modelo = $modelo
         }
     }
 }
