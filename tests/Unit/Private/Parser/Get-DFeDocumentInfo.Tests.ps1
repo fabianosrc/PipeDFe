@@ -7,7 +7,7 @@ Unit tests for Get-DFeDocumentInfo.
 .DESCRIPTION
 Covers DFe document information resolution based on XML root elements.
 
-Coverages includes:
+Coverage includes:
   Document resolution - supported DFe document roots
   Event resolution    - supported DFe event roots
   Inutilizacao        - supported inutilizacao roots
