@@ -6,22 +6,25 @@ Unit tests for Get-DFeDocumentEntry.
 
 .DESCRIPTION
 Coverage includes:
-  - Parameter validation: mandatory, pattern, empty, null.
-  - No filters returns all documents without WHERE clause.
-  - StartDate filter adds correct SQL and parameter.
-  - EndDate filter adds correct SQL and parameter.
-  - Modelo filter adds correct SQL and parameter.
-  - All filters combined build the complete WHERE clause.
-  - Whitespace StartDate and EndDate are treated as absent.
-  - Date conversion error is preserved without accessing the database.
-  - NULL ndoc and serie are mapped to null.
-  - Column mapping for all nine output properties.
-  - is_proc 0 maps to false; 1 maps to true.
-  - No output when no rows match.
-  - Database connection failure converts to DocumentEntryReadFailed.
-  - ExecuteReader failure converts to DocumentEntryReadFailed.
-  - Reader, command and connection are disposed on success.
-  - Command and connection are disposed when ExecuteReader fails.
+
+- Parameter validation: mandatory, pattern, empty, null.
+- No filters returns all documents without WHERE clause.
+- StartDate filter adds correct SQL and parameter.
+- EndDate filter adds correct SQL and parameter.
+- Modelo filter adds correct SQL and parameter.
+- ProcessingStatus filter adds correct SQL and parameter.
+- All filters combined build the complete WHERE clause.
+- Whitespace StartDate and EndDate are treated as absent.
+- Date conversion error is preserved without accessing the database.
+- NULL ndoc and serie are mapped to null.
+- NULL processing_started_at, processed_at and processing_error are mapped to null.
+- Column mapping for all thirteen output properties.
+- is_proc 0 maps to false; 1 maps to true.
+- No output when no rows match.
+- Database connection failure converts to DocumentEntryReadFailed.
+- ExecuteReader failure converts to DocumentEntryReadFailed.
+- Reader, command and connection are disposed on success.
+- Command and connection are disposed when ExecuteReader fails.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -44,7 +47,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Get-DFeDocumentEntry' {
+Describe 'Get-DFeDocumentEntry' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -57,39 +60,51 @@ Describe 'Get-DFeDocumentEntry' {
             $Script:EndDate   = [System.DateTimeOffset]::Parse('2026-08-31T23:59:59.9999999+00:00')
 
             $Script:Row1 = @{
-                chave_acesso = '35260812345678000199550010000000011000000001'
-                modelo       = 55
-                dh_emi       = '2026-08-01T10:00:00.0000000+00:00'
-                file_path    = 'C:\DFe\0001.xml'
-                is_proc      = 1
-                ndoc         = 1
-                serie        = '001'
-                sha256       = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
-                indexed_at   = '2026-08-01T10:05:00.0000000+00:00'
+                chave_acesso          = '35260812345678000199550010000000011000000001'
+                modelo                = 55
+                dh_emi                = '2026-08-01T10:00:00.0000000+00:00'
+                file_path             = 'C:\DFe\0001.xml'
+                is_proc               = 1
+                ndoc                  = 1
+                serie                 = '001'
+                sha256                = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+                indexed_at            = '2026-08-01T10:05:00.0000000+00:00'
+                processing_status     = 'Processed'
+                processing_started_at = '2026-08-01T10:06:00.0000000+00:00'
+                processed_at          = '2026-08-01T10:07:00.0000000+00:00'
+                processing_error      = $null
             }
 
             $Script:Row2 = @{
-                chave_acesso = '35260812345678000199550010000000021000000002'
-                modelo       = 55
-                dh_emi       = '2026-08-15T10:00:00.0000000+00:00'
-                file_path    = 'C:\DFe\0002.xml'
-                is_proc      = 0
-                ndoc         = 2
-                serie        = '001'
-                sha256       = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
-                indexed_at   = '2026-08-15T10:05:00.0000000+00:00'
+                chave_acesso          = '35260812345678000199550010000000021000000002'
+                modelo                = 55
+                dh_emi                = '2026-08-15T10:00:00.0000000+00:00'
+                file_path             = 'C:\DFe\0002.xml'
+                is_proc               = 0
+                ndoc                  = 2
+                serie                 = '001'
+                sha256                = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+                indexed_at            = '2026-08-15T10:05:00.0000000+00:00'
+                processing_status     = 'Failed'
+                processing_started_at = '2026-08-15T10:06:00.0000000+00:00'
+                processed_at          = $null
+                processing_error      = 'Fiscal processing failed.'
             }
 
             $Script:Row3 = @{
-                chave_acesso = '35260812345678000199550010000000031000000003'
-                modelo       = 65
-                dh_emi       = '2026-08-20T10:00:00.0000000+00:00'
-                file_path    = 'C:\DFe\0003.xml'
-                is_proc      = 1
-                ndoc         = $null
-                serie        = $null
-                sha256       = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
-                indexed_at   = '2026-08-20T10:05:00.0000000+00:00'
+                chave_acesso          = '35260812345678000199550010000000031000000003'
+                modelo                = 65
+                dh_emi                = '2026-08-20T10:00:00.0000000+00:00'
+                file_path             = 'C:\DFe\0003.xml'
+                is_proc               = 1
+                ndoc                  = $null
+                serie                 = $null
+                sha256                = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+                indexed_at            = '2026-08-20T10:05:00.0000000+00:00'
+                processing_status     = 'Indexed'
+                processing_started_at = $null
+                processed_at          = $null
+                processing_error      = $null
             }
 
             function New-TestParameterCollection {
@@ -99,7 +114,7 @@ Describe 'Get-DFeDocumentEntry' {
 
                 $list = [System.Collections.Generic.List[pscustomobject]]::new()
 
-                $collection = [PSCustomObject]@{
+                $collection = [pscustomobject]@{
                     _list = $list
                     Count = 0
                 }
@@ -166,15 +181,19 @@ Describe 'Get-DFeDocumentEntry' {
                         $row = $this.Rows[$this.CurrentIndex]
 
                         switch ($Index) {
-                            0 { return $null -eq $row.chave_acesso }
-                            1 { return $null -eq $row.modelo       }
-                            2 { return $null -eq $row.dh_emi       }
-                            3 { return $null -eq $row.file_path    }
-                            4 { return $null -eq $row.is_proc      }
-                            5 { return $null -eq $row.ndoc         }
-                            6 { return $null -eq $row.serie        }
-                            7 { return $null -eq $row.sha256       }
-                            8 { return $null -eq $row.indexed_at   }
+                            0  { return $null -eq $row.chave_acesso          }
+                            1  { return $null -eq $row.modelo                }
+                            2  { return $null -eq $row.dh_emi                }
+                            3  { return $null -eq $row.file_path             }
+                            4  { return $null -eq $row.is_proc               }
+                            5  { return $null -eq $row.ndoc                  }
+                            6  { return $null -eq $row.serie                 }
+                            7  { return $null -eq $row.sha256                }
+                            8  { return $null -eq $row.indexed_at            }
+                            9  { return $null -eq $row.processing_status     }
+                            10 { return $null -eq $row.processing_started_at }
+                            11 { return $null -eq $row.processed_at          }
+                            12 { return $null -eq $row.processing_error      }
 
                             default { throw "Unexpected column index: $Index" }
                         }
@@ -190,12 +209,16 @@ Describe 'Get-DFeDocumentEntry' {
                         $row = $this.Rows[$this.CurrentIndex]
 
                         switch ($Index) {
-                            0 { return [string]$row.chave_acesso }
-                            2 { return [string]$row.dh_emi       }
-                            3 { return [string]$row.file_path    }
-                            6 { return [string]$row.serie        }
-                            7 { return [string]$row.sha256       }
-                            8 { return [string]$row.indexed_at   }
+                            0  { return [string]$row.chave_acesso          }
+                            2  { return [string]$row.dh_emi                }
+                            3  { return [string]$row.file_path             }
+                            6  { return [string]$row.serie                 }
+                            7  { return [string]$row.sha256                }
+                            8  { return [string]$row.indexed_at            }
+                            9  { return [string]$row.processing_status     }
+                            10 { return [string]$row.processing_started_at }
+                            11 { return [string]$row.processed_at          }
+                            12 { return [string]$row.processing_error      }
 
                             default { throw "Unexpected GetString column index: $Index" }
                         }
@@ -363,7 +386,12 @@ Describe 'Get-DFeDocumentEntry' {
             }
 
             It 'Declares Cnpj as mandatory' {
-                $attr = (Get-Command Get-DFeDocumentEntry).Parameters['Cnpj'].Attributes |
+                $getCommandParams = @{
+                    Name        = 'Get-DFeDocumentEntry'
+                    ErrorAction = 'Stop'
+                }
+
+                $attr = (Get-Command @getCommandParams).Parameters['Cnpj'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
@@ -620,6 +648,63 @@ Describe 'Get-DFeDocumentEntry' {
         }
         #endregion
 
+        #region ProcessingStatus filter
+        Context 'When ProcessingStatus is provided' {
+
+            BeforeEach {
+
+                $Script:Reader     = New-TestReader
+                $Script:Command    = New-TestCommand -Reader $Script:Reader
+                $Script:Connection = New-TestConnection -Command $Script:Command
+
+                Mock -CommandName Open-SqliteConnection -MockWith {
+                    param ([string]$Path)
+                    $null = $Path
+                    return $Script:Connection
+                }
+            }
+
+            It 'Adds the ProcessingStatus filter to the WHERE clause' {
+                $getParams = @{
+                    Cnpj             = $Script:Cnpj
+                    ProcessingStatus = 'Indexed'
+                }
+
+                Get-DFeDocumentEntry @getParams | Out-Null
+
+                $Script:Command.CommandText |
+                    Should -Match '(?i)WHERE\s+processing_status\s*=\s*@processingStatus'
+            }
+
+            It 'Adds ProcessingStatus as a String parameter with the correct value' {
+                $getParams = @{
+                    Cnpj             = $Script:Cnpj
+                    ProcessingStatus = 'Failed'
+                }
+
+                Get-DFeDocumentEntry @getParams | Out-Null
+
+                $param = Get-TestParameter -Command $Script:Command -Name '@processingStatus'
+
+                $param        | Should -Not -BeNullOrEmpty
+                $param.DbType | Should -Be ([System.Data.DbType]::String)
+                $param.Value  | Should -Be 'Failed'
+            }
+
+            It 'Does not add a dh_emi filter when only ProcessingStatus is provided' {
+                $getParams = @{
+                    Cnpj             = $Script:Cnpj
+                    ProcessingStatus = 'Indexed'
+                }
+
+                Get-DFeDocumentEntry @getParams | Out-Null
+
+                $Script:Command.CommandText | Should -Not -Match '(?i)dh_emi\s*>='
+                $Script:Command.CommandText | Should -Not -Match '(?i)dh_emi\s*<='
+            }
+        }
+        #endregion
+
         #region All filters
         Context 'When all filters are provided' {
 
@@ -638,43 +723,127 @@ Describe 'Get-DFeDocumentEntry' {
 
             It 'Builds the complete WHERE clause' {
                 $getSplat = @{
-                    Cnpj      = $Script:Cnpj
-                    StartDate = 'start-input'
-                    EndDate   = 'end-input'
-                    Modelo    = ([ModeloDFe]::NFe)
+                    Cnpj             = $Script:Cnpj
+                    StartDate        = 'start-input'
+                    EndDate          = 'end-input'
+                    Modelo           = ([ModeloDFe]::NFe)
+                    ProcessingStatus = 'Processed'
                 }
 
                 Get-DFeDocumentEntry @getSplat | Out-Null
 
                 $Script:Command.CommandText |
-                    Should -Match '(?i)WHERE\s+dh_emi\s+>=\s+@startDate\s+AND\s+dh_emi\s+<=\s+@endDate\s+AND\s+modelo\s*=\s*@modelo'
+                    Should -Match (
+                        '(?i)WHERE\s+dh_emi\s+>=\s+@startDate\s+AND\s+dh_emi\s+<=\s+@endDate' +
+                        '\s+AND\s+modelo\s*=\s*@modelo\s+AND\s+processing_status\s*=\s*@processingStatus'
+                    )
             }
 
-            It 'Creates exactly three parameters' {
+            It 'Creates exactly four parameters' {
                 $getSplat = @{
-                    Cnpj      = $Script:Cnpj
-                    StartDate = 'start-input'
-                    EndDate   = 'end-input'
-                    Modelo    = ([ModeloDFe]::NFe)
+                    Cnpj             = $Script:Cnpj
+                    StartDate        = 'start-input'
+                    EndDate          = 'end-input'
+                    Modelo           = ([ModeloDFe]::NFe)
+                    ProcessingStatus = 'Processed'
                 }
 
                 Get-DFeDocumentEntry @getSplat | Out-Null
 
-                $Script:Command.Parameters.Count | Should -Be 3
+                $Script:Command.Parameters.Count | Should -Be 4
             }
 
             It 'Does not concatenate filter values into SQL' {
                 $getSplat = @{
-                    Cnpj      = $Script:Cnpj
-                    StartDate = 'start-input'
-                    EndDate   = 'end-input'
-                    Modelo    = ([ModeloDFe]::NFe)
+                    Cnpj             = $Script:Cnpj
+                    StartDate        = 'start-input'
+                    EndDate          = 'end-input'
+                    Modelo           = ([ModeloDFe]::NFe)
+                    ProcessingStatus = 'Processed'
                 }
 
                 Get-DFeDocumentEntry @getSplat | Out-Null
 
                 $Script:Command.CommandText | Should -Not -Match 'start-input'
                 $Script:Command.CommandText | Should -Not -Match 'end-input'
+            }
+        }
+        #endregion
+
+        #region Nullable processing columns
+        Context 'When nullable processing columns contain NULL' {
+
+            BeforeEach {
+
+                $Script:Reader     = New-TestReader -Rows @($Script:Row3)
+                $Script:Command    = New-TestCommand -Reader $Script:Reader
+                $Script:Connection = New-TestConnection -Command $Script:Command
+
+                Mock -CommandName Open-SqliteConnection -MockWith {
+                    param ([string]$Path)
+                    $null = $Path
+                    return $Script:Connection
+                }
+            }
+
+            It 'Maps NULL processing_started_at to null' {
+                $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
+
+                $result[0].processing_started_at | Should -BeNullOrEmpty
+            }
+
+            It 'Maps NULL processed_at to null' {
+                $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
+
+                $result[0].processed_at | Should -BeNullOrEmpty
+            }
+
+            It 'Maps NULL processing_error to null' {
+                $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
+
+                $result[0].processing_error | Should -BeNullOrEmpty
+            }
+        }
+        #endregion
+
+        #region Processing column mapping
+        Context 'When processing columns contain values' {
+
+            BeforeEach {
+
+                $Script:Reader     = New-TestReader -Rows @($Script:Row2)
+                $Script:Command    = New-TestCommand -Reader $Script:Reader
+                $Script:Connection = New-TestConnection -Command $Script:Command
+
+                Mock -CommandName Open-SqliteConnection -MockWith {
+                    param ([string]$Path)
+                    $null = $Path
+                    return $Script:Connection
+                }
+            }
+
+            It 'Maps processing_status correctly' {
+                $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
+
+                $result[0].processing_status | Should -Be $Script:Row2.processing_status
+            }
+
+            It 'Maps processing_started_at correctly' {
+                $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
+
+                $result[0].processing_started_at | Should -Be $Script:Row2.processing_started_at
+            }
+
+            It 'Maps processing_error correctly' {
+                $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
+
+                $result[0].processing_error | Should -Be $Script:Row2.processing_error
+            }
+
+            It 'Maps NULL processed_at to null when status is Failed' {
+                $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
+
+                $result[0].processed_at | Should -BeNullOrEmpty
             }
         }
         #endregion
@@ -857,18 +1026,22 @@ Describe 'Get-DFeDocumentEntry' {
                 @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj) | Should -HaveCount 2
             }
 
-            It 'Maps all nine columns correctly' {
+            It 'Maps all thirteen columns correctly' {
                 $result = @(Get-DFeDocumentEntry -Cnpj $Script:Cnpj)
 
-                $result[0].chave_acesso | Should -Be $Script:Row1.chave_acesso
-                $result[0].modelo       | Should -Be $Script:Row1.modelo
-                $result[0].dh_emi       | Should -Be $Script:Row1.dh_emi
-                $result[0].file_path    | Should -Be $Script:Row1.file_path
-                $result[0].is_proc      | Should -BeTrue
-                $result[0].ndoc         | Should -Be $Script:Row1.ndoc
-                $result[0].serie        | Should -Be $Script:Row1.serie
-                $result[0].sha256       | Should -Be $Script:Row1.sha256
-                $result[0].indexed_at   | Should -Be $Script:Row1.indexed_at
+                $result[0].chave_acesso          | Should -Be $Script:Row1.chave_acesso
+                $result[0].modelo                | Should -Be $Script:Row1.modelo
+                $result[0].dh_emi                | Should -Be $Script:Row1.dh_emi
+                $result[0].file_path             | Should -Be $Script:Row1.file_path
+                $result[0].is_proc               | Should -BeTrue
+                $result[0].ndoc                  | Should -Be $Script:Row1.ndoc
+                $result[0].serie                 | Should -Be $Script:Row1.serie
+                $result[0].sha256                | Should -Be $Script:Row1.sha256
+                $result[0].indexed_at            | Should -Be $Script:Row1.indexed_at
+                $result[0].processing_status     | Should -Be $Script:Row1.processing_status
+                $result[0].processing_started_at | Should -Be $Script:Row1.processing_started_at
+                $result[0].processed_at          | Should -Be $Script:Row1.processed_at
+                $result[0].processing_error      | Should -BeNullOrEmpty
             }
 
             It 'Maps is_proc 0 to false' {
@@ -894,6 +1067,10 @@ Describe 'Get-DFeDocumentEntry' {
                     'serie'
                     'sha256'
                     'indexed_at'
+                    'processing_status'
+                    'processing_started_at'
+                    'processed_at'
+                    'processing_error'
                 )
             }
         }
