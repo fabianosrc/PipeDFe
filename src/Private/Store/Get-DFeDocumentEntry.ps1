@@ -8,7 +8,8 @@ Queries dfe_document and returns one object per matching record.
 All parameters except -Cnpj are optional. When -StartDate and -EndDate
 are both omitted, no period filter is applied and all indexed documents
 for the CNPJ are returned. When -Modelo is omitted, documents of every
-model are returned.
+model are returned. When -ProcessingStatus is omitted, documents in all
+processing states are returned.
 
 StartDate and EndDate are converted by ConvertTo-DateTimeOffset before
 the database operation. The resulting values are serialized as ISO 8601
@@ -39,6 +40,10 @@ supported by ConvertTo-DateTimeOffset.
 Optional model filter. When provided, only documents of that model
 are returned.
 
+.PARAMETER ProcessingStatus
+Optional processing-state filter. When provided, only documents in the
+specified persistent processing state are returned.
+
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
@@ -52,6 +57,10 @@ Each object contains:
   [string] - serie
   [string] - sha256
   [string] - indexed_at
+  [string] - processing_status
+  [string] - processing_started_at
+  [string] - processed_at
+  [string] - processing_error
 
 .EXAMPLE
 PS C:\> Get-DFeDocumentEntry -Cnpj '12345678000199'
@@ -59,18 +68,36 @@ PS C:\> Get-DFeDocumentEntry -Cnpj '12345678000199'
 Returns all indexed documents for the CNPJ.
 
 .EXAMPLE
-PS C:\> Get-DFeDocumentEntry -Cnpj '12345678000199'
->>     -StartDate '01/08/2026'
->>     -EndDate '31/08/2026'
+PS C:\> $params = @{
+    Cnpj      = '12345678000199'
+    StartDate = '01/08/2026'
+    EndDate   = '31/08/2026'
+}
+
+PS C:\> Get-DFeDocumentEntry @params
 
 Returns indexed documents whose dh_emi is between the two
 normalized instants, inclusively.
 
 .EXAMPLE
-PS C:\> Get-DFeDocumentEntry -Cnpj '12345678000199'
->>     -Modelo ([ModeloDFe]::NFe)
+PS C:\> $params = @{
+     Cnpj   = '12345678000199'
+     Modelo = [ModeloDFe]::NFe
+}
+
+PS C:\> Get-DFeDocumentEntry @params
 
 Returns only indexed NFe documents for the CNPJ.
+
+.EXAMPLE
+PS C:\> $params = @{
+    Cnpj             = '12345678000199'
+    ProcessingStatus = 'Indexed'
+}
+
+PS C:\> Get-DFeDocumentEntry @params
+
+Returns only documents awaiting processing.
 
 .NOTES
 Private dependencies:
@@ -84,7 +111,7 @@ function Get-DFeDocumentEntry {
     param (
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [ValidatePattern('^[A-Z0-9]{14}$')]
+        [ValidatePattern('^(?-i)[A-Z0-9]{14}$')]
         [string]$Cnpj,
 
         [Parameter()]
@@ -94,7 +121,11 @@ function Get-DFeDocumentEntry {
         [string]$EndDate,
 
         [Parameter()]
-        [ModeloDFe]$Modelo
+        [ModeloDFe]$Modelo,
+
+        [Parameter()]
+        [ValidateSet('Indexed', 'Processing', 'Processed', 'Failed')]
+        [string]$ProcessingStatus
     )
 
     # Date conversion intentionally happens before the database operation.
@@ -126,7 +157,10 @@ function Get-DFeDocumentEntry {
         if ($null -ne $startUtc) {
             $conditions.Add('dh_emi >= @startDate')
 
-            $parameter = $command.Parameters.Add('@startDate', [System.Data.DbType]::String)
+            $parameter = $command.Parameters.Add(
+                '@startDate',
+                [System.Data.DbType]::String
+            )
 
             $parameter.Value = $startUtc.ToString('o')
         }
@@ -134,7 +168,10 @@ function Get-DFeDocumentEntry {
         if ($null -ne $endUtc) {
             $conditions.Add('dh_emi <= @endDate')
 
-            $parameter = $command.Parameters.Add('@endDate', [System.Data.DbType]::String)
+            $parameter = $command.Parameters.Add(
+                '@endDate',
+                [System.Data.DbType]::String
+            )
 
             $parameter.Value = $endUtc.ToString('o')
         }
@@ -142,9 +179,25 @@ function Get-DFeDocumentEntry {
         if ($PSBoundParameters.ContainsKey('Modelo')) {
             $conditions.Add('modelo = @modelo')
 
-            $parameter = $command.Parameters.Add('@modelo', [System.Data.DbType]::Int32)
+            $parameter = $command.Parameters.Add(
+                '@modelo',
+                [System.Data.DbType]::Int32
+            )
 
             $parameter.Value = [int]$Modelo
+        }
+
+        if ($PSBoundParameters.ContainsKey('ProcessingStatus')) {
+            $conditions.Add(
+                'processing_status = @processingStatus'
+            )
+
+            $parameter = $command.Parameters.Add(
+                '@processingStatus',
+                [System.Data.DbType]::String
+            )
+
+            $parameter.Value = $ProcessingStatus
         }
 
         $whereClause = if ($conditions.Count -gt 0) {
@@ -163,7 +216,11 @@ SELECT
     ndoc,
     serie,
     sha256,
-    indexed_at
+    indexed_at,
+    processing_status,
+    processing_started_at,
+    processed_at,
+    processing_error
 FROM
     dfe_document
 $whereClause
@@ -174,16 +231,20 @@ ORDER BY
         $reader = $command.ExecuteReader()
 
         while ($reader.Read()) {
-            [PSCustomObject]@{
-                chave_acesso = $reader.GetString(0)
-                modelo       = $reader.GetInt32(1)
-                dh_emi       = $reader.GetString(2)
-                file_path    = $reader.GetString(3)
-                is_proc      = [bool]$reader.GetInt32(4)
-                ndoc         = if ($reader.IsDBNull(5)) { $null } else { $reader.GetInt32(5)  }
-                serie        = if ($reader.IsDBNull(6)) { $null } else { $reader.GetString(6) }
-                sha256       = $reader.GetString(7)
-                indexed_at   = $reader.GetString(8)
+            [pscustomobject]@{
+                chave_acesso          = $reader.GetString(0)
+                modelo                = $reader.GetInt32(1)
+                dh_emi                = $reader.GetString(2)
+                file_path             = $reader.GetString(3)
+                is_proc               = [bool]$reader.GetInt32(4)
+                ndoc                  = if ($reader.IsDBNull(5)) { $null } else { $reader.GetInt32(5)  }
+                serie                 = if ($reader.IsDBNull(6)) { $null } else { $reader.GetString(6) }
+                sha256                = $reader.GetString(7)
+                indexed_at            = $reader.GetString(8)
+                processing_status     = $reader.GetString(9)
+                processing_started_at = if ($reader.IsDBNull(10)) { $null } else { $reader.GetString(10) }
+                processed_at          = if ($reader.IsDBNull(11)) { $null } else { $reader.GetString(11) }
+                processing_error      = if ($reader.IsDBNull(12)) { $null } else { $reader.GetString(12) }
             }
         }
     } catch {
