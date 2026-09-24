@@ -5,12 +5,13 @@
 Integration and contract tests for Get-DFeDocumentEntry.
 
 .DESCRIPTION
-Verifies the public contract and integration behavior of Get-DFeDocumentEntry.
+Verifies the parameter contract and real SQLite integration behavior of
+Get-DFeDocumentEntry.
 
 Coverage includes:
-  - Cnpj is mandatory.
-  - Cnpj must match the expected pattern.
-  - StartDate, EndDate and Modelo are optional.
+  - Cnpj is mandatory and follows the normalized case-sensitive pattern.
+  - StartDate, EndDate, Modelo and ProcessingStatus are optional.
+  - ProcessingStatus accepts only supported persistent processing states.
   - Real SQLite data is returned correctly.
   - All documents are returned when no filters are supplied.
   - Results are ordered by dh_emi ascending.
@@ -19,11 +20,12 @@ Coverage includes:
   - StartDate and EndDate can be combined.
   - Modelo filters by its numeric value.
   - Modelo can be combined with a period filter.
+  - ProcessingStatus filters by the persistent processing state.
+  - ProcessingStatus can be combined with Modelo and period filters.
   - No output is produced when no records match.
   - Documents from another CNPJ are not returned.
-  - Output exposes exactly the documented properties including ndoc and serie.
-  - ndoc is null when the column is NULL in the database.
-  - serie is null when the column is NULL in the database.
+  - Output exposes exactly the documented thirteen properties.
+  - Nullable document and processing fields are returned as null.
   - Output property types match the documented contract.
   - Invalid dates preserve UnsupportedDateFormat.
   - Database failures are converted to DocumentEntryReadFailed.
@@ -38,7 +40,7 @@ Coverage includes:
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
     'PSReviewUnusedParameter',
     '',
-    Justification = 'Required by the mocked command signature.'
+    Justification = 'Required by mocked command signatures.'
 )]
 
 param ()
@@ -55,21 +57,28 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Get-DFeDocumentEntry' {
+Describe 'Get-DFeDocumentEntry' -Tag 'Integration' {
 
     InModuleScope -ModuleName PipeDFe {
 
         #region Infrastructure
         BeforeAll {
 
-            $testID = [guid]::NewGuid().ToString('N')
+            $testId = [guid]::NewGuid().ToString('N')
 
             $Script:TestRoot = [System.IO.Path]::Combine(
                 [System.IO.Path]::GetTempPath(),
-                ('PipeDFe.Get-DFeDocumentEntry.Tests-{0}' -f $testID)
+                ('PipeDFe.Get-DFeDocumentEntry.Tests-{0}' -f $testId)
             )
 
-            New-Item -Path $Script:TestRoot -ItemType Directory -Force | Out-Null
+            $newItemParams = @{
+                Path        = $Script:TestRoot
+                ItemType    = 'Directory'
+                Force       = $true
+                ErrorAction = 'Stop'
+            }
+
+            New-Item @newItemParams | Out-Null
 
             $Script:CnpjOne = '12345678000199'
             $Script:CnpjTwo = '98765432000100'
@@ -79,9 +88,12 @@ Describe 'Get-DFeDocumentEntry' {
                 [OutputType([string])]
                 param ()
 
-                $testID = [guid]::NewGuid().ToString('N')
+                $testId = [guid]::NewGuid().ToString('N')
 
-                [System.IO.Path]::Combine($Script:TestRoot, ('{0}.db' -f $testID))
+                [System.IO.Path]::Combine(
+                    $Script:TestRoot,
+                    ('{0}.db' -f $testId)
+                )
             }
 
             function New-TestConnection {
@@ -109,6 +121,7 @@ Describe 'Get-DFeDocumentEntry' {
                 [CmdletBinding()]
                 [OutputType([void])]
                 param (
+                    [Parameter()]
                     [AllowNull()]
                     [System.Data.SQLite.SQLiteConnection]$Connection
                 )
@@ -138,6 +151,7 @@ Describe 'Get-DFeDocumentEntry' {
                 try {
                     $command = $Connection.CreateCommand()
                     $command.CommandText = $CommandText
+
                     $command.ExecuteNonQuery() | Out-Null
                 } finally {
                     if ($null -ne $command) {
@@ -156,15 +170,27 @@ Describe 'Get-DFeDocumentEntry' {
 
                 Invoke-TestNonQuery -Connection $Connection -CommandText @'
 CREATE TABLE dfe_document (
-    chave_acesso TEXT    NOT NULL PRIMARY KEY,
-    modelo       INTEGER NOT NULL,
-    file_path    TEXT    NOT NULL,
-    is_proc      INTEGER NOT NULL DEFAULT 0,
-    ndoc         INTEGER,
-    serie        TEXT,
-    dh_emi       TEXT,
-    sha256       TEXT    NOT NULL,
-    indexed_at   TEXT    NOT NULL
+    chave_acesso          TEXT    NOT NULL PRIMARY KEY,
+    modelo                INTEGER NOT NULL,
+    file_path             TEXT    NOT NULL,
+    is_proc               INTEGER NOT NULL DEFAULT 0,
+    ndoc                  INTEGER,
+    serie                 TEXT,
+    dh_emi                TEXT,
+    sha256                TEXT    NOT NULL,
+    indexed_at            TEXT    NOT NULL,
+    processing_status     TEXT    NOT NULL DEFAULT 'Indexed',
+    processing_started_at TEXT,
+    processed_at          TEXT,
+    processing_error      TEXT,
+    CHECK (
+        processing_status IN (
+            'Indexed',
+            'Processing',
+            'Processed',
+            'Failed'
+        )
+    )
 );
 '@
             }
@@ -197,22 +223,42 @@ CREATE TABLE dfe_document (
                     [string]$Serie = $null,
 
                     [Parameter()]
-                    [string]$Sha256 = ([guid]::NewGuid().ToString('N')),
+                    [string]$Sha256 = ([guid]::NewGuid().ToString('N') * 2),
 
                     [Parameter()]
-                    [string]$IndexedAt = '2026-08-15T12:00:00.0000000+00:00'
+                    [string]$IndexedAt = '2026-08-15T12:00:00.0000000+00:00',
+
+                    [Parameter()]
+                    [ValidateSet('Indexed', 'Processing', 'Processed', 'Failed')]
+                    [string]$ProcessingStatus = 'Indexed',
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string]$ProcessingStartedAt = $null,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string]$ProcessedAt = $null,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string]$ProcessingError = $null
                 )
 
-                [PSCustomObject]@{
-                    ChaveAcesso = $ChaveAcesso
-                    Modelo      = $Modelo
-                    DhEmi       = $DhEmi
-                    FilePath    = $FilePath
-                    IsProc      = $IsProc
-                    Ndoc        = $Ndoc
-                    Serie       = $Serie
-                    Sha256      = $Sha256
-                    IndexedAt   = $IndexedAt
+                [pscustomobject]@{
+                    ChaveAcesso         = $ChaveAcesso
+                    Modelo              = $Modelo
+                    DhEmi               = $DhEmi
+                    FilePath            = $FilePath
+                    IsProc              = $IsProc
+                    Ndoc                = $Ndoc
+                    Serie               = $Serie
+                    Sha256              = $Sha256
+                    IndexedAt           = $IndexedAt
+                    ProcessingStatus    = $ProcessingStatus
+                    ProcessingStartedAt = $ProcessingStartedAt
+                    ProcessedAt         = $ProcessedAt
+                    ProcessingError     = $ProcessingError
                 }
             }
 
@@ -242,7 +288,11 @@ INSERT INTO dfe_document (
     serie,
     dh_emi,
     sha256,
-    indexed_at
+    indexed_at,
+    processing_status,
+    processing_started_at,
+    processed_at,
+    processing_error
 ) VALUES (
     @chave_acesso,
     @modelo,
@@ -252,11 +302,15 @@ INSERT INTO dfe_document (
     @serie,
     @dh_emi,
     @sha256,
-    @indexed_at
+    @indexed_at,
+    @processing_status,
+    @processing_started_at,
+    @processed_at,
+    @processing_error
 );
 '@
 
-                    $ndocValue  = if ($null -eq $Document.Ndoc) {
+                    $ndocValue = if ($null -eq $Document.Ndoc) {
                         [System.DBNull]::Value
                     } else {
                         [int]$Document.Ndoc
@@ -268,19 +322,100 @@ INSERT INTO dfe_document (
                         [string]$Document.Serie
                     }
 
-                    $command.Parameters.AddWithValue('@chave_acesso', $Document.ChaveAcesso)       | Out-Null
-                    $command.Parameters.AddWithValue('@modelo',       [int]$Document.Modelo)       | Out-Null
-                    $command.Parameters.AddWithValue('@file_path',    $Document.FilePath)          | Out-Null
-                    $command.Parameters.AddWithValue('@is_proc',      [int][bool]$Document.IsProc) | Out-Null
-                    $command.Parameters.AddWithValue('@ndoc',         $ndocValue)                  | Out-Null
-                    $command.Parameters.AddWithValue('@serie',        $serieValue)                 | Out-Null
-                    $command.Parameters.AddWithValue('@dh_emi',       $Document.DhEmi)             | Out-Null
-                    $command.Parameters.AddWithValue('@sha256',       $Document.Sha256)            | Out-Null
-                    $command.Parameters.AddWithValue('@indexed_at',   $Document.IndexedAt)         | Out-Null
+                    $startedAtValue = if (
+                        $null -eq $Document.ProcessingStartedAt
+                    ) {
+                        [System.DBNull]::Value
+                    } else {
+                        [string]$Document.ProcessingStartedAt
+                    }
+
+                    $processedAtValue = if (
+                        $null -eq $Document.ProcessedAt
+                    ) {
+                        [System.DBNull]::Value
+                    } else {
+                        [string]$Document.ProcessedAt
+                    }
+
+                    $processingErrorValue = if (
+                        $null -eq $Document.ProcessingError
+                    ) {
+                        [System.DBNull]::Value
+                    } else {
+                        [string]$Document.ProcessingError
+                    }
+
+                    $command.Parameters.AddWithValue(
+                        '@chave_acesso',
+                        $Document.ChaveAcesso
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@modelo',
+                        [int]$Document.Modelo
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@file_path',
+                        $Document.FilePath
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@is_proc',
+                        [int][bool]$Document.IsProc
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@ndoc',
+                        $ndocValue
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@serie',
+                        $serieValue
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@dh_emi',
+                        $Document.DhEmi
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@sha256',
+                        $Document.Sha256
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@indexed_at',
+                        $Document.IndexedAt
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@processing_status',
+                        $Document.ProcessingStatus
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@processing_started_at',
+                        $startedAtValue
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@processed_at',
+                        $processedAtValue
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@processing_error',
+                        $processingErrorValue
+                    ) | Out-Null
 
                     $command.ExecuteNonQuery() | Out-Null
                 } finally {
-                    if ($null -ne $command) { $command.Dispose() }
+                    if ($null -ne $command) {
+                        $command.Dispose()
+                    }
                 }
             }
 
@@ -299,7 +434,9 @@ INSERT INTO dfe_document (
 
                 try {
                     $connection = New-TestConnection -DatabasePath $databasePath
+
                     New-TestSchema -Connection $connection
+
                     return $databasePath
                 } finally {
                     Close-TestConnection -Connection $connection
@@ -309,69 +446,80 @@ INSERT INTO dfe_document (
             $Script:DatabasePathCnpjOne = New-TestIndex -Cnpj $Script:CnpjOne
             $Script:DatabasePathCnpjTwo = New-TestIndex -Cnpj $Script:CnpjTwo
 
-            $docJulyParams = @{
-                ChaveAcesso = ('0' * 44)
-                DhEmi       = '2026-07-31T23:59:59.0000000+00:00'
-                Ndoc        = 1
-                Serie       = '001'
+            $julyParams = @{
+                ChaveAcesso      = ('0' * 44)
+                DhEmi            = '2026-07-31T23:59:59.0000000+00:00'
+                Ndoc             = 1
+                Serie            = '001'
+                ProcessingStatus = 'Indexed'
             }
 
-            $Script:DocJuly = New-TestDocument @docJulyParams
+            $Script:DocJuly = New-TestDocument @julyParams
 
-            $docAug01Params = @{
-                ChaveAcesso = ('1' * 44)
-                DhEmi       = '2026-08-01T00:00:00.0000000+00:00'
-                Ndoc        = 2
-                Serie       = '001'
+            $aug01Params = @{
+                ChaveAcesso      = ('1' * 44)
+                DhEmi            = '2026-08-01T00:00:00.0000000+00:00'
+                Ndoc             = 2
+                Serie            = '001'
+                ProcessingStatus = 'Indexed'
             }
 
-            $Script:DocAug01 = New-TestDocument @docAug01Params
+            $Script:DocAug01 = New-TestDocument @aug01Params
 
-            $docAug15Params = @{
-                ChaveAcesso = ('2' * 44)
-                DhEmi       = '2026-08-15T12:00:00.0000000+00:00'
-                Ndoc        = 3
-                Serie       = '001'
-                IsProc      = $true
+            $aug15Params = @{
+                ChaveAcesso         = ('2' * 44)
+                DhEmi               = '2026-08-15T12:00:00.0000000+00:00'
+                Ndoc                = 3
+                Serie               = '001'
+                IsProc              = $true
+                ProcessingStatus    = 'Failed'
+                ProcessingStartedAt = '2026-08-15T12:01:00.0000000+00:00'
+                ProcessingError     = 'Fiscal processing failed.'
             }
 
-            $Script:DocAug15 = New-TestDocument @docAug15Params
+            $Script:DocAug15 = New-TestDocument @aug15Params
 
-
-            $docAug31Params = @{
-                ChaveAcesso = ('3' * 44)
-                DhEmi       = '2026-08-31T23:59:59.0000000+00:00'
-                Ndoc        = 5
-                Serie       = '001'
+            $aug31Params = @{
+                ChaveAcesso         = ('3' * 44)
+                DhEmi               = '2026-08-31T23:59:59.0000000+00:00'
+                Ndoc                = 5
+                Serie               = '001'
+                ProcessingStatus    = 'Processed'
+                ProcessingStartedAt = '2026-08-31T23:59:59.1000000+00:00'
+                ProcessedAt         = '2026-08-31T23:59:59.2000000+00:00'
             }
 
-            $Script:DocAug31 = New-TestDocument @docAug31Params
+            $Script:DocAug31 = New-TestDocument @aug31Params
 
-            $docSepParams = @{
-                ChaveAcesso = ('4' * 44)
-                DhEmi       = '2026-09-01T00:00:00.0000000+00:00'
-                Ndoc        = 6
-                Serie       = '001'
+            $sepParams = @{
+                ChaveAcesso         = ('4' * 44)
+                DhEmi               = '2026-09-01T00:00:00.0000000+00:00'
+                Ndoc                = 6
+                Serie               = '001'
+                ProcessingStatus    = 'Processing'
+                ProcessingStartedAt = '2026-09-01T00:01:00.0000000+00:00'
             }
 
-            $Script:DocSep = New-TestDocument @docSepParams
+            $Script:DocSep = New-TestDocument @sepParams
 
-            $docCteParams = @{
-                ChaveAcesso = ('5' * 44)
-                DhEmi       = '2026-08-15T12:00:00.0000000+00:00'
-                Modelo      = ([ModeloDFe]::CTe)
-                Ndoc        = $null
-                Serie       = $null
+            $cteParams = @{
+                ChaveAcesso      = ('5' * 44)
+                DhEmi            = '2026-08-15T12:00:00.0000000+00:00'
+                Modelo           = ([ModeloDFe]::CTe)
+                Ndoc             = $null
+                Serie            = $null
+                ProcessingStatus = 'Indexed'
             }
 
-            $Script:DocCte = New-TestDocument @docCteParams
+            $Script:DocCte = New-TestDocument @cteParams
 
-            $docCnpjTwoParams = @{
-                ChaveAcesso = ('6' * 44)
-                DhEmi       = '2026-08-15T12:00:00.0000000+00:00'
+            $cnpjTwoParams = @{
+                ChaveAcesso      = ('6' * 44)
+                DhEmi            = '2026-08-15T12:00:00.0000000+00:00'
+                ProcessingStatus = 'Indexed'
             }
 
-            $Script:DocCnpjTwo = New-TestDocument @docCnpjTwoParams
+            $Script:DocCnpjTwo = New-TestDocument @cnpjTwoParams
 
             $setupConnection = $null
 
@@ -387,8 +535,13 @@ INSERT INTO dfe_document (
                     $Script:DocCte
                 )
 
-                foreach ($doc in $documents) {
-                    Save-TestDocument -Connection $setupConnection -Document $doc
+                foreach ($document in $documents) {
+                    $saveParams = @{
+                        Connection = $setupConnection
+                        Document   = $document
+                    }
+
+                    Save-TestDocument @saveParams
                 }
             } finally {
                 Close-TestConnection -Connection $setupConnection
@@ -399,7 +552,12 @@ INSERT INTO dfe_document (
             try {
                 $setupConnection = New-TestConnection -DatabasePath $Script:DatabasePathCnpjTwo
 
-                Save-TestDocument -Connection $setupConnection -Document $Script:DocCnpjTwo
+                $saveParams = @{
+                    Connection = $setupConnection
+                    Document   = $Script:DocCnpjTwo
+                }
+
+                Save-TestDocument @saveParams
             } finally {
                 Close-TestConnection -Connection $setupConnection
             }
@@ -407,7 +565,9 @@ INSERT INTO dfe_document (
 
         AfterAll {
 
-            if ($null -ne $Script:TestRoot -and (Test-Path -LiteralPath $Script:TestRoot)) {
+            if ($null -ne $Script:TestRoot -and
+                (Test-Path -LiteralPath $Script:TestRoot)
+            ) {
                 $removeItemParams = @{
                     LiteralPath = $Script:TestRoot
                     Recurse     = $true
@@ -417,17 +577,21 @@ INSERT INTO dfe_document (
 
                 Remove-Item @removeItemParams
             }
-
-            Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
         }
         #endregion
+
 
         #region Parameter contract
         Context 'Parameter contract' {
 
             BeforeAll {
 
-                $Script:Command = Get-Command -Name Get-DFeDocumentEntry -ErrorAction Stop
+                $getCommandParams = @{
+                    Name        = 'Get-DFeDocumentEntry'
+                    ErrorAction = 'Stop'
+                }
+
+                $Script:Command = Get-Command @getCommandParams
             }
 
             It 'Declares Cnpj as mandatory' {
@@ -450,7 +614,7 @@ INSERT INTO dfe_document (
                         $_ -is [System.Management.Automation.ValidatePatternAttribute]
                     }
 
-                $attr.RegexPattern | Should -Be '^[A-Z0-9]{14}$'
+                $attr.RegexPattern | Should -Be '^(?-i)[A-Z0-9]{14}$'
             }
 
             It 'Declares StartDate as optional string' {
@@ -461,6 +625,7 @@ INSERT INTO dfe_document (
                     }
 
                 $attr | Should -BeNullOrEmpty
+
                 $Script:Command.Parameters['StartDate'].ParameterType | Should -Be ([string])
             }
 
@@ -472,6 +637,7 @@ INSERT INTO dfe_document (
                     }
 
                 $attr | Should -BeNullOrEmpty
+
                 $Script:Command.Parameters['EndDate'].ParameterType | Should -Be ([string])
             }
 
@@ -483,7 +649,34 @@ INSERT INTO dfe_document (
                     }
 
                 $attr | Should -BeNullOrEmpty
+
                 $Script:Command.Parameters['Modelo'].ParameterType | Should -Be ([ModeloDFe])
+            }
+
+            It 'Declares ProcessingStatus as optional string' {
+                $attr = $Script:Command.Parameters['ProcessingStatus'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and
+                        $_.Mandatory
+                    }
+
+                $attr | Should -BeNullOrEmpty
+
+                $Script:Command.Parameters['ProcessingStatus'].ParameterType | Should -Be ([string])
+            }
+
+            It 'Restricts ProcessingStatus to supported states' {
+                $attr = $Script:Command.Parameters['ProcessingStatus'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ValidateSetAttribute]
+                    }
+
+                @($attr.ValidValues) | Should -Be @(
+                    'Indexed'
+                    'Processing'
+                    'Processed'
+                    'Failed'
+                )
             }
         }
         #endregion
@@ -504,6 +697,12 @@ INSERT INTO dfe_document (
                 } | Should -Not -Throw
             }
 
+            It 'Accepts an uppercase alphanumeric CNPJ' {
+                {
+                    Get-DFeDocumentEntry -Cnpj 'AB12CD34EF56GH' -ErrorAction Stop | Out-Null
+                } | Should -Not -Throw
+            }
+
             It 'Rejects a CNPJ shorter than 14 characters' {
                 {
                     Get-DFeDocumentEntry -Cnpj '1234567800019' -ErrorAction Stop
@@ -517,8 +716,15 @@ INSERT INTO dfe_document (
             }
 
             It 'Rejects punctuation characters' {
-                { Get-DFeDocumentEntry -Cnpj '12.345.678/0001-99' -ErrorAction Stop } |
-                    Should -Throw
+                {
+                    Get-DFeDocumentEntry -Cnpj '12.345.678/0001-99' -ErrorAction Stop
+                } | Should -Throw
+            }
+
+            It 'Rejects lowercase characters' {
+                {
+                    Get-DFeDocumentEntry -Cnpj 'ab12cd34ef56gh' -ErrorAction Stop
+                } | Should -Throw
             }
         }
         #endregion
@@ -552,7 +758,8 @@ INSERT INTO dfe_document (
             }
 
             It 'Resolves the index path for the supplied CNPJ' {
-                Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop | Out-Null
+                Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop |
+                    Out-Null
 
                 $invokeParams = @{
                     CommandName     = 'Get-StorePath'
@@ -561,7 +768,8 @@ INSERT INTO dfe_document (
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Scope -eq 'Index' -and $Cnpj -eq $Script:CnpjOne
+                        $Scope -eq 'Index' -and
+                        $Cnpj -eq $Script:CnpjOne
                     }
                 }
 
@@ -569,13 +777,15 @@ INSERT INTO dfe_document (
             }
 
             It 'Returns all documents when no filters are specified' {
-                @(Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop) |
-                    Should -HaveCount 6
+                @(
+                    Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop
+                ) | Should -HaveCount 6
             }
 
             It 'Returns documents ordered by dh_emi ascending' {
                 $results = @(Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ErrorAction Stop)
-                $dates   = @($results | Select-Object -ExpandProperty dh_emi)
+
+                $dates = @($results | Select-Object -ExpandProperty dh_emi)
 
                 $dates | Should -Be @($dates | Sort-Object)
             }
@@ -598,7 +808,7 @@ INSERT INTO dfe_document (
                 $result.serie        | Should -Be '001'
             }
 
-            It 'Returns null ndoc when the column is NULL' {
+            It 'Returns null ndoc and serie when the columns are NULL' {
                 $entryParams = @{
                     Cnpj        = $Script:CnpjOne
                     Modelo      = ([ModeloDFe]::CTe)
@@ -612,6 +822,7 @@ INSERT INTO dfe_document (
             }
         }
         #endregion
+
 
         #region Period filter
         Context 'Period filter' {
@@ -634,6 +845,7 @@ INSERT INTO dfe_document (
                 $results = @(Get-DFeDocumentEntry @entryParams)
 
                 $results | Should -HaveCount 1
+
                 $results[0].chave_acesso | Should -Be $Script:DocAug01.ChaveAcesso
             }
 
@@ -645,7 +857,8 @@ INSERT INTO dfe_document (
                 }
 
                 $results = @(Get-DFeDocumentEntry @entryParams)
-                $chaves  = @($results | Select-Object -ExpandProperty chave_acesso)
+
+                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
 
                 $chaves | Should -Not -Contain $Script:DocJuly.ChaveAcesso
             }
@@ -661,6 +874,7 @@ INSERT INTO dfe_document (
                 $results = @(Get-DFeDocumentEntry @entryParams)
 
                 $results | Should -HaveCount 1
+
                 $results[0].chave_acesso | Should -Be $Script:DocAug31.ChaveAcesso
             }
 
@@ -673,7 +887,8 @@ INSERT INTO dfe_document (
                 }
 
                 $results = @(Get-DFeDocumentEntry @entryParams)
-                $chaves  = @($results | Select-Object -ExpandProperty chave_acesso)
+
+                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
 
                 $results | Should -HaveCount 4
                 $chaves  | Should -Contain $Script:DocAug01.ChaveAcesso
@@ -692,7 +907,7 @@ INSERT INTO dfe_document (
                     ErrorAction = 'Stop'
                 }
 
-                @(Get-DFeDocumentEntry @entryParams ) | Should -HaveCount 0
+                @(Get-DFeDocumentEntry @entryParams) | Should -HaveCount 0
             }
         }
         #endregion
@@ -717,8 +932,10 @@ INSERT INTO dfe_document (
                 $results = @(Get-DFeDocumentEntry @entryParams)
 
                 $results | Should -HaveCount 1
+
                 $results[0].chave_acesso | Should -Be $Script:DocCte.ChaveAcesso
-                $results[0].modelo       | Should -Be ([int][ModeloDFe]::CTe)
+
+                $results[0].modelo | Should -Be ([int][ModeloDFe]::CTe)
             }
 
             It 'Combines Modelo with the period filter' {
@@ -731,13 +948,131 @@ INSERT INTO dfe_document (
                 }
 
                 $results = @(Get-DFeDocumentEntry @entryParams)
-                $chaves  = @($results | Select-Object -ExpandProperty chave_acesso)
+
+                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
 
                 $results | Should -HaveCount 3
                 $chaves  | Should -Contain $Script:DocAug01.ChaveAcesso
                 $chaves  | Should -Contain $Script:DocAug15.ChaveAcesso
                 $chaves  | Should -Contain $Script:DocAug31.ChaveAcesso
                 $chaves  | Should -Not -Contain $Script:DocCte.ChaveAcesso
+            }
+        }
+        #endregion
+
+        #region ProcessingStatus filter
+        Context 'ProcessingStatus filter' {
+
+            BeforeEach {
+
+                Mock -CommandName Get-StorePath -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$Scope,
+
+                        [Parameter()]
+                        [string]$Cnpj
+                    )
+
+                    $null = $Scope
+
+                    if ($Cnpj -eq $Script:CnpjOne) {
+                        return $Script:DatabasePathCnpjOne
+                    }
+
+                    if ($Cnpj -eq $Script:CnpjTwo) {
+                        return $Script:DatabasePathCnpjTwo
+                    }
+
+                    throw "Unexpected CNPJ: $Cnpj"
+                }
+            }
+
+            It 'Returns Indexed documents when ProcessingStatus is Indexed' {
+                $entryParams = @{
+                    Cnpj             = $Script:CnpjOne
+                    ProcessingStatus = 'Indexed'
+                    ErrorAction      = 'Stop'
+                }
+
+                $results = @(Get-DFeDocumentEntry @entryParams)
+
+                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
+
+                $results | Should -HaveCount 3
+                $chaves  | Should -Contain $Script:DocJuly.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocAug01.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocCte.ChaveAcesso
+            }
+
+            It 'Returns Failed documents when ProcessingStatus is Failed' {
+                $entryParams = @{
+                    Cnpj             = $Script:CnpjOne
+                    ProcessingStatus = 'Failed'
+                    ErrorAction      = 'Stop'
+                }
+
+                $results = @(Get-DFeDocumentEntry @entryParams)
+
+                $results | Should -HaveCount 1
+
+                $results[0].chave_acesso | Should -Be $Script:DocAug15.ChaveAcesso
+
+                $results[0].processing_status | Should -Be 'Failed'
+            }
+
+            It 'Returns no output when no processing state matches' {
+                $entryParams = @{
+                    Cnpj             = $Script:CnpjTwo
+                    ProcessingStatus = 'Processed'
+                    ErrorAction      = 'Stop'
+                }
+
+                @(Get-DFeDocumentEntry @entryParams) | Should -HaveCount 0
+            }
+
+            It 'Combines ProcessingStatus with Modelo' {
+                $entryParams = @{
+                    Cnpj             = $Script:CnpjOne
+                    Modelo           = ([ModeloDFe]::NFe)
+                    ProcessingStatus = 'Indexed'
+                    ErrorAction      = 'Stop'
+                }
+
+                $results = @(Get-DFeDocumentEntry @entryParams)
+
+                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
+
+                $results | Should -HaveCount 2
+                $chaves  | Should -Contain $Script:DocJuly.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocAug01.ChaveAcesso
+                $chaves  | Should -Not -Contain $Script:DocCte.ChaveAcesso
+            }
+
+            It 'Combines ProcessingStatus with period filters' {
+                $entryParams = @{
+                    Cnpj             = $Script:CnpjOne
+                    StartDate        = '2026-08-01T00:00:00+00:00'
+                    EndDate          = '2026-08-31T23:59:59+00:00'
+                    ProcessingStatus = 'Indexed'
+                    ErrorAction      = 'Stop'
+                }
+
+                $results = @(Get-DFeDocumentEntry @entryParams)
+
+                $chaves = @($results | Select-Object -ExpandProperty chave_acesso)
+
+                $results | Should -HaveCount 2
+                $chaves  | Should -Contain $Script:DocAug01.ChaveAcesso
+                $chaves  | Should -Contain $Script:DocCte.ChaveAcesso
+                $chaves  | Should -Not -Contain $Script:DocJuly.ChaveAcesso
+                $chaves  | Should -Not -Contain $Script:DocAug15.ChaveAcesso
+            }
+
+            It 'Rejects an unsupported ProcessingStatus' {
+                {
+                    Get-DFeDocumentEntry -Cnpj $Script:CnpjOne -ProcessingStatus 'Unknown' -ErrorAction Stop
+                } | Should -Throw
             }
         }
         #endregion
@@ -752,11 +1087,12 @@ INSERT INTO dfe_document (
                 }
 
                 $entryParams = @{
-                    Cnpj        = $Script:CnpjOne
-                    Modelo      = ([ModeloDFe]::NFe)
-                    StartDate   = '2026-08-15T12:00:00+00:00'
-                    EndDate     = '2026-08-15T12:00:00+00:00'
-                    ErrorAction = 'Stop'
+                    Cnpj             = $Script:CnpjOne
+                    Modelo           = ([ModeloDFe]::NFe)
+                    ProcessingStatus = 'Failed'
+                    StartDate        = '2026-08-15T12:00:00+00:00'
+                    EndDate          = '2026-08-15T12:00:00+00:00'
+                    ErrorAction      = 'Stop'
                 }
 
                 $Script:Sample = @(Get-DFeDocumentEntry @entryParams)
@@ -771,6 +1107,10 @@ INSERT INTO dfe_document (
                     'serie'
                     'sha256'
                     'indexed_at'
+                    'processing_status'
+                    'processing_started_at'
+                    'processed_at'
+                    'processing_error'
                 )
             }
 
@@ -779,8 +1119,9 @@ INSERT INTO dfe_document (
             }
 
             It 'Exposes exactly the documented properties' {
-                @($Script:Sample[0].PSObject.Properties.Name) |
-                    Should -Be $Script:ExpectedProperties
+                @(
+                    $Script:Sample[0].PSObject.Properties.Name
+                ) | Should -Be $Script:ExpectedProperties
             }
 
             It 'Exposes chave_acesso as string' {
@@ -819,6 +1160,30 @@ INSERT INTO dfe_document (
                 $Script:Sample[0].indexed_at | Should -BeOfType ([string])
             }
 
+            It 'Exposes processing_status as string' {
+                $Script:Sample[0].processing_status |
+                    Should -BeOfType ([string])
+
+                $Script:Sample[0].processing_status |
+                    Should -Be 'Failed'
+            }
+
+            It 'Exposes processing_started_at as string when present' {
+                $Script:Sample[0].processing_started_at |
+                    Should -BeOfType ([string])
+
+                $Script:Sample[0].processing_started_at |
+                    Should -Be $Script:DocAug15.ProcessingStartedAt
+            }
+
+            It 'Exposes processing_error as string when present' {
+                $Script:Sample[0].processing_error |
+                    Should -BeOfType ([string])
+
+                $Script:Sample[0].processing_error |
+                    Should -Be $Script:DocAug15.ProcessingError
+            }
+
             It 'Does not expose SQLite rowid' {
                 $Script:Sample[0].PSObject.Properties.Name |
                     Should -Not -Contain 'rowid'
@@ -827,6 +1192,55 @@ INSERT INTO dfe_document (
             It 'Does not expose CNPJ as an internal field' {
                 $Script:Sample[0].PSObject.Properties.Name |
                     Should -Not -Contain 'cnpj'
+            }
+        }
+        #endregion
+
+        #region Nullable processing fields
+        Context 'Nullable processing fields' {
+
+            BeforeEach {
+
+                Mock -CommandName Get-StorePath -MockWith {
+                    return $Script:DatabasePathCnpjOne
+                }
+            }
+
+            It 'Returns nullable processing timestamps and error as null' {
+                $entryParams = @{
+                    Cnpj             = $Script:CnpjOne
+                    StartDate        = '2026-08-01T00:00:00+00:00'
+                    EndDate          = '2026-08-01T00:00:00+00:00'
+                    ProcessingStatus = 'Indexed'
+                    ErrorAction      = 'Stop'
+                }
+
+                $results = @(Get-DFeDocumentEntry @entryParams)
+
+                $results | Should -HaveCount 1
+
+                $results[0].processing_status     | Should -Be 'Indexed'
+                $results[0].processing_started_at | Should -BeNullOrEmpty
+                $results[0].processed_at          | Should -BeNullOrEmpty
+                $results[0].processing_error      | Should -BeNullOrEmpty
+            }
+
+            It 'Returns processed_at as string when present' {
+                $entryParams = @{
+                    Cnpj             = $Script:CnpjOne
+                    ProcessingStatus = 'Processed'
+                    ErrorAction      = 'Stop'
+                }
+
+                $results = @(Get-DFeDocumentEntry @entryParams)
+
+                $results | Should -HaveCount 1
+
+                $results[0].processed_at | Should -BeOfType ([string])
+
+                $results[0].processed_at | Should -Be $Script:DocAug31.ProcessedAt
+
+                $results[0].processing_error | Should -BeNullOrEmpty
             }
         }
         #endregion
@@ -863,16 +1277,19 @@ INSERT INTO dfe_document (
                 $results = @(Get-DFeDocumentEntry -Cnpj $Script:CnpjTwo -ErrorAction Stop)
 
                 $results | Should -HaveCount 1
+
                 $results[0].chave_acesso | Should -Be $Script:DocCnpjTwo.ChaveAcesso
             }
 
             It 'Does not return documents from another CNPJ index' {
                 $entryParams = @{
                     Cnpj        = $Script:CnpjOne
-                    ErrorAction =  'Stop'
+                    ErrorAction = 'Stop'
                 }
 
-                $chaves = @(Get-DFeDocumentEntry @entryParams | Select-Object -ExpandProperty chave_acesso)
+                $chaves = @(
+                    Get-DFeDocumentEntry @entryParams | Select-Object -ExpandProperty chave_acesso
+                )
 
                 $chaves | Should -Not -Contain $Script:DocCnpjTwo.ChaveAcesso
             }
@@ -920,10 +1337,19 @@ INSERT INTO dfe_document (
                     $null = $_
                 }
 
-                Should -Invoke -CommandName Get-StorePath -ModuleName PipeDFe -Scope It -Exactly -Times 0
+                $invokeParams = @{
+                    CommandName = 'Get-StorePath'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
             }
         }
         #endregion
+
 
         #region Read failure
         Context 'Read failure' {
@@ -964,8 +1390,9 @@ INSERT INTO dfe_document (
                     $exception = $_
                 }
 
-                $exception.CategoryInfo.Category |
-                    Should -Be ([System.Management.Automation.ErrorCategory]::ReadError)
+                $expected = [System.Management.Automation.ErrorCategory]::ReadError
+                $exception.CategoryInfo.Category | Should -Be $expected
+
             }
 
             It 'Uses the database path as TargetObject' {
@@ -977,7 +1404,8 @@ INSERT INTO dfe_document (
                     $exception = $_
                 }
 
-                $exception.TargetObject | Should -Be $Script:FailureDatabasePath
+                $exception.TargetObject |
+                    Should -Be $Script:FailureDatabasePath
             }
 
             It 'Does not produce output when the read fails' {
