@@ -12,22 +12,22 @@ connections are used.
 Coverage includes:
   - Company and DateRange are mandatory.
   - Returns PipeDFe.ResultadoEmpresa on every code path.
-  - Calls Initialize-DFeIndex, Invoke-DFeXmlScan and Get-DFeDocumentEntry
-    with the correct arguments on every successful run.
+  - Initializes the index and scans the configured XML path.
+  - Queries documents for the requested period.
+  - Processes only Indexed NF-e and NFC-e documents.
+  - Does not reprocess Processed NF-e and NFC-e documents.
+  - Failed or Processing NF-e and NFC-e documents block archive and delivery.
+  - A processing failure does not prevent the remaining eligible documents
+    from being attempted.
+  - Unsupported document models do not enter the NF-e/NFC-e processing
+    workflow.
   - Returns Status = 'Aviso' when no documents are found in the period.
-  - Calls Get-DFeSequenceGap, Resolve-DFeArchiveInfo and New-DFeArchive
-    when documents are present.
-  - Calls Resolve-DFeSmtp and Send-DFeNotification when documents and
-    recipients are present.
-  - Returns EmailEnviado = $true when Send-DFeNotification succeeds.
-  - Returns Status = 'Aviso' and records a warning when Send-DFeNotification
-    fails.
-  - Returns Status = 'Aviso' and records a warning when SMTP is not
-    configured.
-  - Returns Status = 'Aviso' and records a warning when no recipients are
-    configured.
-  - Returns Status = 'Falha' and never throws when any pipeline step throws.
-  - Never throws under any circumstance.
+  - Detects sequence gaps and creates archives when delivery is allowed.
+  - Sends notifications when SMTP and recipients are available.
+  - Returns Status = 'Aviso' for non-fatal notification configuration
+    or delivery failures.
+  - Returns Status = 'Falha' and never throws when a fatal pipeline step fails.
+  - Never calls real document processing from this unit suite.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -50,56 +50,89 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Invoke-PipeDFeCompany' {
+Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
 
-            $Script:Cnpj = '12345678000199'
+            $Script:Cnpj    = '12345678000199'
 
-            $Script:Company = [PSCustomObject]@{
+            $Script:Company = [pscustomobject]@{
                 Cnpj         = $Script:Cnpj
                 RazaoSocial  = 'EMPRESA TESTE LTDA'
                 NomeFantasia = [string]::Empty
                 XmlPath      = 'C:\xml'
                 OutputPath   = 'C:\output'
-                Email        = [PSCustomObject]@{
+                Email        = [pscustomobject]@{
                     Para = @('dest@exemplo.com.br')
                     Cc   = @()
                     Cco  = @()
                 }
             }
 
-            $Script:DateRange = [PSCustomObject]@{
+            $Script:CompanyWithoutRecipients = [pscustomobject]@{
+                Cnpj         = $Script:Cnpj
+                RazaoSocial  = 'EMPRESA TESTE LTDA'
+                NomeFantasia = [string]::Empty
+                XmlPath      = 'C:\xml'
+                OutputPath   = 'C:\output'
+                Email        = [pscustomobject]@{
+                    Para = @()
+                    Cc   = @()
+                    Cco  = @()
+                }
+            }
+
+            $Script:DateRange = [pscustomobject]@{
                 Start = [System.DateTimeOffset]::new(
-                    2026, 8,  1,  0,  0,  0, [System.TimeSpan]::Zero
+                    2026, 8, 1, 0, 0, 0, [System.TimeSpan]::Zero
                 )
-                End   = [System.DateTimeOffset]::new(
+                End = [System.DateTimeOffset]::new(
                     2026, 8, 31, 23, 59, 59, [System.TimeSpan]::Zero
                 )
             }
 
-            $Script:Entry = [PSCustomObject]@{
-                chave_acesso = '35260112345678000199550010000000011234567890'
-                modelo       = 55
-                dh_emi       = '2026-08-15T10:00:00+00:00'
-                file_path    = 'C:\xml\nfe.xml'
-                is_proc      = $false
-                ndoc         = 1
-                serie        = '001'
-                sha256       = 'abc123'
-                indexed_at   = '2026-08-15T10:00:00+00:00'
+            $Script:Entry = [pscustomobject]@{
+                chave_acesso          = '35260112345678000199550010000000011234567890'
+                modelo                = 55
+                dh_emi                = '2026-08-15T10:00:00+00:00'
+                file_path             = 'C:\xml\nfe.xml'
+                is_proc               = $false
+                ndoc                  = 1
+                serie                 = '001'
+                sha256                = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+                indexed_at            = '2026-08-15T10:00:00+00:00'
+                processing_status     = 'Indexed'
+                processing_started_at = $null
+                processed_at          = $null
+                processing_error      = $null
             }
 
-            $Script:ArchiveInfo = [PSCustomObject]@{
+            $Script:SecondEntry = [pscustomobject]@{
+                chave_acesso          = '35260112345678000199550010000000021234567891'
+                modelo                = 65
+                dh_emi                = '2026-08-16T10:00:00+00:00'
+                file_path             = 'C:\xml\nfce.xml'
+                is_proc               = $false
+                ndoc                  = 2
+                serie                 = '001'
+                sha256                = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+                indexed_at            = '2026-08-16T10:00:00+00:00'
+                processing_status     = 'Indexed'
+                processing_started_at = $null
+                processed_at          = $null
+                processing_error      = $null
+            }
+
+            $Script:ArchiveInfo = [pscustomobject]@{
                 TipoDFe  = 'NFe'
                 FileName = 'NFe_12345678000199_EMPRESA_TESTE_202608.zip'
                 TempPath = 'C:\temp\NFe_12345678000199_EMPRESA_TESTE_202608.zip'
                 DestPath = 'C:\output\NFe_12345678000199_EMPRESA_TESTE_202608.zip'
             }
 
-            $Script:Archive = [PSCustomObject]@{
+            $Script:Archive = [pscustomobject]@{
                 TipoDFe  = 'NFe'
                 FileName = 'NFe_12345678000199_EMPRESA_TESTE_202608.zip'
                 FileHash = 'deadbeef'
@@ -107,36 +140,147 @@ Describe 'Invoke-PipeDFeCompany' {
                 DestPath = 'C:\output\NFe_12345678000199_EMPRESA_TESTE_202608.zip'
             }
 
-            $Script:Smtp = [PSCustomObject]@{
+            $Script:Smtp = [pscustomobject]@{
                 Host = 'smtp.exemplo.com.br'
                 Port = 587
             }
 
-            $Script:NotificationSuccess = [PSCustomObject]@{
+            $Script:NotificationSuccess = [pscustomobject]@{
                 Success      = $true
                 EmailsSent   = @('dest@exemplo.com.br')
                 ErrorMessage = $null
                 FailedAt     = $null
             }
 
-            $Script:NotificationFailure = [PSCustomObject]@{
+            $Script:NotificationFailure = [pscustomobject]@{
                 Success      = $false
                 EmailsSent   = @()
                 ErrorMessage = 'Connection refused.'
                 FailedAt     = 'Send'
             }
+
+            function Copy-TestEntry {
+                [CmdletBinding()]
+                [OutputType([pscustomobject])]
+                param (
+                    [Parameter(Mandatory)]
+                    [pscustomobject]$Entry,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string]$ProcessingStatus,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string]$ProcessingError,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [Nullable[int]]$Modelo
+                )
+
+                if (-not $PSBoundParameters.ContainsKey('ProcessingStatus')) {
+                    $ProcessingStatus = [string]$Entry.processing_status
+                }
+
+                if (-not $PSBoundParameters.ContainsKey('ProcessingError')) {
+                    $ProcessingError = $Entry.processing_error
+                }
+
+                if (-not $PSBoundParameters.ContainsKey('Modelo')) {
+                    $Modelo = [int]$Entry.modelo
+                }
+
+                [pscustomobject]@{
+                    chave_acesso          = $Entry.chave_acesso
+                    modelo                = [int]$Modelo
+                    dh_emi                = $Entry.dh_emi
+                    file_path             = $Entry.file_path
+                    is_proc               = $Entry.is_proc
+                    ndoc                  = $Entry.ndoc
+                    serie                 = $Entry.serie
+                    sha256                = $Entry.sha256
+                    indexed_at            = $Entry.indexed_at
+                    processing_status     = $ProcessingStatus
+                    processing_started_at = $Entry.processing_started_at
+                    processed_at          = $Entry.processed_at
+                    processing_error      = $ProcessingError
+                }
+            }
+
+            function Invoke-TestCompany {
+                [CmdletBinding()]
+                [OutputType([pscustomobject])]
+                param (
+                    [Parameter()]
+                    [pscustomobject]$Company = $Script:Company
+                )
+
+                $invokeParams = @{
+                    Company   = $Company
+                    DateRange = $Script:DateRange
+                }
+
+                Invoke-PipeDFeCompany @invokeParams
+            }
         }
 
-        AfterAll {
+        BeforeEach {
 
-            Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
+            Mock -CommandName Initialize-DFeIndex -MockWith {
+                return 'C:\store\12345678000199\index.db'
+            }
+
+            Mock -CommandName Invoke-DFeXmlScan -MockWith {
+                return [pscustomobject]@{
+                    FilesFound   = 3
+                    FilesIndexed = 2
+                    FilesSkipped = 1
+                    FilesIgnored = 0
+                }
+            }
+
+            Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                return $Script:Entry
+            }
+
+            Mock -CommandName Invoke-DFeDocumentProcessing
+
+            Mock -CommandName Get-DFeInutilizacaoEntry -MockWith {
+                return @()
+            }
+
+            Mock -CommandName Get-DFeSequenceGap -MockWith {
+                return @()
+            }
+
+            Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
+                return $Script:ArchiveInfo
+            }
+
+            Mock -CommandName New-DFeArchive -MockWith {
+                return $Script:Archive
+            }
+
+            Mock -CommandName Resolve-DFeSmtp -MockWith {
+                return $Script:Smtp
+            }
+
+            Mock -CommandName Send-DFeNotification -MockWith {
+                return $Script:NotificationSuccess
+            }
         }
 
         #region Parameter contract
         Context 'Parameter contract' {
 
+            BeforeAll {
+
+                $Script:Command = Get-Command -Name Invoke-PipeDFeCompany -ErrorAction Stop
+            }
+
             It 'Declares Company as mandatory' {
-                $mandatory = (Get-Command Invoke-PipeDFeCompany).Parameters['Company'].Attributes |
+                $mandatory = $Script:Command.Parameters['Company'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
@@ -146,7 +290,7 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Declares DateRange as mandatory' {
-                $mandatory = (Get-Command Invoke-PipeDFeCompany).Parameters['DateRange'].Attributes |
+                $mandatory = $Script:Command.Parameters['DateRange'].Attributes |
                     Where-Object {
                         $_ -is [System.Management.Automation.ParameterAttribute] -and
                         $_.Mandatory
@@ -160,100 +304,9 @@ Describe 'Invoke-PipeDFeCompany' {
         #region Happy path
         Context 'Documents found, SMTP configured, notification sent' {
 
-            BeforeAll {
+            BeforeEach {
 
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
-
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    return $Script:Entry
-                }
-
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
-                }
-
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
-                    return $Script:ArchiveInfo
-                }
-
-                Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
-
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
-                    return $Script:Archive
-                }
-
-                Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-                    return $Script:Smtp
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange,
-                        [pscustomobject]$Smtp,
-                        [pscustomobject[]]$Gaps,
-                        [string[]]$ZipFileDestination
-                    )
-
-                    $null = $Company
-                    $null = $DateRange
-                    $null = $Smtp
-                    $null = $Gaps
-                    $null = $ZipFileDestination
-                    return $Script:NotificationSuccess
-                }
-
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns a PipeDFe.ResultadoEmpresa object' {
@@ -261,109 +314,117 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Calls Initialize-DFeIndex once with the correct Cnpj' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName     = 'Initialize-DFeIndex'
                     ModuleName      = 'PipeDFe'
-                    Scope           = 'Context'
+                    Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = { $Cnpj -eq $Script:Cnpj }
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Calls Invoke-DFeXmlScan once with the correct parameters' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName     = 'Invoke-DFeXmlScan'
                     ModuleName      = 'PipeDFe'
-                    Scope           = 'Context'
+                    Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Cnpj    -eq $Script:Cnpj -and
+                        $Cnpj -eq $Script:Cnpj -and
                         $XmlPath -eq $Script:Company.XmlPath
                     }
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Calls Get-DFeDocumentEntry once with the correct period' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName     = 'Get-DFeDocumentEntry'
                     ModuleName      = 'PipeDFe'
-                    Scope           = 'Context'
+                    Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Cnpj      -eq $Script:Cnpj -and
+                        $Cnpj -eq $Script:Cnpj -and
                         $StartDate -eq $Script:DateRange.Start.ToString('o') -and
-                        $EndDate   -eq $Script:DateRange.End.ToString('o')
+                        $EndDate -eq $Script:DateRange.End.ToString('o')
                     }
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
+            }
+
+            It 'Processes the Indexed NF-e document once' {
+                $shouldParams = @{
+                    CommandName     = 'Invoke-DFeDocumentProcessing'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj -and
+                        $Entry.chave_acesso -eq $Script:Entry.chave_acesso
+                    }
+                }
+
+                Should -Invoke @shouldParams
             }
 
             It 'Calls Get-DFeSequenceGap once' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Get-DFeSequenceGap'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Calls Resolve-DFeArchiveInfo once per document type' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Resolve-DFeArchiveInfo'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Calls New-DFeArchive once' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'New-DFeArchive'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Calls Send-DFeNotification once' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Send-DFeNotification'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 1
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Returns Status OK' {
                 $Script:Result.Status | Should -Be 'OK'
-            }
-
-            It 'Returns the correct Cnpj' {
-                $Script:Result.Cnpj | Should -Be $Script:Cnpj
-            }
-
-            It 'Returns the correct RazaoSocial' {
-                $Script:Result.RazaoSocial | Should -Be $Script:Company.RazaoSocial
             }
 
             It 'Returns TotalDocumentos matching the entry count' {
@@ -388,98 +449,212 @@ Describe 'Invoke-PipeDFeCompany' {
         }
         #endregion
 
-        #region No documents
-        Context 'No documents found in the period' {
+        #region Fiscal processing
+        Context 'Fiscal processing selection' {
 
-            BeforeAll {
-
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
+            It 'Does not process a Processed NF-e document' {
+                $processedEntryParams = @{
+                    Entry            = $Script:Entry
+                    ProcessingStatus = 'Processed'
                 }
 
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
+                $processedEntry = Copy-TestEntry @processedEntryParams
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $processedEntry
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'OK'
+
+                $shouldParams = @{
+                    CommandName = 'Invoke-DFeDocumentProcessing'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not process an unsupported document model' {
+                $cteEntryParams = @{
+                    Entry            = $Script:Entry
+                    ProcessingStatus = 'Indexed'
+                    Modelo           = 57
+                }
+
+                $cteEntry = Copy-TestEntry @cteEntryParams
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $cteEntry
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'OK'
+
+                $shouldParams = @{
+                    CommandName = 'Invoke-DFeDocumentProcessing'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Blocks archive and notification when a supported document is Failed' {
+                $failedEntryParams = @{
+                    Entry            = $Script:Entry
+                    ProcessingStatus = 'Failed'
+                    ProcessingError  = 'Invalid XML.'
+                }
+
+                $failedEntry = Copy-TestEntry @failedEntryParams
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $failedEntry
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'Falha'
+                $result.Erro | Should -Match 'processamento fiscal não concluído'
+
+                $archiveShouldParams = @{
+                    CommandName = 'New-DFeArchive'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @archiveShouldParams
+
+                $notificationShouldParams = @{
+                    CommandName = 'Send-DFeNotification'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @notificationShouldParams
+            }
+
+            It 'Blocks archive and notification when a supported document is Processing' {
+                $processingEntryParams = @{
+                    Entry            = $Script:Entry
+                    ProcessingStatus = 'Processing'
+                }
+
+                $processingEntry = Copy-TestEntry @processingEntryParams
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $processingEntry
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'Falha'
+
+                $archiveShouldParams = @{
+                    CommandName = 'New-DFeArchive'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @archiveShouldParams
+
+                $notificationShouldParams = @{
+                    CommandName = 'Send-DFeNotification'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @notificationShouldParams
+            }
+
+            It 'Attempts every Indexed supported document even when one fails' {
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return @(
+                        $Script:Entry
+                        $Script:SecondEntry
+                    )
+                }
+
+                Mock -CommandName Invoke-DFeDocumentProcessing -MockWith {
+                    if ($Entry.chave_acesso -eq $Script:Entry.chave_acesso) {
+                        throw [System.InvalidOperationException]::new('First document failed.')
                     }
                 }
 
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
+                $result = Invoke-TestCompany
 
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
+                $result.Status | Should -Be 'Falha'
+
+                $shouldParams = @{
+                    CommandName = 'Invoke-DFeDocumentProcessing'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 2
                 }
 
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
+                Should -Invoke @shouldParams
+
+                $secondShouldParams = @{
+                    CommandName     = 'Invoke-DFeDocumentProcessing'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Entry.chave_acesso -eq $Script:SecondEntry.chave_acesso
+                    }
                 }
 
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
+                Should -Invoke @secondShouldParams
+            }
 
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
+            It 'Blocks archive after an Indexed document processing failure' {
+                Mock -CommandName Invoke-DFeDocumentProcessing -MockWith {
+                    throw [System.InvalidOperationException]::new('Fiscal processing failed.')
                 }
 
-                Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
+                $result = Invoke-TestCompany
 
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
+                $result.Status | Should -Be 'Falha'
+
+                $shouldParams = @{
+                    CommandName = 'New-DFeArchive'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
                 }
 
-                Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-                }
+                Should -Invoke @shouldParams
+            }
+        }
+        #endregion
 
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange,
-                        [pscustomobject]$Smtp,
-                        [pscustomobject[]]$Gaps,
-                        [string[]]$ZipFileDestination
-                    )
+        #region No documents
+        Context 'No documents found in the period' {
 
-                    $null = $Company
-                    $null = $DateRange
-                    $null = $Smtp
-                    $null = $Gaps
-                    $null = $ZipFileDestination
-                }
+            BeforeEach {
 
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
+                Mock -CommandName Get-DFeDocumentEntry
 
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns Status Aviso' {
@@ -494,40 +669,52 @@ Describe 'Invoke-PipeDFeCompany' {
                 $Script:Result.Avisos | Should -HaveCount 1
             }
 
-            It 'Does not call Get-DFeSequenceGap' {
-                $invokeParams = @{
-                    CommandName = 'Get-DFeSequenceGap'
+            It 'Does not process fiscal documents' {
+                $shouldParams = @{
+                    CommandName = 'Invoke-DFeDocumentProcessing'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not call Get-DFeSequenceGap' {
+                $shouldParams = @{
+                    CommandName = 'Get-DFeSequenceGap'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
             }
 
             It 'Does not call New-DFeArchive' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'New-DFeArchive'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Does not call Send-DFeNotification' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Send-DFeNotification'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Returns Erro as null' {
@@ -536,104 +723,18 @@ Describe 'Invoke-PipeDFeCompany' {
         }
         #endregion
 
-        #region SMTP not configured
+        #region SMTP
         Context 'SMTP not configured' {
 
-            BeforeAll {
-
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param ([string]$Cnpj, [string]$StartDate, [string]$EndDate)
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    return $Script:Entry
-                }
-
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
-                }
-
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
-                    return $Script:ArchiveInfo
-                }
-
-                Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
-
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
-                    return $Script:Archive
-                }
+            BeforeEach {
 
                 Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-                    $PSCmdlet.ThrowTerminatingError(
-                        [System.Management.Automation.ErrorRecord]::new(
-                            [System.InvalidOperationException]::new('SmtpNotConfigured'),
-                            'SmtpNotConfigured',
-                            [System.Management.Automation.ErrorCategory]::InvalidOperation,
-                            $null
-                        )
+                    throw [System.InvalidOperationException]::new(
+                        'SMTP not configured.'
                     )
                 }
 
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange,
-                        [pscustomobject]$Smtp,
-                        [pscustomobject[]]$Gaps,
-                        [string[]]$ZipFileDestination
-                    )
-
-                    $null = $Company
-                    $null = $DateRange
-                    $null = $Smtp
-                    $null = $Gaps
-                    $null = $ZipFileDestination
-                }
-
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns Status Aviso' {
@@ -641,19 +742,23 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Records a warning about missing SMTP in Avisos' {
-                $Script:Result.Avisos | Should -HaveCount 1
+                $Script:Result.Avisos |
+                    Should -Contain (
+                        'SMTP não configurado - notificação por e-mail ignorada. ' +
+                        'Execute Set-PipeSmtp para configurar.'
+                    )
             }
 
             It 'Does not call Send-DFeNotification' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Send-DFeNotification'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Returns EmailEnviado false' {
@@ -664,112 +769,12 @@ Describe 'Invoke-PipeDFeCompany' {
                 $Script:Result.Erro | Should -BeNullOrEmpty
             }
         }
-        #endregion
 
-        #region No recipients
         Context 'SMTP configured but no recipients' {
 
-            BeforeAll {
+            BeforeEach {
 
-                $Script:CompanyNoRecipients = [PSCustomObject]@{
-                    Cnpj         = $Script:Cnpj
-                    RazaoSocial  = 'EMPRESA TESTE LTDA'
-                    NomeFantasia = [string]::Empty
-                    XmlPath      = 'C:\xml'
-                    OutputPath   = 'C:\output'
-                    Email        = [PSCustomObject]@{
-                        Para = @()
-                        Cc   = @()
-                        Cco  = @()
-                    }
-                }
-
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param ([string]$Cnpj, [string]$StartDate, [string]$EndDate)
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    return $Script:Entry
-                }
-
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
-                }
-
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
-                    return $Script:ArchiveInfo
-                }
-
-                Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
-
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
-                    return $Script:Archive
-                }
-
-                Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-                    return $Script:Smtp
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange,
-                        [pscustomobject]$Smtp,
-                        [pscustomobject[]]$Gaps,
-                        [string[]]$ZipFileDestination
-                    )
-
-                    $null = $Company
-                    $null = $DateRange
-                    $null = $Smtp
-                    $null = $Gaps
-                    $null = $ZipFileDestination
-                }
-
-                $invokeParams = @{
-                    Company   = $Script:CompanyNoRecipients
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany -Company $Script:CompanyWithoutRecipients
             }
 
             It 'Returns Status Aviso' {
@@ -777,19 +782,23 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Records a warning about missing recipients in Avisos' {
-                $Script:Result.Avisos | Should -HaveCount 1
+                $Script:Result.Avisos |
+                    Should -Contain (
+                        'Nenhum destinatário configurado - notificação por e-mail ignorada. ' +
+                        'Configure os destinatários com Set-PipeCompany.'
+                    )
             }
 
             It 'Does not call Send-DFeNotification' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Send-DFeNotification'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
 
             It 'Returns EmailEnviado false' {
@@ -798,103 +807,16 @@ Describe 'Invoke-PipeDFeCompany' {
         }
         #endregion
 
-        #region Notification failure
+        #region Notification
         Context 'Notification delivery failure' {
 
-            BeforeAll {
-
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
-
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    return $Script:Entry
-                }
-
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
-                }
-
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
-                    return $Script:ArchiveInfo
-                }
-
-                Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
-
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
-                    return $Script:Archive
-                }
-
-                Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-                    return $Script:Smtp
-                }
+            BeforeEach {
 
                 Mock -CommandName Send-DFeNotification -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange,
-                        [pscustomobject]$Smtp,
-                        [pscustomobject[]]$Gaps,
-                        [string[]]$ZipFileDestination
-                    )
-
-                    $null = $Company
-                    $null = $DateRange
-                    $null = $Smtp
-                    $null = $Gaps
-                    $null = $ZipFileDestination
                     return $Script:NotificationFailure
                 }
 
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns Status Aviso' {
@@ -902,7 +824,8 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Records a warning about the failed notification in Avisos' {
-                $Script:Result.Avisos | Should -HaveCount 1
+                $Script:Result.Avisos |
+                    Should -Contain "Falha no envio da notificação em 'Send': Connection refused."
             }
 
             It 'Returns EmailEnviado false' {
@@ -918,36 +841,13 @@ Describe 'Invoke-PipeDFeCompany' {
         #region Fatal errors
         Context 'Initialize-DFeIndex throws' {
 
-            BeforeAll {
+            BeforeEach {
 
                 Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
                     throw [System.IO.IOException]::new('Disk full.')
                 }
 
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param ([string]$Cnpj, [string]$StartDate, [string]$EndDate)
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                }
-
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns Status Falha' {
@@ -959,47 +859,27 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Does not call Invoke-DFeXmlScan' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Invoke-DFeXmlScan'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
         }
-        #endregion
 
-        #region Invoke-DFeXmlScan throws
         Context 'Invoke-DFeXmlScan throws' {
 
-            BeforeAll {
-
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
+            BeforeEach {
 
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
                     throw [System.UnauthorizedAccessException]::new('Access denied.')
                 }
 
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param ([string]$Cnpj, [string]$StartDate, [string]$EndDate)
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                }
-
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns Status Falha' {
@@ -1011,114 +891,27 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Does not call Get-DFeDocumentEntry' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Get-DFeDocumentEntry'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
             }
         }
-        #endregion
 
-        #region New-DFeArchive throws
         Context 'New-DFeArchive throws' {
 
-            BeforeAll {
-
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
-
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    return $Script:Entry
-                }
-
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
-                }
-
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
-                    return $Script:ArchiveInfo
-                }
+            BeforeEach {
 
                 Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
-
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
                     throw [System.IO.IOException]::new('ZIP creation failed.')
                 }
 
-                Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange,
-                        [pscustomobject]$Smtp,
-                        [pscustomobject[]]$Gaps,
-                        [string[]]$ZipFileDestination
-                    )
-
-                    $null = $Company
-                    $null = $DateRange
-                    $null = $Smtp
-                    $null = $Gaps
-                    $null = $ZipFileDestination
-                }
-
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns Status Falha' {
@@ -1130,15 +923,27 @@ Describe 'Invoke-PipeDFeCompany' {
             }
 
             It 'Does not call Send-DFeNotification' {
-                $invokeParams = @{
+                $shouldParams = @{
                     CommandName = 'Send-DFeNotification'
                     ModuleName  = 'PipeDFe'
-                    Scope       = 'Context'
+                    Scope       = 'It'
                     Exactly     = $true
                     Times       = 0
                 }
 
-                Should -Invoke @invokeParams
+                Should -Invoke @shouldParams
+            }
+
+            It 'Uses the mocked fiscal processing dependency' {
+                $shouldParams = @{
+                    CommandName = 'Invoke-DFeDocumentProcessing'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 1
+                }
+
+                Should -Invoke @shouldParams
             }
         }
         #endregion
@@ -1148,126 +953,34 @@ Describe 'Invoke-PipeDFeCompany' {
 
             It 'Does not throw when Initialize-DFeIndex throws' {
                 Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    throw [System.Exception]::new('boom')
+                    throw [System.InvalidOperationException]::new('boom')
                 }
 
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                { Invoke-PipeDFeCompany @invokeParams } | Should -Not -Throw
+                { Invoke-TestCompany } | Should -Not -Throw
             }
 
             It 'Does not throw when Get-DFeDocumentEntry throws' {
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
-
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    throw [System.Exception]::new('boom')
+                    throw [System.InvalidOperationException]::new('boom')
                 }
 
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
+                { Invoke-TestCompany } | Should -Not -Throw
+            }
+
+            It 'Does not throw when Invoke-DFeDocumentProcessing throws' {
+                Mock -CommandName Invoke-DFeDocumentProcessing -MockWith {
+                    throw [System.InvalidOperationException]::new('boom')
                 }
 
-                { Invoke-PipeDFeCompany @invokeParams } | Should -Not -Throw
+                { Invoke-TestCompany } | Should -Not -Throw
             }
 
             It 'Does not throw when New-DFeArchive throws' {
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
-
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    return $Script:Entry
-                }
-
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
-                }
-
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
-                    return $Script:ArchiveInfo
-                }
-
                 Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
-
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
-                    throw [System.Exception]::new('boom')
+                    throw [System.InvalidOperationException]::new('boom')
                 }
 
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                { Invoke-PipeDFeCompany @invokeParams } | Should -Not -Throw
+                { Invoke-TestCompany } | Should -Not -Throw
             }
         }
         #endregion
@@ -1275,141 +988,63 @@ Describe 'Invoke-PipeDFeCompany' {
         #region Return type contract
         Context 'Return type contract' {
 
-            BeforeAll {
+            BeforeEach {
 
-                Mock -CommandName Initialize-DFeIndex -MockWith {
-                    param ([string]$Cnpj)
-                    $null = $Cnpj
-                    return 'C:\store\12345678000199\index.db'
-                }
-
-                Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                    return [PSCustomObject]@{
-                        FilesFound   = 3
-                        FilesIndexed = 2
-                        FilesSkipped = 1
-                        FilesIgnored = 0
-                    }
-                }
-
-                Mock -CommandName Get-DFeDocumentEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$StartDate,
-                        [string]$EndDate
-                    )
-
-                    $null = $Cnpj
-                    $null = $StartDate
-                    $null = $EndDate
-                    return $Script:Entry
-                }
-
-                Mock -CommandName Get-DFeSequenceGap -MockWith {
-                    param ([pscustomobject[]]$Entries)
-                    $null = $Entries
-                }
-
-                Mock -CommandName Resolve-DFeArchiveInfo -MockWith {
-                    param (
-                        [string]$TipoDFe,
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange
-                    )
-
-                    $null = $TipoDFe
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $DateRange
-                    return $Script:ArchiveInfo
-                }
-
-                Mock -CommandName New-DFeArchive -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [pscustomobject]$Company,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$ArchiveInfos
-                    )
-
-                    $null = $Cnpj
-                    $null = $Company
-                    $null = $Entries
-                    $null = $ArchiveInfos
-                    return $Script:Archive
-                }
-
-                Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-                    return $Script:Smtp
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    param (
-                        [pscustomobject]$Company,
-                        [pscustomobject]$DateRange,
-                        [pscustomobject]$Smtp,
-                        [pscustomobject[]]$Gaps,
-                        [string[]]$ZipFileDestination
-                    )
-
-                    $null = $Company
-                    $null = $DateRange
-                    $null = $Smtp
-                    $null = $Gaps
-                    $null = $ZipFileDestination
-                    return $Script:NotificationSuccess
-                }
-
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                $Script:Result = Invoke-PipeDFeCompany @invokeParams
+                $Script:Result = Invoke-TestCompany
             }
 
             It 'Returns exactly one object' {
-                $invokeParams = @{
-                    Company   = $Script:Company
-                    DateRange = $Script:DateRange
-                }
-
-                @(Invoke-PipeDFeCompany @invokeParams) | Should -HaveCount 1
+                @($Script:Result) | Should -HaveCount 1
             }
 
             It 'Cnpj is a string' {
-                $Script:Result.Cnpj | Should -BeOfType [string]
+                $Script:Result.Cnpj | Should -BeOfType ([string])
             }
 
             It 'RazaoSocial is a string' {
-                $Script:Result.RazaoSocial | Should -BeOfType [string]
+                $Script:Result.RazaoSocial | Should -BeOfType ([string])
             }
 
             It 'Status is a string' {
-                $Script:Result.Status | Should -BeOfType [string]
+                $Script:Result.Status | Should -BeOfType ([string])
             }
 
             It 'TotalDocumentos is an int' {
-                $Script:Result.TotalDocumentos | Should -BeOfType [int]
+                $Script:Result.TotalDocumentos | Should -BeOfType ([int])
             }
 
             It 'Gaps is an int' {
-                $Script:Result.Gaps | Should -BeOfType [int]
+                $Script:Result.Gaps | Should -BeOfType ([int])
             }
 
             It 'Arquivos is an array' {
-                $Script:Result.Arquivos.GetType().IsArray | Should -BeTrue
+                ($Script:Result.Arquivos -is [array]) | Should -BeTrue
             }
 
             It 'EmailEnviado is a bool' {
-                $Script:Result.EmailEnviado | Should -BeOfType [bool]
+                $Script:Result.EmailEnviado | Should -BeOfType ([bool])
             }
 
             It 'Avisos is an array' {
-                $Script:Result.Avisos.GetType().IsArray | Should -BeTrue
+                ($Script:Result.Avisos -is [array]) | Should -BeTrue
+            }
+
+            It 'Arquivos is an array' {
+                ($Script:Result.Arquivos -is [array]) | Should -BeTrue
+                $Script:Result.Arquivos | Should -HaveCount 1
+            }
+
+            It 'Erro is null on success' {
+                $Script:Result.Erro | Should -BeNullOrEmpty
+            }
+
+            It 'Scan exposes the expected counters' {
+                @($Script:Result.Scan.PSObject.Properties.Name) | Should -Be @(
+                    'FilesFound'
+                    'FilesIndexed'
+                    'FilesSkipped'
+                    'FilesIgnored'
+                )
             }
         }
         #endregion
