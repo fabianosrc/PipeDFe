@@ -7,54 +7,69 @@ Orchestrates the complete DFe processing pipeline for one company:
 
   1. Initializes the SQLite index via Initialize-DFeIndex.
   2. Scans XmlPath and indexes new XML files via Invoke-DFeXmlScan.
-  3. Queries indexed documents for the period via Get-DFeDocumentEntry.
-  4. Detects sequence gaps via Get-DFeSequenceGap.
-  5. Resolves ZIP archive metadata per document type via Resolve-DFeArchiveInfo.
-  6. Creates ZIP archives via New-DFeArchive.
-  7. Resolves SMTP configuration via Resolve-DFeSmtp.
-  8. Sends the delivery notification via Send-DFeNotification when recipients
+  3. Queries indexed documents for the requested period.
+  4. Processes indexed NF-e/NFC-e documents through Invoke-DFeDocumentProcessing.
+  5. Blocks archive generation and delivery while supported fiscal documents
+     remain in Failed or Processing state.
+  6. Detects sequence gaps via Get-DFeSequenceGap.
+  7. Resolves ZIP archive metadata per document type via Resolve-DFeArchiveInfo.
+  8. Creates ZIP archives via New-DFeArchive.
+  9. Resolves SMTP configuration via Resolve-DFeSmtp.
+ 10. Sends the delivery notification via Send-DFeNotification when recipients
      are configured and SMTP is available.
 
-Never throws. Any exception raised during the pipeline is caught and surfaced
-as Status = 'Falha' in the returned object, allowing the caller to continue
-processing other companies. Non-fatal conditions (no documents found for the
-period, SMTP not configured, no recipients configured, notification delivery
-failure) are captured as Status = 'Aviso' with details in Avisos.
+Only NF-e (55) and NFC-e (65) currently participate in the normalized fiscal
+processing workflow. Other indexed document models continue through the
+existing gap/archive flow without entering that state machine.
+
+Document-processing failures are isolated so that one failing NF-e/NFC-e does
+not prevent the remaining eligible documents from being attempted. However,
+archive generation and delivery are interrupted if any supported document in
+the requested period has unresolved fiscal processing.
+
+Existing Failed and Processing documents are not automatically retried here.
+Retry policy and abandoned Processing recovery belong to dedicated workflows.
+
+Never throws. Any exception raised during the company pipeline is caught and
+surfaced as Status = 'Falha' in the returned object, allowing the caller to
+continue processing other companies.
+
+Non-fatal conditions such as no documents found, SMTP not configured, no
+recipients configured, or notification delivery failure are surfaced as
+Status = 'Aviso'.
 
 .PARAMETER Company
 Company object as returned by Get-CompanyConfig. Must expose at minimum
 Cnpj, RazaoSocial, NomeFantasia, XmlPath and Email.
 
 .PARAMETER DateRange
-PSCustomObject with Start and End [DateTimeOffset] representing the
-inclusive processing period, as returned by Resolve-DateRange.
+PSCustomObject with Start and End [DateTimeOffset] representing the inclusive
+processing period, as returned by Resolve-DateRange.
 
 .OUTPUTS
-System.Management.Automation.PSCustomObject - TypeName: PipeDFe.ResultadoEmpresa
+System.Management.Automation.PSCustomObject
 
-  Cnpj            [string]   - Company CNPJ.
-  RazaoSocial     [string]   - Company legal name.
-  Status          [string]   - 'OK', 'Aviso' or 'Falha'.
-  TotalDocumentos [int]      - Total documents found in the period.
-  Gaps            [int]      - Sequence gap count detected.
-  Arquivos        [string[]] - ZIP file names created.
-  EmailEnviado    [bool]     - Whether the notification was sent successfully.
-  Avisos          [string[]] - Non-fatal warnings raised during processing.
-  Erro            [string]   - Fatal error message; $null on success or warning.
+PSTypeName:
+  PipeDFe.ResultadoEmpresa
 
-.EXAMPLE
-PS C:\> $params = @{
-    Company   = $company
-    DateRange = $dateRange
-}
-
-PS C:\> Invoke-PipeDFeCompany @params
+Properties:
+  Cnpj            [string]
+  RazaoSocial     [string]
+  Status          [string]   - OK, Aviso or Falha
+  TotalDocumentos [int]
+  Gaps            [int]
+  Arquivos        [string[]]
+  EmailEnviado    [bool]
+  Avisos          [string[]]
+  Erro            [string]
+  Scan            [pscustomobject]
 
 .NOTES
 Private dependencies:
   Initialize-DFeIndex
   Invoke-DFeXmlScan
   Get-DFeDocumentEntry
+  Invoke-DFeDocumentProcessing
   Get-DFeInutilizacaoEntry
   Get-DFeSequenceGap
   Resolve-DFeArchiveInfo
@@ -106,27 +121,157 @@ function Invoke-PipeDFeCompany {
             EndDate   = $DateRange.End.ToString('o')
         }
 
-        $entries         = @(Get-DFeDocumentEntry @entryParams)
+        $entries = @(Get-DFeDocumentEntry @entryParams)
+
         $totalDocumentos = $entries.Count
 
-        Write-Verbose -Message "[$cnpj] $totalDocumentos documento(s) encontrado(s) no período."
+        Write-Verbose -Message (
+            "[$cnpj] $totalDocumentos documento(s) encontrado(s) no período."
+        )
 
-        if ($entries.Count -gt 0) {
-            $inutilizacoes = @(Get-DFeInutilizacaoEntry -Cnpj $cnpj)
-            $gapEntries    = @(Get-DFeSequenceGap -Entries $entries -CoveredRanges $inutilizacoes)
-            $gaps          = $gapEntries.Count
-
-            if ($gaps -gt 0) {
-                Write-Verbose -Message "[$cnpj] $gaps gap(s) de sequência detectado(s)."
-            }
-
-            $tipoDFeList = @(
-                $entries |
-                    Select-Object -ExpandProperty modelo -Unique |
-                    ForEach-Object { ([ModeloDFe]$_).ToString() }
+        if ($entries.Count -eq 0) {
+            $aviso = (
+                "Nenhum documento encontrado no período de $periodoDisplay. " +
+                'Verifique o XmlPath ou ajuste o período.'
             )
 
-            $archiveInfos = foreach ($tipoDFe in $tipoDFeList) {
+            $avisos.Add($aviso)
+
+            Write-Warning -Message "[$cnpj] $aviso"
+
+            $status = 'Aviso'
+
+            Write-Verbose -Message "[$cnpj] Concluído com status '$status'."
+
+            return [pscustomobject]@{
+                PSTypeName      = 'PipeDFe.ResultadoEmpresa'
+                Cnpj            = $cnpj
+                RazaoSocial     = $Company.RazaoSocial
+                Status          = $status
+                TotalDocumentos = $totalDocumentos
+                Gaps            = $gaps
+                Arquivos        = $arquivos
+                EmailEnviado    = $emailEnviado
+                Avisos          = $avisos.ToArray()
+                Erro            = $null
+                Scan            = if ($null -eq $scanResult) {
+                    $null
+                } else {
+                    [pscustomobject]@{
+                        FilesFound   = $scanResult.FilesFound
+                        FilesIndexed = $scanResult.FilesIndexed
+                        FilesSkipped = $scanResult.FilesSkipped
+                        FilesIgnored = $scanResult.FilesIgnored
+                    }
+                }
+            }
+        }
+
+        # -----------------------------------------------------------------
+        # Fiscal processing
+        #
+        # Only NF-e/NFC-e currently have normalized fiscal processing.
+        # -----------------------------------------------------------------
+        $supportedEntries = @(
+            $entries | Where-Object { [int]$_.modelo -in @(55, 65) }
+        )
+
+        $blockedEntries = @(
+            $supportedEntries |
+                Where-Object {
+                    $_.processing_status -in @('Failed', 'Processing')
+                }
+        )
+
+        foreach ($entry in $blockedEntries) {
+            $detail = if (-not [string]::IsNullOrWhiteSpace(
+                    [string]$entry.processing_error)
+            ) {
+                " $($entry.processing_error)"
+            } else {
+                [string]::Empty
+            }
+
+            $aviso = (
+                "Documento '$($entry.chave_acesso)' possui estado fiscal " +
+                "'$($entry.processing_status)' e impede a conclusão da entrega." +
+                $detail
+            )
+
+            $avisos.Add($aviso)
+
+            Write-Warning -Message "[$cnpj] $aviso"
+        }
+
+        $indexedEntries = @(
+            $supportedEntries |
+                Where-Object { $_.processing_status -eq 'Indexed' }
+        )
+
+        $processingFailures = [System.Collections.Generic.List[string]]::new()
+
+        foreach ($entry in $indexedEntries) {
+            try {
+                $processingParams = @{
+                    Cnpj  = $cnpj
+                    Entry = $entry
+                }
+
+                Invoke-DFeDocumentProcessing @processingParams
+
+                Write-Verbose -Message (
+                    "[$cnpj] Documento '$($entry.chave_acesso)' " +
+                    'processado fiscalmente com sucesso.'
+                )
+            } catch {
+                $processingFailures.Add([string]$entry.chave_acesso)
+
+                $aviso = (
+                    "Falha no processamento fiscal do documento " +
+                    "'$($entry.chave_acesso)': $($_.Exception.Message)"
+                )
+
+                $avisos.Add($aviso)
+
+                Write-Warning -Message "[$cnpj] $aviso"
+            }
+        }
+
+        $unresolvedCount = $blockedEntries.Count + $processingFailures.Count
+
+        if ($unresolvedCount -gt 0) {
+            throw [System.InvalidOperationException]::new(
+                "$unresolvedCount documento(s) NF-e/NFC-e possuem " +
+                'processamento fiscal não concluído. ' +
+                'A geração de arquivos e a entrega foram interrompidas.'
+            )
+        }
+
+        # -----------------------------------------------------------------
+        # Existing sequence/archive/delivery flow.
+        # -----------------------------------------------------------------
+        $inutilizacoes = @(Get-DFeInutilizacaoEntry -Cnpj $cnpj)
+
+        $gapEntries = @(
+            Get-DFeSequenceGap -Entries $entries -CoveredRanges $inutilizacoes
+        )
+
+        $gaps = $gapEntries.Count
+
+        if ($gaps -gt 0) {
+            Write-Verbose -Message (
+                "[$cnpj] $gaps gap(s) de sequência detectado(s)."
+            )
+        }
+
+        $tipoDFeList = @(
+            $entries |
+                Select-Object -ExpandProperty modelo -Unique |
+                ForEach-Object { ([ModeloDFe]$_).ToString() }
+        )
+
+        $archiveInfos = @(
+            foreach ($tipoDFe in $tipoDFeList) {
                 $archiveInfoParams = @{
                     TipoDFe   = $tipoDFe
                     Cnpj      = $cnpj
@@ -136,76 +281,74 @@ function Invoke-PipeDFeCompany {
 
                 Resolve-DFeArchiveInfo @archiveInfoParams
             }
+        )
 
-            $archiveParams = @{
-                Cnpj         = $cnpj
-                Company      = $Company
-                Entries      = $entries
-                ArchiveInfos = @($archiveInfos)
-            }
+        $archiveParams = @{
+            Cnpj         = $cnpj
+            Company      = $Company
+            Entries      = $entries
+            ArchiveInfos = $archiveInfos
+        }
 
-            $archives = @(New-DFeArchive @archiveParams)
-            $arquivos = @($archives | Select-Object -ExpandProperty FileName)
+        $archives = @(New-DFeArchive @archiveParams)
 
-            $smtp = $null
+        $arquivos = @($archives | Select-Object -ExpandProperty FileName)
 
-            try {
-                $smtp = Resolve-DFeSmtp -Company $Company
-            } catch {
-                $aviso = (
-                    'SMTP não configurado - notificação por e-mail ignorada. ' +
-                    'Execute Set-PipeSmtp para configurar.'
-                )
+        # -----------------------------------------------------------------
+        # Notification
+        # -----------------------------------------------------------------
+        $smtp = $null
 
-                $avisos.Add($aviso)
-                Write-Warning -Message "[$cnpj] $aviso"
-                $null = $_
-            }
-
-            $para = @(
-                $Company.Email.Para |
-                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-            )
-
-            if ($null -ne $smtp -and $para.Count -gt 0) {
-                $notificationParams = @{
-                    Company            = $Company
-                    DateRange          = $DateRange
-                    Smtp               = $smtp
-                    Gaps               = $gapEntries
-                    ZipFileDestination = @($archives | Select-Object -ExpandProperty DestPath)
-                }
-
-                $notificationResult = Send-DFeNotification @notificationParams
-
-                if ($notificationResult.Success) {
-                    $emailEnviado = $true
-                } else {
-                    $aviso = (
-                        "Falha no envio da notificação em " +
-                        "'$($notificationResult.FailedAt)': " +
-                        $notificationResult.ErrorMessage
-                    )
-
-                    $avisos.Add($aviso)
-                    Write-Warning -Message "[$cnpj] $aviso"
-                }
-            } elseif ($null -ne $smtp -and $para.Count -eq 0) {
-                $aviso = (
-                    'Nenhum destinatário configurado - notificação por e-mail ignorada. ' +
-                    'Configure os destinatários com Set-PipeCompany.'
-                )
-
-                $avisos.Add($aviso)
-                Write-Warning -Message "[$cnpj] $aviso"
-            }
-        } else {
+        try {
+            $smtp = Resolve-DFeSmtp -Company $Company
+        } catch {
             $aviso = (
-                "Nenhum documento encontrado no período de $periodoDisplay. " +
-                'Verifique o XmlPath ou ajuste o período.'
+                'SMTP não configurado - notificação por e-mail ignorada. ' +
+                'Execute Set-PipeSmtp para configurar.'
             )
 
             $avisos.Add($aviso)
+
+            Write-Warning -Message "[$cnpj] $aviso"
+        }
+
+        $para = @(
+            $Company.Email.Para |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+
+        if ($null -ne $smtp -and $para.Count -gt 0) {
+            $notificationParams = @{
+                Company            = $Company
+                DateRange          = $DateRange
+                Smtp               = $smtp
+                Gaps               = $gapEntries
+                ZipFileDestination = @($archives | Select-Object -ExpandProperty DestPath)
+            }
+
+            $notificationResult = Send-DFeNotification @notificationParams
+
+            if ($notificationResult.Success) {
+                $emailEnviado = $true
+            } else {
+                $aviso = (
+                    "Falha no envio da notificação em " +
+                    "'$($notificationResult.FailedAt)': " +
+                    $notificationResult.ErrorMessage
+                )
+
+                $avisos.Add($aviso)
+
+                Write-Warning -Message "[$cnpj] $aviso"
+            }
+        } elseif ($null -ne $smtp -and $para.Count -eq 0) {
+            $aviso = (
+                'Nenhum destinatário configurado - notificação por e-mail ignorada. ' +
+                'Configure os destinatários com Set-PipeCompany.'
+            )
+
+            $avisos.Add($aviso)
+
             Write-Warning -Message "[$cnpj] $aviso"
         }
 
@@ -213,8 +356,7 @@ function Invoke-PipeDFeCompany {
 
         Write-Verbose -Message "[$cnpj] Concluído com status '$status'."
 
-        # Happy Path
-        [PSCustomObject]@{
+        [pscustomobject]@{
             PSTypeName      = 'PipeDFe.ResultadoEmpresa'
             Cnpj            = $cnpj
             RazaoSocial     = $Company.RazaoSocial
@@ -225,19 +367,24 @@ function Invoke-PipeDFeCompany {
             EmailEnviado    = $emailEnviado
             Avisos          = $avisos.ToArray()
             Erro            = $null
-            Scan            = [PSCustomObject]@{
-                FilesFound   = $scanResult.FilesFound
-                FilesIndexed = $scanResult.FilesIndexed
-                FilesSkipped = $scanResult.FilesSkipped
-                FilesIgnored = $scanResult.FilesIgnored
+            Scan            = if ($null -eq $scanResult) {
+                $null
+            } else {
+                [pscustomobject]@{
+                    FilesFound   = $scanResult.FilesFound
+                    FilesIndexed = $scanResult.FilesIndexed
+                    FilesSkipped = $scanResult.FilesSkipped
+                    FilesIgnored = $scanResult.FilesIgnored
+                }
             }
         }
 
     } catch {
         $errMsg = $_.Exception.Message
+
         Write-Warning -Message "[$cnpj] Falha no processamento - $errMsg"
 
-        [PSCustomObject]@{
+        [pscustomobject]@{
             PSTypeName      = 'PipeDFe.ResultadoEmpresa'
             Cnpj            = $cnpj
             RazaoSocial     = $Company.RazaoSocial
