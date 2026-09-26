@@ -6,16 +6,17 @@ Executes the full DFe pipeline for a single company.
 Orchestrates the complete DFe processing pipeline for one company:
 
   1. Initializes the SQLite index via Initialize-DFeIndex.
-  2. Scans XmlPath and indexes new XML files via Invoke-DFeXmlScan.
-  3. Queries indexed documents for the requested period.
-  4. Processes indexed NF-e/NFC-e documents through Invoke-DFeDocumentProcessing.
-  5. Blocks archive generation and delivery while supported fiscal documents
+  2. Repairs abandoned Processing states via Repair-DFeDocumentProcessing.
+  3. Scans XmlPath and indexes new XML files via Invoke-DFeXmlScan.
+  4. Queries indexed documents for the requested period.
+  5. Processes indexed NF-e/NFC-e documents through Invoke-DFeDocumentProcessing.
+  6. Blocks archive generation and delivery while supported fiscal documents
      remain in Failed or Processing state.
-  6. Detects sequence gaps via Get-DFeSequenceGap.
-  7. Resolves ZIP archive metadata per document type via Resolve-DFeArchiveInfo.
-  8. Creates ZIP archives via New-DFeArchive.
-  9. Resolves SMTP configuration via Resolve-DFeSmtp.
- 10. Sends the delivery notification via Send-DFeNotification when recipients
+  7. Detects sequence gaps via Get-DFeSequenceGap.
+  8. Resolves ZIP archive metadata per document type via Resolve-DFeArchiveInfo.
+  9. Creates ZIP archives via New-DFeArchive.
+ 10. Resolves SMTP configuration via Resolve-DFeSmtp.
+ 11. Sends the delivery notification via Send-DFeNotification when recipients
      are configured and SMTP is available.
 
 Only NF-e (55) and NFC-e (65) currently participate in the normalized fiscal
@@ -27,8 +28,9 @@ not prevent the remaining eligible documents from being attempted. However,
 archive generation and delivery are interrupted if any supported document in
 the requested period has unresolved fiscal processing.
 
-Existing Failed and Processing documents are not automatically retried here.
-Retry policy and abandoned Processing recovery belong to dedicated workflows.
+Abandoned Processing states are repaired to Failed before document processing
+begins. Failed documents are not automatically retried here; retry policy
+belongs to a dedicated workflow.
 
 Never throws. Any exception raised during the company pipeline is caught and
 surfaced as Status = 'Falha' in the returned object, allowing the caller to
@@ -67,6 +69,7 @@ Properties:
 .NOTES
 Private dependencies:
   Initialize-DFeIndex
+  Repair-DFeDocumentProcessing
   Invoke-DFeXmlScan
   Get-DFeDocumentEntry
   Invoke-DFeDocumentProcessing
@@ -107,6 +110,27 @@ function Invoke-PipeDFeCompany {
 
     try {
         Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
+        $repairParams = @{
+            Cnpj         = $cnpj
+            AbandonAfter = [System.TimeSpan]::FromMinutes(30)
+        }
+
+        $repairResult = Repair-DFeDocumentProcessing @repairParams
+
+        if ($repairResult.Recovered -gt 0) {
+            Write-Verbose -Message (
+                "[$cnpj] $($repairResult.Recovered) processamento(s) abandonado(s) " +
+                'reparado(s) para Failed.'
+            )
+        }
+
+        if ($repairResult.Inconsistent -gt 0) {
+            Write-Warning -Message (
+                "[$cnpj] $($repairResult.Inconsistent) documento(s) possuíam estado " +
+                'Processing com processing_started_at ausente ou inválido.'
+            )
+        }
 
         $scanParams = @{
             Cnpj    = $cnpj
@@ -227,7 +251,7 @@ function Invoke-PipeDFeCompany {
                 $processingFailures.Add([string]$entry.chave_acesso)
 
                 $aviso = (
-                    "Falha no processamento fiscal do documento " +
+                    'Falha no processamento fiscal do documento ' +
                     "'$($entry.chave_acesso)': $($_.Exception.Message)"
                 )
 
@@ -332,7 +356,7 @@ function Invoke-PipeDFeCompany {
                 $emailEnviado = $true
             } else {
                 $aviso = (
-                    "Falha no envio da notificação em " +
+                    'Falha no envio da notificação em ' +
                     "'$($notificationResult.FailedAt)': " +
                     $notificationResult.ErrorMessage
                 )
@@ -380,9 +404,9 @@ function Invoke-PipeDFeCompany {
         }
 
     } catch {
-        $errMsg = $_.Exception.Message
+        $errorMessage = $_.Exception.Message
 
-        Write-Warning -Message "[$cnpj] Falha no processamento - $errMsg"
+        Write-Warning -Message "[$cnpj] Falha no processamento - $errorMessage"
 
         [pscustomobject]@{
             PSTypeName      = 'PipeDFe.ResultadoEmpresa'
@@ -394,7 +418,7 @@ function Invoke-PipeDFeCompany {
             Arquivos        = $arquivos
             EmailEnviado    = $false
             Avisos          = $avisos.ToArray()
-            Erro            = $errMsg
+            Erro            = $errorMessage
             Scan            = $scanResult
         }
     }
