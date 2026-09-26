@@ -13,11 +13,10 @@ The function does not resolve duplicates or priorities. It only
 describes the physical XML document.
 
 Returns $null when:
-  - The file cannot be loaded or parsed.
   - The document type cannot be determined by Get-DFeDocumentInfo.
   - The document namespace cannot be determined.
-  - For Documento: the root is absent from DFeExtractionMap (configuration bug),
-    the expected info node is absent, or Get-DFeAccessKey returns no output.
+  - For Documento: the expected info node is absent or
+    Get-DFeAccessKey returns no output.
 
 Supported document types (via DFeDocumentMap):
   NF-e   (modelo 55) - nfeProc   / NFe
@@ -55,9 +54,12 @@ PSCustomObject
   DhEmi      [string]             - emission datetime (Documento only)
   Ndoc       [string]             - document number (Documento only)
   Serie      [string]             - serie (Documento and Inutilizacao)
-  NNFIni     [string]             - first number in inutilized range (Inutilizacao only)
-  NNFFin     [string]             - last number in inutilized range (Inutilizacao only)
-  IdInut     [string]             - inutilizacao identifier from infInut/@Id (Inutilizacao only)
+  NNFIni     [string]             - first number in inutilized range
+                                    (Inutilizacao only)
+  NNFFin     [string]             - last number in inutilized range
+                                    (Inutilizacao only)
+  IdInut     [string]             - inutilizacao identifier from infInut/@Id
+                                    (Inutilizacao only)
   cStat      [string]             - SEFAZ status code (procInutNFe only)
   xMotivo    [string]             - SEFAZ status description (procInutNFe only)
 
@@ -88,8 +90,8 @@ Private dependencies:
   DFeEventoMap     (event code resolution used by Resolve-DFeEvento)
 
 If a root is classified as Documento in DFeDocumentMap but has no entry in
-DFeExtractionMap, the function emits a warning and returns $null. This is a
-configuration bug, not a recoverable condition.
+DFeExtractionMap, the function throws DFeExtractionMapEntryNotFound because
+this represents an internal configuration error, not a recoverable condition.
 #>
 function Get-DFeXmlMetadata {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -275,11 +277,15 @@ function Get-DFeXmlMetadata {
         if ($null -eq $extraction) {
             # A root classified as Documento by DFeDocumentMap has no entry in
             # DFeExtractionMap. This is a configuration bug -- fail loudly.
-            Write-Warning -Message (
-                "[$($file.Name)] Root '$root' is classified as Documento but has " +
-                'no entry in DFeExtractionMap. This is a configuration bug.'
+            throw [System.Management.Automation.ErrorRecord]::new(
+                [System.InvalidOperationException]::new(
+                    "[$($file.Name)] Root '$root' is classified as Documento but has " +
+                    'no entry in DFeExtractionMap. This is a configuration bug.'
+                ),
+                'DFeExtractionMapEntryNotFound',
+                [System.Management.Automation.ErrorCategory]::InvalidOperation,
+                $root
             )
-            return
         }
 
         $nodeParams = @{
