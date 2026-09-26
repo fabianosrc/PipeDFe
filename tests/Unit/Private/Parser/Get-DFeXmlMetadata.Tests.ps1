@@ -1317,20 +1317,29 @@ Describe 'Get-DFeXmlMetadata' {
             }
 
             It 'Stops processing after an invalid access key' {
-                Mock -CommandName Import-DFeXml { $nfeProc }
+                Mock -CommandName Import-DFeXml -MockWith {
+                    $nfeProc
+                }
 
-                Mock -CommandName Get-DFeDocumentInfo {
+                Mock -CommandName Get-DFeDocumentInfo -MockWith {
                     [PSCustomObject]@{
                         Tipo   = [TipoXmlDFe]::Documento
                         Modelo = [ModeloDFe]::NFe
                     }
                 }
 
-                Mock -CommandName Get-DFeDocumentNamespace { $nfeXmlns }
+                Mock -CommandName Get-DFeDocumentNamespace -MockWith {
+                    $nfeXmlns
+                }
 
-                Mock -CommandName Get-DFeAccessKey { }
+                Mock -CommandName Get-DFeAccessKey -MockWith {
 
-                Get-DFeXmlMetadata -Path 'test.xml' -WarningVariable warnings | Out-Null
+                }
+
+                $result = Get-DFeXmlMetadata -Path 'test.xml' -WarningVariable warnings
+
+                $result   | Should -BeNullOrEmpty
+                $warnings | Should -Not -BeNullOrEmpty
 
                 Should -Invoke Get-DFeAccessKey -Times 1 -Exactly
             }
@@ -1387,59 +1396,66 @@ Describe 'Get-DFeXmlMetadata' {
                 )
             }
 
-            It 'Returns null and emits a warning when a Documento root has no extraction mapping' {
-                $saved = $Script:DFeExtractionMap['NFe']
-                $Script:DFeExtractionMap.Remove('NFe')
+            It 'Throws when a Documento root has no extraction mapping' {
+                $saved = $Script:DFeExtractionMap['nfeProc']
+                $Script:DFeExtractionMap.Remove('nfeProc')
 
                 try {
-                    Mock -CommandName Import-DFeXml { $nfeProc }
+                    Mock -CommandName Import-DFeXml -MockWith {
+                        $nfeProc
+                    }
 
-                    Mock -CommandName Get-DFeDocumentInfo {
+                    Mock -CommandName Get-DFeDocumentInfo -MockWith {
                         [PSCustomObject]@{
                             Tipo   = [TipoXmlDFe]::Documento
                             Modelo = [ModeloDFe]::NFe
                         }
                     }
 
-                    Mock -CommandName Get-DFeDocumentNamespace { $nfeXmlns }
+                    Mock -CommandName Get-DFeDocumentNamespace -MockWith {
+                        $nfeXmlns
+                    }
 
-                    # No-op mock prevents any stale global mock from
-                    # masking the extraction map gap.
-                    Mock -CommandName Get-DFeAccessKey { }
+                    Mock -CommandName Get-DFeAccessKey -MockWith {
 
-                    $result = Get-DFeXmlMetadata -Path 'test.xml' -WarningVariable warnings
-                    $result   | Should -BeNullOrEmpty
+                    }
 
-                    $warnings | Should -Not -BeNullOrEmpty
+                    { Get-DFeXmlMetadata -Path 'test.xml' } |
+                        Should -Throw -ErrorId 'DFeExtractionMapEntryNotFound*'
                 } finally {
-                    $Script:DFeExtractionMap['NFe'] = $saved
+                    $Script:DFeExtractionMap['nfeProc'] = $saved
                 }
             }
 
             It 'Restores DFeExtractionMap after the missing-mapping simulation' {
-                $before = $Script:DFeExtractionMap['NFe']
-                $saved = $Script:DFeExtractionMap['NFe']
+                $before = $Script:DFeExtractionMap['nfeProc']
+                $saved = $Script:DFeExtractionMap['nfeProc']
 
                 try {
-                    $Script:DFeExtractionMap.Remove('NFe')
+                    $Script:DFeExtractionMap.Remove('nfeProc')
 
-                    Mock -CommandName Import-DFeXml { $nfeProc }
+                    Mock -CommandName Import-DFeXml -MockWith {
+                        $nfeProc
+                    }
 
-                    Mock -CommandName Get-DFeDocumentInfo {
+                    Mock -CommandName Get-DFeDocumentInfo -MockWith {
                         [PSCustomObject]@{
                             Tipo   = [TipoXmlDFe]::Documento
                             Modelo = [ModeloDFe]::NFe
                         }
                     }
 
-                    Mock -CommandName Get-DFeDocumentNamespace { $nfeXmlns }
+                    Mock -CommandName Get-DFeDocumentNamespace -MockWith {
+                        $nfeXmlns
+                    }
 
-                    Get-DFeXmlMetadata -Path 'test.xml' -WarningVariable warnings | Out-Null
+                    { Get-DFeXmlMetadata -Path 'test.xml' } |
+                        Should -Throw -ErrorId 'DFeExtractionMapEntryNotFound*'
                 } finally {
-                    $Script:DFeExtractionMap['NFe'] = $saved
+                    $Script:DFeExtractionMap['nfeProc'] = $saved
                 }
 
-                $Script:DFeExtractionMap['NFe'] | Should -Be $before
+                $Script:DFeExtractionMap['nfeProc'] | Should -Be $before
             }
         }
         #endregion
