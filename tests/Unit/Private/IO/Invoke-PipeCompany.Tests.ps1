@@ -12,7 +12,11 @@ connections are used.
 Coverage includes:
   - Company and DateRange are mandatory.
   - Returns PipeDFe.ResultadoEmpresa on every code path.
-  - Initializes the index and scans the configured XML path.
+  - Initializes the index before repairing Processing state.
+  - Repairs Processing state before scanning the configured XML path.
+  - Uses a 30-minute abandonment threshold in the company pipeline.
+  - A repair failure is fatal and prevents scanning.
+  - Repaired Failed documents are blocked by the normal fiscal state policy.
   - Queries documents for the requested period.
   - Processes only Indexed NF-e and NFC-e documents.
   - Does not reprocess Processed NF-e and NFC-e documents.
@@ -27,7 +31,7 @@ Coverage includes:
   - Returns Status = 'Aviso' for non-fatal notification configuration
     or delivery failures.
   - Returns Status = 'Falha' and never throws when a fatal pipeline step fails.
-  - Never calls real document processing from this unit suite.
+  - Never calls real repair or document processing from this unit suite.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -56,7 +60,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
         BeforeAll {
 
-            $Script:Cnpj    = '12345678000199'
+            $Script:Cnpj = '12345678000199'
 
             $Script:Company = [pscustomobject]@{
                 Cnpj         = $Script:Cnpj
@@ -159,6 +163,14 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 FailedAt     = 'Send'
             }
 
+            $Script:RepairEmpty = [pscustomobject]@{
+                ProcessingFound     = 0
+                Active              = 0
+                Recovered           = 0
+                Inconsistent        = 0
+                ConcurrentlyChanged = 0
+            }
+
             function Copy-TestEntry {
                 [CmdletBinding()]
                 [OutputType([pscustomobject])]
@@ -229,6 +241,10 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             Mock -CommandName Initialize-DFeIndex -MockWith {
                 return 'C:\store\12345678000199\index.db'
+            }
+
+            Mock -CommandName Repair-DFeDocumentProcessing -MockWith {
+                return $Script:RepairEmpty
             }
 
             Mock -CommandName Invoke-DFeXmlScan -MockWith {
@@ -321,6 +337,22 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = { $Cnpj -eq $Script:Cnpj }
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Calls Repair-DFeDocumentProcessing once with the pipeline policy' {
+                $shouldParams = @{
+                    CommandName     = 'Repair-DFeDocumentProcessing'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj -and
+                        $AbandonAfter -eq [System.TimeSpan]::FromMinutes(30)
+                    }
                 }
 
                 Should -Invoke @shouldParams
@@ -445,6 +477,151 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             It 'Returns Erro as null' {
                 $Script:Result.Erro | Should -BeNullOrEmpty
+            }
+        }
+        #endregion
+
+        #region Processing state repair
+        Context 'Processing state repair' {
+
+            It 'Runs Initialize, Repair and Scan in that order' {
+                $Script:CallOrder = [System.Collections.Generic.List[string]]::new()
+
+                Mock -CommandName Initialize-DFeIndex -MockWith {
+                    $Script:CallOrder.Add('Initialize')
+                    return 'C:\store\12345678000199\index.db'
+                }
+
+                Mock -CommandName Repair-DFeDocumentProcessing -MockWith {
+                    $Script:CallOrder.Add('Repair')
+                    return $Script:RepairEmpty
+                }
+
+                Mock -CommandName Invoke-DFeXmlScan -MockWith {
+                    $Script:CallOrder.Add('Scan')
+
+                    return [pscustomobject]@{
+                        FilesFound   = 3
+                        FilesIndexed = 2
+                        FilesSkipped = 1
+                        FilesIgnored = 0
+                    }
+                }
+
+                Invoke-TestCompany | Out-Null
+
+                $Script:CallOrder | Should -HaveCount 3
+                $Script:CallOrder[0] | Should -Be 'Initialize'
+                $Script:CallOrder[1] | Should -Be 'Repair'
+                $Script:CallOrder[2] | Should -Be 'Scan'
+            }
+
+            It 'Allows the normal pipeline when repair finds no Processing documents' {
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'OK'
+                $result.Avisos | Should -HaveCount 0
+            }
+
+            It 'Does not add repair activity to company warnings' {
+                $repairResult = [pscustomobject]@{
+                    ProcessingFound     = 2
+                    Active              = 1
+                    Recovered           = 1
+                    Inconsistent        = 0
+                    ConcurrentlyChanged = 0
+                }
+
+                Mock -CommandName Repair-DFeDocumentProcessing -MockWith {
+                    return $repairResult
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'OK'
+                $result.Avisos | Should -HaveCount 0
+            }
+
+            It 'Blocks delivery when the period query sees a repaired document as Failed' {
+                $repairResult = [pscustomobject]@{
+                    ProcessingFound     = 1
+                    Active              = 0
+                    Recovered           = 1
+                    Inconsistent        = 0
+                    ConcurrentlyChanged = 0
+                }
+
+                $failedEntryParams = @{
+                    Entry            = $Script:Entry
+                    ProcessingStatus = 'Failed'
+                    ProcessingError  = 'Processing recovery marked the document as Failed.'
+                }
+
+                $failedEntry = Copy-TestEntry @failedEntryParams
+
+                Mock -CommandName Repair-DFeDocumentProcessing -MockWith {
+                    return $repairResult
+                }
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $failedEntry
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'Falha'
+                $result.Erro | Should -Match 'processamento fiscal não concluído'
+
+                $archiveShouldParams = @{
+                    CommandName = 'New-DFeArchive'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @archiveShouldParams
+
+                $notificationShouldParams = @{
+                    CommandName = 'Send-DFeNotification'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @notificationShouldParams
+            }
+
+            It 'Returns Falha and prevents scan when repair fails' {
+                Mock -CommandName Repair-DFeDocumentProcessing -MockWith {
+                    throw [System.IO.IOException]::new('Repair failed.')
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'Falha'
+                $result.Erro | Should -Be 'Repair failed.'
+
+                $scanShouldParams = @{
+                    CommandName = 'Invoke-DFeXmlScan'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @scanShouldParams
+
+                $queryShouldParams = @{
+                    CommandName = 'Get-DFeDocumentEntry'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @queryShouldParams
             }
         }
         #endregion
@@ -858,6 +1035,50 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $Script:Result.Erro | Should -Be 'Disk full.'
             }
 
+            It 'Does not call Repair-DFeDocumentProcessing' {
+                $shouldParams = @{
+                    CommandName = 'Repair-DFeDocumentProcessing'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not call Invoke-DFeXmlScan' {
+                $shouldParams = @{
+                    CommandName = 'Invoke-DFeXmlScan'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+        }
+
+        Context 'Repair-DFeDocumentProcessing throws' {
+
+            BeforeEach {
+
+                Mock -CommandName Repair-DFeDocumentProcessing -MockWith {
+                    throw [System.IO.IOException]::new('Repair failed.')
+                }
+
+                $Script:Result = Invoke-TestCompany
+            }
+
+            It 'Returns Status Falha' {
+                $Script:Result.Status | Should -Be 'Falha'
+            }
+
+            It 'Captures the error message in Erro' {
+                $Script:Result.Erro | Should -Be 'Repair failed.'
+            }
+
             It 'Does not call Invoke-DFeXmlScan' {
                 $shouldParams = @{
                     CommandName = 'Invoke-DFeXmlScan'
@@ -959,6 +1180,14 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 { Invoke-TestCompany } | Should -Not -Throw
             }
 
+            It 'Does not throw when Repair-DFeDocumentProcessing throws' {
+                Mock -CommandName Repair-DFeDocumentProcessing -MockWith {
+                    throw [System.InvalidOperationException]::new('boom')
+                }
+
+                { Invoke-TestCompany } | Should -Not -Throw
+            }
+
             It 'Does not throw when Get-DFeDocumentEntry throws' {
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
                     throw [System.InvalidOperationException]::new('boom')
@@ -1019,6 +1248,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             It 'Arquivos is an array' {
                 ($Script:Result.Arquivos -is [array]) | Should -BeTrue
+                $Script:Result.Arquivos | Should -HaveCount 1
             }
 
             It 'EmailEnviado is a bool' {
@@ -1027,11 +1257,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             It 'Avisos is an array' {
                 ($Script:Result.Avisos -is [array]) | Should -BeTrue
-            }
-
-            It 'Arquivos is an array' {
-                ($Script:Result.Arquivos -is [array]) | Should -BeTrue
-                $Script:Result.Arquivos | Should -HaveCount 1
+                $Script:Result.Avisos | Should -HaveCount 0
             }
 
             It 'Erro is null on success' {
