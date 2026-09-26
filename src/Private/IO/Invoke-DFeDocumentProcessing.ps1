@@ -211,16 +211,14 @@ function Invoke-DFeDocumentProcessing {
             }
 
             if ([int]$fiscalData.Modelo -ne $modelo) {
-                $PSCmdlet.ThrowTerminatingError(
-                    [System.Management.Automation.ErrorRecord]::new(
-                        [System.IO.InvalidDataException]::new(
-                            "The XML fiscal model '$([int]$fiscalData.Modelo)' " +
-                            "does not match indexed model '$modelo'."
-                        ),
-                        'DocumentSourceModelMismatch',
-                        [System.Management.Automation.ErrorCategory]::InvalidData,
-                        $filePath
-                    )
+                throw [System.Management.Automation.ErrorRecord]::new(
+                    [System.IO.InvalidDataException]::new(
+                        "The XML fiscal model '$([int]$fiscalData.Modelo)' " +
+                        "does not match indexed model '$modelo'."
+                    ),
+                    'DocumentSourceModelMismatch',
+                    [System.Management.Automation.ErrorCategory]::InvalidData,
+                    $filePath
                 )
             }
 
