@@ -5,24 +5,27 @@ Creates one ZIP archive per DFe document type.
 .DESCRIPTION
 Orchestrates archive creation for each pre-calculated archive info:
 
-  1. Loads events from the index for all documents in the batch.
-  2. Maps store snake_case entries to PascalCase IO objects.
-  3. Preserves indexed SHA-256 values for source-integrity validation.
-  4. Groups documents by the archive's DFe model.
-  5. Creates the temporary ZIP via Compress-DFeArchive.
-  6. Verifies that the temporary ZIP was created.
-  7. Computes the temporary ZIP SHA-256.
-  8. Copies the ZIP to its destination.
+    1. Ensures the company output directory exists.
+    2. Loads events from the index for all documents in the batch.
+    3. Maps store snake_case entries to PascalCase IO objects.
+    4. Preserves indexed SHA-256 values for source-integrity validation.
+    5. Groups documents by the archive's DFe model.
+    6. Selects only events belonging to documents in that archive.
+    7. Creates the temporary ZIP via Compress-DFeArchive.
+    8. Verifies that the temporary ZIP was created.
+    9. Computes the temporary ZIP SHA-256.
+   10. Publishes the validated ZIP atomically to its destination.
+   11. Removes the temporary ZIP on a best-effort basis.
 
 Source-integrity failures raised by Compress-DFeArchive are terminating and
 are allowed to propagate unchanged.
 
-Returns one result object per archive created.
+Temporary archives are cleaned whether processing succeeds or fails.
+
+Returns one result object per successfully published archive.
 
 .PARAMETER Cnpj
 Normalized company CNPJ.
-
-Used to query indexed events.
 
 .PARAMETER Company
 Company object exposing XmlPath and OutputPath.
@@ -34,6 +37,7 @@ Document index entries returned by Get-DFeDocumentEntry.
 Pre-calculated archive metadata returned by Resolve-DFeArchiveInfo.
 
 Each object must expose:
+
   TipoDFe
   FileName
   TempPath
@@ -50,6 +54,9 @@ Properties:
   TempPath [string]
   DestPath [string]
 
+TempPath identifies the temporary path used during creation. The temporary
+file is removed before processing continues to the next archive.
+
 .EXAMPLE
 PS C:\> $archiveParams = @{
     Cnpj         = $cnpj
@@ -65,6 +72,7 @@ Private dependencies:
   Compress-DFeArchive
   Get-DFeEventoEntry
   Get-FileSha256
+  Publish-DFeArchive
 #>
 function New-DFeArchive {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -73,7 +81,7 @@ function New-DFeArchive {
         Justification = 'ShouldProcess would add no value here.'
     )]
     [CmdletBinding()]
-    [OutputType([pscustomobject[]])]
+    [OutputType([pscustomobject])]
     param (
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -96,6 +104,7 @@ function New-DFeArchive {
         [System.IO.Directory]::CreateDirectory($Company.OutputPath) | Out-Null
     }
 
+    # Load every event once.
     $allEventos = [System.Collections.Generic.List[pscustomobject]]::new()
 
     foreach ($entry in $Entries) {
@@ -110,6 +119,7 @@ function New-DFeArchive {
         }
     }
 
+    # Map persistence DTOs into the IO contract expected by the compressor.
     $eventosMapped = @(
         $allEventos |
             ForEach-Object {
@@ -123,79 +133,112 @@ function New-DFeArchive {
 
     foreach ($archiveInfo in $ArchiveInfos) {
         try {
-            $modelValue = [int][System.Enum]::Parse(
-                [ModeloDFe],
-                $archiveInfo.TipoDFe,
-                $false
-            )
-        } catch {
-            throw [System.Management.Automation.ErrorRecord]::new(
-                [System.InvalidOperationException]::new(
-                    (
-                        "[$Cnpj] Archive type '$($archiveInfo.TipoDFe)' " +
-                        'is not defined in ModeloDFe.'
+            # TipoDFe must correspond to a ModeloDFe enum member.
+            try {
+                $modelValue = [int][System.Enum]::Parse(
+                    [ModeloDFe],
+                    $archiveInfo.TipoDFe,
+                    $false
+                )
+            } catch {
+                throw [System.Management.Automation.ErrorRecord]::new(
+                    [System.InvalidOperationException]::new(
+                        "[$Cnpj] Archive type '$($archiveInfo.TipoDFe)' is not defined in ModeloDFe.",
+                        $_.Exception
                     ),
-                    $_.Exception
-                ),
-                'ArchiveModelUnsupported',
-                [System.Management.Automation.ErrorCategory]::InvalidData,
-                $archiveInfo.TipoDFe
-            )
-        }
+                    'ArchiveModelUnsupported',
+                    [System.Management.Automation.ErrorCategory]::InvalidData,
+                    $archiveInfo.TipoDFe
+                )
+            }
 
-        $groupEntries = @(
-            $Entries |
-                Where-Object { $_.modelo -eq $modelValue } |
-                ForEach-Object {
-                    [PSCustomObject]@{
-                        ChaveAcesso = $_.chave_acesso
-                        Modelo      = $_.modelo
-                        FilePath    = $_.file_path
-                        Sha256      = $_.sha256
+            # Select and map only documents belonging to this archive.
+            $groupEntries = @(
+                $Entries |
+                    Where-Object { $_.modelo -eq $modelValue } |
+                    ForEach-Object {
+                        [PSCustomObject]@{
+                            ChaveAcesso = $_.chave_acesso
+                            Modelo      = $_.modelo
+                            FilePath    = $_.file_path
+                            Sha256      = $_.sha256
+                        }
                     }
-                }
-        )
+            )
 
-        $compressParams = @{
-            XmlPath = $Company.XmlPath
-            Entries = $groupEntries
-            Eventos = $eventosMapped
-            ZipPath = $archiveInfo.TempPath
-        }
+            # Build a lookup so only events belonging to documents in this
+            # archive are passed to Compress-DFeArchive.
+            $groupKeys = [System.Collections.Generic.HashSet[string]]::new(
+                [System.StringComparer]::Ordinal
+            )
 
-        Compress-DFeArchive @compressParams
+            foreach ($entry in $groupEntries) {
+                $null = $groupKeys.Add($entry.ChaveAcesso)
+            }
 
-        if (-not (Test-Path -LiteralPath $archiveInfo.TempPath -PathType Leaf)) {
-            throw [System.Management.Automation.ErrorRecord]::new(
-                [System.IO.FileNotFoundException]::new(
-                    (
+            $groupEventos = @(
+                $eventosMapped |
+                    Where-Object { $groupKeys.Contains($_.ChavePai) }
+            )
+
+            $compressParams = @{
+                XmlPath     = $Company.XmlPath
+                Entries     = $groupEntries
+                Eventos     = $groupEventos
+                ZipPath     = $archiveInfo.TempPath
+                ErrorAction = 'Stop'
+            }
+
+            Compress-DFeArchive @compressParams
+
+            # Compress-DFeArchive completing without throwing is not enough:
+            # its output artifact must actually exist.
+            if (-not (Test-Path -LiteralPath $archiveInfo.TempPath -PathType Leaf)) {
+                throw [System.Management.Automation.ErrorRecord]::new(
+                    [System.IO.FileNotFoundException]::new(
                         "[$Cnpj] Compress-DFeArchive completed but the ZIP " +
                         "was not created: '$($archiveInfo.TempPath)'."
-                    )
-                ),
-                'ZipNotCreated',
-                [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
-                $archiveInfo.TempPath
-            )
-        }
+                    ),
+                    'ZipNotCreated',
+                    [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
+                    $archiveInfo.TempPath
+                )
+            }
 
-        $zipHash = Get-FileSha256 -Path $archiveInfo.TempPath
+            $hashParams = @{
+                Path        = $archiveInfo.TempPath
+                ErrorAction = 'Stop'
+            }
 
-        $copyParams = @{
-            LiteralPath = $archiveInfo.TempPath
-            Destination = $archiveInfo.DestPath
-            Force       = $true
-            ErrorAction = 'Stop'
-        }
+            $zipHash = Get-FileSha256 @hashParams
 
-        Copy-Item @copyParams
+            $publishParams = @{
+                SourcePath      = $archiveInfo.TempPath
+                DestinationPath = $archiveInfo.DestPath
+                ExpectedHash    = $zipHash
+                ErrorAction     = 'Stop'
+            }
 
-        [PSCustomObject]@{
-            TipoDFe  = $archiveInfo.TipoDFe
-            FileName = $archiveInfo.FileName
-            FileHash = $zipHash
-            TempPath = $archiveInfo.TempPath
-            DestPath = $archiveInfo.DestPath
+            Publish-DFeArchive @publishParams
+
+            [PSCustomObject]@{
+                TipoDFe  = $archiveInfo.TipoDFe
+                FileName = $archiveInfo.FileName
+                FileHash = $zipHash
+                TempPath = $archiveInfo.TempPath
+                DestPath = $archiveInfo.DestPath
+            }
+        } finally {
+            # TempPath is never retained after an archive attempt.
+            if (Test-Path -LiteralPath $archiveInfo.TempPath -PathType Leaf) {
+                $removeParams = @{
+                    LiteralPath = $archiveInfo.TempPath
+                    Force       = $true
+                    ErrorAction = 'SilentlyContinue'
+                }
+
+                Remove-Item @removeParams
+            }
         }
     }
 }
