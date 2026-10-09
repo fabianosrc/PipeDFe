@@ -5,23 +5,27 @@
 Unit tests for New-DFeArchive.
 
 .DESCRIPTION
-Verifies orchestration logic using mocked dependencies.
-No real ZIP files are created except where Test-Path must find them.
+Verifies orchestration behavior using mocked dependencies.
 
 Coverage includes:
-  - All parameters are mandatory.
-  - Creates OutputPath when it does not exist.
-  - Loads eventos for every document via Get-DFeEventoEntry.
-  - Maps snake_case entries to PascalCase before calling Compress-DFeArchive.
-  - Calls Compress-DFeArchive once per ArchiveInfo.
-  - Passes the correct XmlPath, Entries, Eventos and ZipPath to Compress-DFeArchive.
-  - Throws ZipNotCreated when the ZIP is absent after compression.
-  - ZipNotCreated uses ResourceUnavailable category.
-  - Calls Get-FileSha256 on the TempPath.
-  - Copies the ZIP to DestPath with Force.
-  - Returns one result object per ArchiveInfo.
-  - Result object exposes TipoDFe, FileName, FileHash, TempPath, DestPath.
-  - FileHash is the value returned by Get-FileSha256.
+  - Mandatory parameter contract.
+  - OutputPath creation.
+  - Event loading for every document.
+  - snake_case to PascalCase mapping.
+  - SHA-256 preservation in mapped objects.
+  - Document grouping by ModeloDFe.
+  - Event grouping by parent document.
+  - One compression per ArchiveInfo.
+  - Correct XmlPath, Entries, Eventos and ZipPath.
+  - Unsupported archive-model errors.
+  - Missing ZIP detection and error category.
+  - Compressor error propagation.
+  - Get-FileSha256 invocation against TempPath.
+  - Publish-DFeArchive invocation.
+  - Temporary ZIP cleanup on success.
+  - Temporary ZIP cleanup on failure.
+  - One result per successfully published ArchiveInfo.
+  - Exact result contract.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -44,50 +48,81 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'New-DFeArchive' {
+Describe 'New-DFeArchive' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
         BeforeAll {
 
+            $Script:TestID = [guid]::NewGuid().ToString('N')
+
             $Script:Command = Get-Command -Name New-DFeArchive -ErrorAction Stop
 
             $Script:OutputPath = Join-Path -Path $TestDrive -ChildPath 'output'
 
-            $Script:TempZip    = Join-Path -Path $TestDrive -ChildPath 'NFe_test.zip'
+            $Script:XmlPath = Join-Path -Path $TestDrive -ChildPath 'xml'
+
+            $Script:NFeTempZip = Join-Path -Path $TestDrive -ChildPath 'NFe_test.zip'
+
+            $Script:CTeTempZip = Join-Path -Path $TestDrive -ChildPath 'CTe_test.zip'
 
             $Script:ValidCompany = [PSCustomObject]@{
-                XmlPath    = Join-Path -Path $TestDrive -ChildPath 'xml'
+                XmlPath    = $Script:XmlPath
                 OutputPath = $Script:OutputPath
             }
 
-            $Script:ValidArchiveInfo = [PSCustomObject]@{
+            $Script:NFeKey = '1' * 44
+            $Script:CTeKey = '2' * 44
+
+            $Script:NFeArchiveInfo = [PSCustomObject]@{
                 TipoDFe  = 'NFe'
                 FileName = 'NFe_test.zip'
-                TempPath = $Script:TempZip
+                TempPath = $Script:NFeTempZip
                 DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
             }
 
-            # snake_case — matches Get-DFeDocumentEntry output contract.
+            $Script:CTeArchiveInfo = [PSCustomObject]@{
+                TipoDFe  = 'CTe'
+                FileName = 'CTe_test.zip'
+                TempPath = $Script:CTeTempZip
+                DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'CTe_test.zip'
+            }
+
             $Script:ValidEntries = @(
                 [PSCustomObject]@{
-                    chave_acesso = '1' * 44
+                    chave_acesso = $Script:NFeKey
                     modelo       = 55
                     file_path    = 'nfe.xml'
-                    sha256       = 'aaa'
+                    sha256       = 'nfe-sha'
+                    indexed_at   = '2026-08-01T00:00:00+00:00'
+                }
+
+                [PSCustomObject]@{
+                    chave_acesso = $Script:CTeKey
+                    modelo       = 57
+                    file_path    = 'cte.xml'
+                    sha256       = 'cte-sha'
                     indexed_at   = '2026-08-01T00:00:00+00:00'
                 }
             )
 
-            # snake_case — matches Get-DFeEventoEntry output contract.
-            $Script:FakeEvento = [PSCustomObject]@{
-                chave_pai  = '1' * 44
-                file_path  = 'evt.xml'
-                sha256     = 'bbb'
+            $Script:NFeEvento = [PSCustomObject]@{
+                chave_pai  = $Script:NFeKey
+                file_path  = 'evento-nfe.xml'
+                sha256     = 'evento-nfe-sha'
+                indexed_at = '2026-08-01T00:00:00+00:00'
+            }
+
+            $Script:CTeEvento = [PSCustomObject]@{
+                chave_pai  = $Script:CTeKey
+                file_path  = 'evento-cte.xml'
+                sha256     = 'evento-cte-sha'
                 indexed_at = '2026-08-01T00:00:00+00:00'
             }
 
             $Script:Cnpj = '12345678000199'
+
+            $Script:FakeHash = 'a' * 64
         }
 
         AfterAll {
@@ -97,49 +132,45 @@ Describe 'New-DFeArchive' {
 
         BeforeEach {
 
-            Mock -CommandName Get-DFeEventoEntry -MockWith {
-                param  (
-                    [string]$Cnpj,
-                    [string]$ChavePai
-                )
+            if (Test-Path -LiteralPath $Script:NFeTempZip) {
+                Remove-Item -LiteralPath $Script:NFeTempZip -Force
+            }
 
-                $null = $Cnpj
-                $null = $ChavePai
+            if (Test-Path -LiteralPath $Script:CTeTempZip) {
+                Remove-Item -LiteralPath $Script:CTeTempZip -Force
+            }
+
+            $Script:CapturedCompressionCalls = @()
+
+            Mock -CommandName Get-DFeEventoEntry -MockWith {
+                if ($ChavePai -eq $Script:NFeKey) {
+                    return @($Script:NFeEvento)
+                }
+
+                if ($ChavePai -eq $Script:CTeKey) {
+                    return @($Script:CTeEvento)
+                }
+
                 return @()
             }
 
             Mock -CommandName Compress-DFeArchive -MockWith {
-                param (
-                    [string]$XmlPath,
-                    [pscustomobject[]]$Entries,
-                    [pscustomobject[]]$Eventos,
-                    [string]$ZipPath,
-                    [System.IO.Compression.CompressionLevel]$CompressionLevel
-                )
+                $Script:CapturedCompressionCalls += [PSCustomObject]@{
+                    XmlPath = $XmlPath
+                    Entries = @($Entries)
+                    Eventos = @($Eventos)
+                    ZipPath = $ZipPath
+                }
 
-                $null = $XmlPath
-                $null = $Entries
-                $null = $Eventos
-                $null = $CompressionLevel
                 [System.IO.File]::WriteAllText($ZipPath, 'fake-zip')
             }
 
             Mock -CommandName Get-FileSha256 -MockWith {
-                param ([string]$Path)
-                $null = $Path
-                return 'abc123hash'
+                $Script:FakeHash
             }
 
-            Mock -CommandName Copy-Item -MockWith {
-                param (
-                    [string]$LiteralPath,
-                    [string]$Destination,
-                    [switch]$Force
-                )
+            Mock -CommandName Publish-DFeArchive -MockWith {
 
-                $null = $LiteralPath
-                $null = $Destination
-                $null = $Force
             }
         }
 
@@ -188,39 +219,41 @@ Describe 'New-DFeArchive' {
         }
         #endregion
 
-        #region OutputPath creation
+        #region OutputPath
         Context 'OutputPath creation' {
 
             It 'Creates OutputPath when it does not exist' {
-                $pathParams = @{
-                    Path      = $TestDrive
-                    ChildPath = 'output-{0}' -f [guid]::NewGuid().ToString('N')
-                }
-
-                $newOutput  = Join-Path @pathParams
+                $newOutput = Join-Path -Path $TestDrive -ChildPath (
+                    'output-{0}' -f $Script:TestID
+                )
 
                 $company = [PSCustomObject]@{
-                    XmlPath    = $Script:ValidCompany.XmlPath
+                    XmlPath    = $Script:XmlPath
                     OutputPath = $newOutput
                 }
+
+                $tempZip = Join-Path -Path $TestDrive -ChildPath (
+                    'temp-{0}.zip' -f $Script:TestID
+                )
 
                 $archiveInfo = [PSCustomObject]@{
                     TipoDFe  = 'NFe'
                     FileName = 'NFe_test.zip'
-                    TempPath = $Script:TempZip
+                    TempPath = $tempZip
                     DestPath = Join-Path -Path $newOutput -ChildPath 'NFe_test.zip'
                 }
 
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $company
-                    Entries      = $Script:ValidEntries
+                    Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($archiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
 
-                Test-Path -LiteralPath $newOutput -PathType Container | Should -BeTrue
+                Test-Path -LiteralPath $newOutput -PathType Container |
+                    Should -BeTrue
             }
         }
         #endregion
@@ -228,12 +261,15 @@ Describe 'New-DFeArchive' {
         #region Evento loading
         Context 'Evento loading' {
 
-            It 'Calls Get-DFeEventoEntry once per entry' {
+            It 'Calls Get-DFeEventoEntry once per document entry' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    ArchiveInfos = @(
+                        $Script:NFeArchiveInfo
+                        $Script:CTeArchiveInfo
+                    )
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -243,18 +279,18 @@ Describe 'New-DFeArchive' {
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
-                    Times       = $Script:ValidEntries.Count
+                    Times       = 2
                 }
 
                 Should -Invoke @invokeParams
             }
 
-            It 'Passes the correct ChavePai to Get-DFeEventoEntry' {
+            It 'Passes NFe access key as ChavePai' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -266,7 +302,31 @@ Describe 'New-DFeArchive' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $ChavePai -eq ('1' * 44)
+                        $ChavePai -eq $Script:NFeKey
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Passes the company CNPJ to Get-DFeEventoEntry' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                }
+
+                New-DFeArchive @archiveParams | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Get-DFeEventoEntry'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj
                     }
                 }
 
@@ -275,111 +335,113 @@ Describe 'New-DFeArchive' {
         }
         #endregion
 
-        #region PascalCase mapping
-        Context 'PascalCase mapping' {
+        #region Mapping and grouping
+        Context 'Mapping and grouping' {
 
-            BeforeEach {
-
-                $Script:CapturedEntries = $null
-                $Script:CapturedEventos = $null
-
-                Mock -CommandName Get-DFeEventoEntry -MockWith {
-                    param (
-                        [string]$Cnpj,
-                        [string]$ChavePai
-                    )
-
-                    $null = $Cnpj
-                    $null = $ChavePai
-                    return @($Script:FakeEvento)
-                }
-
-                Mock -CommandName Compress-DFeArchive -MockWith {
-                    param (
-                        [string]$XmlPath,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$Eventos,
-                        [string]$ZipPath,
-                        [System.IO.Compression.CompressionLevel]$CompressionLevel
-                    )
-
-                    $null = $XmlPath
-                    $null = $CompressionLevel
-                    $Script:CapturedEntries = $Entries
-                    $Script:CapturedEventos = $Eventos
-
-                    [System.IO.File]::WriteAllText($ZipPath, 'fake-zip')
-                }
-            }
-
-            It 'Maps chave_acesso to ChaveAcesso in entries' {
+            It 'Maps entry fields to PascalCase' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
-                    Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
 
-                $Script:CapturedEntries[0].ChaveAcesso | Should -Be ('1' * 44)
+                $entry = $Script:CapturedCompressionCalls[0].Entries[0]
+
+                $entry.ChaveAcesso | Should -Be $Script:NFeKey
+                $entry.Modelo      | Should -Be 55
+                $entry.FilePath    | Should -Be 'nfe.xml'
+                $entry.Sha256      | Should -Be 'nfe-sha'
             }
 
-            It 'Maps modelo to Modelo in entries' {
+            It 'Maps evento fields to PascalCase' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
-                    Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
 
-                $Script:CapturedEntries[0].Modelo | Should -Be 55
+                $evento = $Script:CapturedCompressionCalls[0].Eventos[0]
+
+                $evento.ChavePai | Should -Be $Script:NFeKey
+                $evento.FilePath | Should -Be 'evento-nfe.xml'
+                $evento.Sha256   | Should -Be 'evento-nfe-sha'
             }
 
-            It 'Maps file_path to FilePath in entries' {
+            It 'Passes only NFe documents to the NFe archive' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
 
-                $Script:CapturedEntries[0].FilePath | Should -Be 'nfe.xml'
+                $entries = @($Script:CapturedCompressionCalls[0].Entries)
+
+                $entries                | Should -HaveCount 1
+                $entries[0].Modelo      | Should -Be 55
+                $entries[0].ChaveAcesso | Should -Be $Script:NFeKey
             }
 
-            It 'Maps chave_pai to ChavePai in eventos' {
+            It 'Passes only CTe documents to the CTe archive' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    ArchiveInfos = @($Script:CTeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
 
-                $Script:CapturedEventos[0].ChavePai | Should -Be ('1' * 44)
+                $entries = @($Script:CapturedCompressionCalls[0].Entries)
+
+                $entries                | Should -HaveCount 1
+                $entries[0].Modelo      | Should -Be 57
+                $entries[0].ChaveAcesso | Should -Be $Script:CTeKey
             }
 
-            It 'Maps file_path to FilePath in eventos' {
+            It 'Passes only NFe events to the NFe archive' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
 
-                $Script:CapturedEventos[0].FilePath | Should -Be 'evt.xml'
+                $eventos = @($Script:CapturedCompressionCalls[0].Eventos)
+
+                $eventos             | Should -HaveCount 1
+                $eventos[0].ChavePai | Should -Be $Script:NFeKey
+            }
+
+            It 'Passes only CTe events to the CTe archive' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = $Script:ValidEntries
+                    ArchiveInfos = @($Script:CTeArchiveInfo)
+                }
+
+                New-DFeArchive @archiveParams | Out-Null
+
+                $eventos = @($Script:CapturedCompressionCalls[0].Eventos)
+
+                $eventos             | Should -HaveCount 1
+                $eventos[0].ChavePai | Should -Be $Script:CTeKey
             }
         }
         #endregion
 
-        #region Compression orchestration
+        #region Compression
         Context 'Compression orchestration' {
 
             It 'Calls Compress-DFeArchive once per ArchiveInfo' {
@@ -387,7 +449,10 @@ Describe 'New-DFeArchive' {
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    ArchiveInfos = @(
+                        $Script:NFeArchiveInfo
+                        $Script:CTeArchiveInfo
+                    )
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -397,18 +462,18 @@ Describe 'New-DFeArchive' {
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
-                    Times       = 1
+                    Times       = 2
                 }
 
                 Should -Invoke @invokeParams
             }
 
-            It 'Passes XmlPath from the Company object' {
+            It 'Passes XmlPath from Company' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
-                    Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -431,8 +496,8 @@ Describe 'New-DFeArchive' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
-                    Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -444,7 +509,7 @@ Describe 'New-DFeArchive' {
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $ZipPath -eq $Script:ValidArchiveInfo.TempPath
+                        $ZipPath -eq $Script:NFeArchiveInfo.TempPath
                     }
                 }
 
@@ -454,33 +519,91 @@ Describe 'New-DFeArchive' {
             It 'Throws ZipNotCreated when ZIP is absent after compression' {
                 $pathParams = @{
                     Path      = $TestDrive
-                    ChildPath = 'missing-{0}.zip' -f [guid]::NewGuid().ToString('N')
+                    ChildPath = 'missing-{0}.zip' -f $Script:TestID
                 }
-
-                $missingZip = Join-Path @pathParams
 
                 $archiveInfo = [PSCustomObject]@{
                     TipoDFe  = 'NFe'
                     FileName = 'NFe_test.zip'
-                    TempPath = $missingZip
+                    TempPath = Join-Path @pathParams
                     DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
                 }
 
                 Mock -CommandName Compress-DFeArchive -MockWith {
-                    param (
-                        [string]$XmlPath,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$Eventos,
-                        [string]$ZipPath,
-                        [System.IO.Compression.CompressionLevel]$CompressionLevel
-                    )
 
-                    $null = $XmlPath
-                    $null = $Entries
-                    $null = $Eventos
-                    $null = $ZipPath
-                    $null = $CompressionLevel
-                    # Intentionally does not create the file.
+                }
+
+                $thrown = $null
+
+                try {
+                    $archiveParams = @{
+                        Cnpj         = $Script:Cnpj
+                        Company      = $Script:ValidCompany
+                        Entries      = @($Script:ValidEntries[0])
+                        ArchiveInfos = @($archiveInfo)
+                        ErrorAction  = 'Stop'
+                    }
+
+                    New-DFeArchive @archiveParams
+                } catch {
+                    $thrown = $_
+                }
+
+                $thrown | Should -Not -BeNullOrEmpty
+                $thrown.FullyQualifiedErrorId | Should -BeLike 'ZipNotCreated*'
+            }
+
+            It 'Uses ResourceUnavailable category for ZipNotCreated' {
+                $pathParams = @{
+                    Path      = $TestDrive
+                    ChildPath = 'missing-{0}.zip' -f $Script:TestID
+                }
+
+                $archiveInfo = [PSCustomObject]@{
+                    TipoDFe  = 'NFe'
+                    FileName = 'NFe_test.zip'
+                    TempPath = Join-Path @pathParams
+                    DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
+                }
+
+                Mock -CommandName Compress-DFeArchive -MockWith {
+
+                }
+
+                $thrown = $null
+
+                try {
+                    $archiveParams = @{
+                        Cnpj         = $Script:Cnpj
+                        Company      = $Script:ValidCompany
+                        Entries      = @($Script:ValidEntries[0])
+                        ArchiveInfos = @($archiveInfo)
+                        ErrorAction  = 'Stop'
+                    }
+
+                    New-DFeArchive @archiveParams
+                } catch {
+                    $thrown = $_
+                }
+
+                $expected = [System.Management.Automation.ErrorCategory]::ResourceUnavailable
+
+                $thrown.CategoryInfo.Category | Should -Be $expected
+            }
+        }
+        #endregion
+
+        #region Unsupported model
+        Context 'Unsupported archive model' {
+
+            It 'Throws ArchiveModelUnsupported' {
+                $tempZip = Join-Path -Path $TestDrive -ChildPath 'invalid-model.zip'
+
+                $archiveInfo = [PSCustomObject]@{
+                    TipoDFe  = 'NotARealDFe'
+                    FileName = 'invalid.zip'
+                    TempPath = $tempZip
+                    DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'invalid.zip'
                 }
 
                 $thrown = $null
@@ -500,38 +623,17 @@ Describe 'New-DFeArchive' {
                 }
 
                 $thrown | Should -Not -BeNullOrEmpty
-                $thrown.FullyQualifiedErrorId | Should -BeLike 'ZipNotCreated*'
+                $thrown.FullyQualifiedErrorId | Should -BeLike 'ArchiveModelUnsupported*'
             }
 
-            It 'Uses ResourceUnavailable category for ZipNotCreated' {
-                $pathParams = @{
-                    Path      = $TestDrive
-                    ChildPath = 'missing-{0}.zip' -f [guid]::NewGuid().ToString('N')
-                }
-
-                $missingZip = Join-Path @pathParams
+            It 'Uses InvalidData category for ArchiveModelUnsupported' {
+                $tempZip = Join-Path -Path $TestDrive -ChildPath 'invalid-model.zip'
 
                 $archiveInfo = [PSCustomObject]@{
-                    TipoDFe  = 'NFe'
-                    FileName = 'NFe_test.zip'
-                    TempPath = $missingZip
-                    DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
-                }
-
-                Mock -CommandName Compress-DFeArchive -MockWith {
-                    param (
-                        [string]$XmlPath,
-                        [pscustomobject[]]$Entries,
-                        [pscustomobject[]]$Eventos,
-                        [string]$ZipPath,
-                        [System.IO.Compression.CompressionLevel]$CompressionLevel
-                    )
-
-                    $null = $XmlPath
-                    $null = $Entries
-                    $null = $Eventos
-                    $null = $ZipPath
-                    $null = $CompressionLevel
+                    TipoDFe  = 'NotARealDFe'
+                    FileName = 'invalid.zip'
+                    TempPath = $tempZip
+                    DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'invalid.zip'
                 }
 
                 $thrown = $null
@@ -550,8 +652,251 @@ Describe 'New-DFeArchive' {
                     $thrown = $_
                 }
 
-                $thrown.CategoryInfo.Category |
-                    Should -Be ([System.Management.Automation.ErrorCategory]::ResourceUnavailable)
+                $expected = [System.Management.Automation.ErrorCategory]::InvalidData
+
+                $thrown.CategoryInfo.Category | Should -Be $expected
+            }
+
+            It 'Does not call Compress-DFeArchive for unsupported models' {
+                $archiveInfo = [PSCustomObject]@{
+                    TipoDFe  = 'NotARealDFe'
+                    FileName = 'invalid.zip'
+                    TempPath = Join-Path -Path $TestDrive         -ChildPath 'invalid.zip'
+                    DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'invalid.zip'
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = $Script:ValidEntries
+                    ArchiveInfos = @($archiveInfo)
+                    ErrorAction  = 'Stop'
+                }
+
+                { New-DFeArchive @archiveParams } | Should -Throw
+
+                $invokeParams = @{
+                    CommandName = 'Compress-DFeArchive'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParams
+            }
+        }
+        #endregion
+
+        #region Hash and publication
+        Context 'Hash and publication' {
+
+            It 'Hashes the temporary ZIP' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                }
+
+                New-DFeArchive @archiveParams | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Get-FileSha256'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Path -eq $Script:NFeArchiveInfo.TempPath
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Publishes using TempPath, DestPath and calculated hash' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                }
+
+                New-DFeArchive @archiveParams | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Publish-DFeArchive'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $SourcePath      -eq $Script:NFeArchiveInfo.TempPath -and
+                        $DestinationPath -eq $Script:NFeArchiveInfo.DestPath -and
+                        $ExpectedHash    -eq $Script:FakeHash
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+        }
+        #endregion
+
+        #region Error propagation
+        Context 'Dependency error propagation' {
+
+            It 'Propagates Compress-DFeArchive errors unchanged' {
+                Mock -CommandName Compress-DFeArchive -MockWith {
+                    throw [System.IO.InvalidDataException]::new(
+                        'Source hash mismatch.'
+                    )
+                }
+
+                $thrown = $null
+
+                try {
+                    $archiveParams = @{
+                        Cnpj         = $Script:Cnpj
+                        Company      = $Script:ValidCompany
+                        Entries      = @($Script:ValidEntries[0])
+                        ArchiveInfos = @($Script:NFeArchiveInfo)
+                        ErrorAction  = 'Stop'
+                    }
+
+                    New-DFeArchive @archiveParams
+                } catch {
+                    $thrown = $_
+                }
+
+                $thrown.Exception | Should -BeOfType [System.IO.InvalidDataException]
+                $thrown.Exception.Message | Should -Be 'Source hash mismatch.'
+            }
+
+            It 'Propagates Publish-DFeArchive errors unchanged' {
+                Mock -CommandName Publish-DFeArchive -MockWith {
+                    throw [System.Management.Automation.ErrorRecord]::new(
+                        [System.IO.IOException]::new('publish failed'),
+                        'ArchivePublishFailed',
+                        [System.Management.Automation.ErrorCategory]::WriteError,
+                        $Script:NFeArchiveInfo.DestPath
+                    )
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                    ErrorAction  = 'Stop'
+                }
+
+                { New-DFeArchive @archiveParams } |
+                    Should -Throw -ErrorId 'ArchivePublishFailed*'
+            }
+
+            It 'Does not hash or publish when compression fails' {
+                Mock -CommandName Compress-DFeArchive -MockWith {
+                    throw 'compression failed'
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                    ErrorAction  = 'Stop'
+                }
+
+                { New-DFeArchive @archiveParams } | Should -Throw
+
+                $invokeParamsOne = @{
+                    CommandName = 'Get-FileSha256'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                $invokeParamsTwo = @{
+                    CommandName = 'Publish-DFeArchive'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @invokeParamsOne
+                Should -Invoke @invokeParamsTwo
+            }
+        }
+        #endregion
+
+        #region Cleanup
+        Context 'Temporary ZIP cleanup' {
+
+            It 'Removes TempPath after successful publication' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                }
+
+                New-DFeArchive @archiveParams | Out-Null
+
+                $pathParams = @{
+                    LiteralPath = $Script:NFeArchiveInfo.TempPath
+                    PathType    = 'Leaf'
+                }
+
+                Test-Path @pathParams | Should -BeFalse
+            }
+
+            It 'Removes TempPath when publication fails' {
+                Mock -CommandName Publish-DFeArchive -MockWith {
+                    throw 'publish failed'
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                    ErrorAction  = 'Stop'
+                }
+
+                { New-DFeArchive @archiveParams } | Should -Throw
+
+                $pathParams = @{
+                    LiteralPath = $Script:NFeArchiveInfo.TempPath
+                    PathType    = 'Leaf'
+                }
+
+                Test-Path @pathParams | Should -BeFalse
+            }
+
+            It 'Removes TempPath when hashing fails' {
+                Mock -CommandName Get-FileSha256 -MockWith {
+                    throw 'hash failed'
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                    ErrorAction  = 'Stop'
+                }
+
+                { New-DFeArchive @archiveParams } | Should -Throw
+
+                $pathParams = @{
+                    LiteralPath = $Script:NFeArchiveInfo.TempPath
+                    PathType    = 'Leaf'
+                }
+
+                Test-Path @pathParams | Should -BeFalse
             }
         }
         #endregion
@@ -559,77 +904,73 @@ Describe 'New-DFeArchive' {
         #region Result object
         Context 'Result object' {
 
-            BeforeEach {
-
-                $Script:CopyItemCalls = [System.Collections.Generic.List[hashtable]]::new()
-
-                Mock -CommandName Get-FileSha256 -MockWith {
-                    param ([string]$Path)
-                    $null = $Path
-                    return 'abc123hash'
-                }
-
-                Mock -CommandName Copy-Item -MockWith {
-                    param (
-                        [string]$LiteralPath,
-                        [string]$Destination,
-                        [switch]$Force
-                    )
-
-                    $Script:CopyItemCalls.Add(
-                        @{
-                            LiteralPath = $LiteralPath
-                            Destination = $Destination
-                            Force       = [bool]$Force
-                        }
-                    )
-                }
-
+            It 'Returns one result per ArchiveInfo' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
-                    ArchiveInfos = @($Script:ValidArchiveInfo)
+                    ArchiveInfos = @(
+                        $Script:NFeArchiveInfo
+                        $Script:CTeArchiveInfo
+                    )
                 }
 
-                $Script:Results = @(New-DFeArchive @archiveParams)
+                $results = @(New-DFeArchive @archiveParams)
+
+                $results | Should -HaveCount 2
             }
 
-            It 'Returns one result per ArchiveInfo' {
-                $Script:Results | Should -HaveCount 1
-            }
+            It 'Returns PSCustomObject instances' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                }
 
-            It 'Returns a PSCustomObject' {
-                $Script:Results[0] |
-                    Should -BeOfType [System.Management.Automation.PSCustomObject]
+                $result = @(New-DFeArchive @archiveParams)[0]
+
+                $result | Should -BeOfType [System.Management.Automation.PSCustomObject]
             }
 
             It 'Exposes exactly the documented properties' {
-                $expected = @('TipoDFe', 'FileName', 'FileHash', 'TempPath', 'DestPath')
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                }
 
-                $actual = @($Script:Results[0].PSObject.Properties.Name)
+                $result = @(New-DFeArchive @archiveParams)[0]
+
+                $expected = @(
+                    'TipoDFe'
+                    'FileName'
+                    'FileHash'
+                    'TempPath'
+                    'DestPath'
+                )
+
+                $actual = @($result.PSObject.Properties.Name)
+
                 $actual | Should -Be $expected
             }
 
-            It 'Returns the expected result values' {
-                $result = $Script:Results[0]
+            It 'Returns the expected values' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                }
 
-                $result.TipoDFe  | Should -Be $Script:ValidArchiveInfo.TipoDFe
-                $result.FileName | Should -Be $Script:ValidArchiveInfo.FileName
-                $result.FileHash | Should -Be 'abc123hash'
-                $result.TempPath | Should -Be $Script:ValidArchiveInfo.TempPath
-                $result.DestPath | Should -Be $Script:ValidArchiveInfo.DestPath
-            }
+                $result = @(New-DFeArchive @archiveParams)[0]
 
-            It 'Copies the ZIP from TempPath to DestPath' {
-                $Script:CopyItemCalls | Should -HaveCount 1
-
-                $Script:CopyItemCalls[0].LiteralPath | Should -Be $Script:ValidArchiveInfo.TempPath
-                $Script:CopyItemCalls[0].Destination | Should -Be $Script:ValidArchiveInfo.DestPath
-            }
-
-            It 'Copies with Force' {
-                $Script:CopyItemCalls[0].Force | Should -BeTrue
+                $result.TipoDFe  | Should -Be $Script:NFeArchiveInfo.TipoDFe
+                $result.FileName | Should -Be $Script:NFeArchiveInfo.FileName
+                $result.FileHash | Should -Be $Script:FakeHash
+                $result.TempPath | Should -Be $Script:NFeArchiveInfo.TempPath
+                $result.DestPath | Should -Be $Script:NFeArchiveInfo.DestPath
             }
         }
         #endregion
