@@ -5,47 +5,59 @@ Resolves ZIP archive metadata for a specific DFe document type.
 .DESCRIPTION
 Generates a standardized ZIP file name from document type, CNPJ, company
 label (NomeFantasia preferred, RazaoSocial as fallback), and period label.
-Name format: {TipoDFe}_{CNPJ}_{Label}_{PeriodLabel}.zip
+
+Name format:
+
+    {TipoDFe}_{CNPJ}_{Label}_{PeriodLabel}.zip
 
 The company label is derived from the first two words of the source name
 that contain at least one alphanumeric character. Tokens consisting
-entirely of non-alphanumeric characters (e.g. '&', '-') are discarded
-before the two-word limit is applied, ensuring the label is always
-meaningful.
+entirely of non-alphanumeric characters are discarded before the two-word
+limit is applied.
 
-Returns an object with TipoDFe, FileName, TempPath and DestPath so callers
-never construct paths independently or re-derive the document type from the
-file name.
+Returns TipoDFe, FileName, TempPath and DestPath so callers never construct
+archive paths independently or re-derive the document type from FileName.
+
+TempPath is unique per invocation to prevent stale temporary files or
+parallel executions from referring to the same intermediate ZIP.
+
+FileName and DestPath remain deterministic.
 
 .PARAMETER TipoDFe
-Document type prefix for the ZIP name (e.g. 'NFe', 'CTe', 'MDFe').
+Document type prefix for the ZIP name.
 
 .PARAMETER Cnpj
-Empresa CNPJ.
+Normalized company CNPJ.
 
 .PARAMETER Company
-Empresa object with NomeFantasia, RazaoSocial and OutputPath.
+Company object exposing NomeFantasia, RazaoSocial and OutputPath.
 
 .PARAMETER DateRange
-PSCustomObject with Start and End [DateTimeOffset] used for period label.
+Object exposing Start and End DateTimeOffset values used for the period
+segment.
 
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
-TipoDFe  [string] Document type label (e.g. 'NFe', 'CTe', 'MDFe').
-FileName [string] ZIP file name.
-TempPath [string] Full path to the temporary ZIP location.
-DestPath [string] Full path to the destination in Company.OutputPath.
+Properties:
+
+    TipoDFe  [string]
+    FileName [string]
+    TempPath [string]
+    DestPath [string]
 
 .EXAMPLE
-PS C:\> $info = Resolve-DFeArchiveInfo -TipoDFe 'NFe'
->> -Cnpj $cnpj -Company $company -DateRange $range
+PS C:\> $params = @{
+    TipoDFe   = 'NFe'
+    Cnpj      = $cnpj
+    Company   = $company
+    DateRange = $range
+}
 
->> $info.FileName
-Returns NFe_11222333000181_RIBEIRO_BONAFE_202606.zip
+PS C:\> $info = Resolve-DFeArchiveInfo @params
 
 .NOTES
-Pure function - no I/O, no side effects.
+Performs no filesystem I/O.
 
 Private dependencies:
   ConvertTo-SafeString
@@ -72,35 +84,29 @@ function Resolve-DFeArchiveInfo {
         [pscustomobject]$DateRange
     )
 
-    # Validate required Company properties up front so every failure produces
-    # a clear terminating error rather than a silent null or malformed path.
     foreach ($propertyName in @('NomeFantasia', 'RazaoSocial', 'OutputPath')) {
         $property = $Company.PSObject.Properties[$propertyName]
 
         if ($null -eq $property) {
-            $PSCmdlet.ThrowTerminatingError(
-                [System.Management.Automation.ErrorRecord]::new(
-                    [System.ArgumentException]::new(
-                        "Company is missing the required '$propertyName' property."
-                    ),
-                    "CompanyMissing$propertyName",
-                    [System.Management.Automation.ErrorCategory]::InvalidArgument,
-                    $Company
-                )
+            throw [System.Management.Automation.ErrorRecord]::new(
+                [System.ArgumentException]::new(
+                    "Company is missing the required '$propertyName' property."
+                ),
+                "CompanyMissing$propertyName",
+                [System.Management.Automation.ErrorCategory]::InvalidArgument,
+                $Company
             )
         }
     }
 
     if ([string]::IsNullOrWhiteSpace($Company.OutputPath)) {
-        $PSCmdlet.ThrowTerminatingError(
-            [System.Management.Automation.ErrorRecord]::new(
-                [System.ArgumentException]::new(
-                    'Company.OutputPath must not be null or empty.'
-                ),
-                'CompanyOutputPathNullOrEmpty',
-                [System.Management.Automation.ErrorCategory]::InvalidArgument,
-                $Company
-            )
+        throw [System.Management.Automation.ErrorRecord]::new(
+            [System.ArgumentException]::new(
+                'Company.OutputPath must not be null or empty.'
+            ),
+            'CompanyOutputPathNullOrEmpty',
+            [System.Management.Automation.ErrorCategory]::InvalidArgument,
+            $Company
         )
     }
 
@@ -111,20 +117,16 @@ function Resolve-DFeArchiveInfo {
     }
 
     if ([string]::IsNullOrWhiteSpace($sourceName)) {
-        $PSCmdlet.ThrowTerminatingError(
-            [System.Management.Automation.ErrorRecord]::new(
-                [System.ArgumentException]::new(
-                    'Company must have a non-empty NomeFantasia or RazaoSocial.'
-                ),
-                'CompanyNameNullOrEmpty',
-                [System.Management.Automation.ErrorCategory]::InvalidArgument,
-                $Company
-            )
+        throw [System.Management.Automation.ErrorRecord]::new(
+            [System.ArgumentException]::new(
+                'Company must have a non-empty NomeFantasia or RazaoSocial.'
+            ),
+            'CompanyNameNullOrEmpty',
+            [System.Management.Automation.ErrorCategory]::InvalidArgument,
+            $Company
         )
     }
 
-    # Split into words, discard tokens with no alphanumeric characters
-    # (e.g. '&', '-'), then take the first two meaningful words.
     $safeParams = @{
         InputObject = $sourceName
         UpperCase   = $true
@@ -137,12 +139,23 @@ function Resolve-DFeArchiveInfo {
         Select-Object -First 2
 
     $periodSegment = Get-ArchivePeriodSegment -DateRange $DateRange
-    $companyLabel  = $labelWords -join '_'
-    $fileName      = '{0}_{1}_{2}_{3}.zip' -f $TipoDFe, $Cnpj, $companyLabel, $periodSegment
+    $companyLabel = $labelWords -join '_'
+
+    $fileName = '{0}_{1}_{2}_{3}.zip' -f (
+        $TipoDFe,
+        $Cnpj,
+        $companyLabel,
+        $periodSegment
+    )
+
+    $tempFileName = '{0}.{1}.tmp' -f (
+        $fileName,
+        [guid]::NewGuid().ToString('N')
+    )
 
     $tempPathParams = @{
         Path      = [System.IO.Path]::GetTempPath()
-        ChildPath = $fileName
+        ChildPath = $tempFileName
     }
 
     $destPathParams = @{
