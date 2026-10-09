@@ -19,8 +19,11 @@ Coverage includes:
   - Discards non-alphanumeric tokens from the company label.
   - Takes only the first two meaningful words for the label.
   - FileName follows the expected format.
-  - TempPath uses the system temp directory.
+  - TempPath is located in the system temp directory.
+  - TempPath contains the deterministic file name.
+  - TempPath differs between calls.
   - DestPath uses Company.OutputPath.
+  - DestPath is identical between calls.
   - TipoDFe is preserved as-is in the output.
   - Output contract: TipoDFe, FileName, TempPath, DestPath as strings.
 #>
@@ -360,16 +363,22 @@ Describe 'Resolve-DFeArchiveInfo' {
                     DateRange = $Script:ValidDateRange
                 }
 
-                $Script:PathResult = Resolve-DFeArchiveInfo @resolveParams
+                $Script:PathResult  = Resolve-DFeArchiveInfo @resolveParams
+                $Script:PathResult2 = Resolve-DFeArchiveInfo @resolveParams
             }
 
-            It 'TempPath uses the system temp directory' {
-                $pathParams = @{
-                    Path      = ([System.IO.Path]::GetTempPath())
-                    ChildPath = $Script:PathResult.FileName
-                }
+            It 'TempPath is located in the system temp directory' {
+                $tempDir = [System.IO.Path]::GetTempPath()
 
-                $Script:PathResult.TempPath | Should -Be (Join-Path @pathParams)
+                $Script:PathResult.TempPath | Should -BeLike "$tempDir*"
+            }
+
+            It 'TempPath contains the deterministic file name' {
+                $Script:PathResult.TempPath | Should -BeLike "*$($Script:PathResult.FileName)*"
+            }
+
+            It 'TempPath differs between calls' {
+                $Script:PathResult.TempPath | Should -Not -Be $Script:PathResult2.TempPath
             }
 
             It 'DestPath uses Company.OutputPath' {
@@ -379,6 +388,10 @@ Describe 'Resolve-DFeArchiveInfo' {
                 }
 
                 $Script:PathResult.DestPath | Should -Be (Join-Path @pathParams)
+            }
+
+            It 'DestPath is identical between calls' {
+                $Script:PathResult.DestPath | Should -Be $Script:PathResult2.DestPath
             }
         }
         #endregion
