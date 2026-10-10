@@ -44,7 +44,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Repair-DFeDocumentProcessing' {
+Describe 'Repair-DFeDocumentProcessing' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -70,7 +70,7 @@ Describe 'Repair-DFeDocumentProcessing' {
 
                     [Parameter()]
                     [AllowNull()]
-                    [string]$ProcessingStartedAt = '2026-09-25T11:00:00.0000000+00:00'
+                    [object]$ProcessingStartedAt = '2026-09-25T11:00:00.0000000+00:00'
                 )
 
                 [pscustomobject]@{
@@ -87,7 +87,7 @@ Describe 'Repair-DFeDocumentProcessing' {
                 @()
             }
 
-            Mock -CommandName Set-DFeDocumentProcessingState
+            Mock -CommandName Repair-DFeDocumentProcessingState
         }
 
         #region Parameter contract
@@ -221,7 +221,7 @@ Describe 'Repair-DFeDocumentProcessing' {
                 $result.Recovered | Should -Be 0
 
                 $shouldParams = @{
-                    CommandName = 'Set-DFeDocumentProcessingState'
+                    CommandName = 'Repair-DFeDocumentProcessingState'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -253,7 +253,7 @@ Describe 'Repair-DFeDocumentProcessing' {
                 Repair-DFeDocumentProcessing @recoverParams | Out-Null
 
                 $shouldParams = @{
-                    CommandName     = 'Set-DFeDocumentProcessingState'
+                    CommandName     = 'Repair-DFeDocumentProcessingState'
                     ModuleName      = 'PipeDFe'
                     Scope           = 'It'
                     Exactly         = $true
@@ -261,7 +261,7 @@ Describe 'Repair-DFeDocumentProcessing' {
                     ParameterFilter = {
                         $Cnpj -eq $Script:Cnpj -and
                         $ChaveAcesso -eq '35260912345678000199550010000000011234567890' -and
-                        $Status -eq 'Failed'
+                        $ExpectedProcessingStartedAt -eq '2026-09-25T11:00:00.0000000+00:00'
                     }
                 }
 
@@ -278,13 +278,12 @@ Describe 'Repair-DFeDocumentProcessing' {
                 Repair-DFeDocumentProcessing @recoverParams | Out-Null
 
                 $shouldParams = @{
-                    CommandName     = 'Set-DFeDocumentProcessingState'
+                    CommandName     = 'Repair-DFeDocumentProcessingState'
                     ModuleName      = 'PipeDFe'
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Status -eq 'Failed' -and
                         $ErrorMessage -like '*abandoned Processing state*'
                     }
                 }
@@ -306,6 +305,29 @@ Describe 'Repair-DFeDocumentProcessing' {
                 $result.Recovered           | Should -Be 1
                 $result.Inconsistent        | Should -Be 0
                 $result.ConcurrentlyChanged | Should -Be 0
+            }
+
+            It 'Passes the observed processing_started_at to the guarded recovery update' {
+                $recoverParams = @{
+                    Cnpj          = $Script:Cnpj
+                    AbandonAfter  = $Script:AbandonAfter
+                    ReferenceTime = $Script:ReferenceTime
+                }
+
+                Repair-DFeDocumentProcessing @recoverParams | Out-Null
+
+                $shouldParams = @{
+                    CommandName     = 'Repair-DFeDocumentProcessingState'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $ExpectedProcessingStartedAt -eq '2026-09-25T11:00:00.0000000+00:00'
+                    }
+                }
+
+                Should -Invoke @shouldParams
             }
         }
         #endregion
@@ -335,7 +357,7 @@ Describe 'Repair-DFeDocumentProcessing' {
                 $result.Active    | Should -Be 0
 
                 $shouldParams = @{
-                    CommandName = 'Set-DFeDocumentProcessingState'
+                    CommandName = 'Repair-DFeDocumentProcessingState'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -381,14 +403,36 @@ Describe 'Repair-DFeDocumentProcessing' {
                 Repair-DFeDocumentProcessing @recoverParams | Out-Null
 
                 $shouldParams = @{
-                    CommandName     = 'Set-DFeDocumentProcessingState'
+                    CommandName     = 'Repair-DFeDocumentProcessingState'
                     ModuleName      = 'PipeDFe'
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
                     ParameterFilter = {
-                        $Status -eq 'Failed' -and
                         $ErrorMessage -like '*processing_started_at is missing or invalid*'
+                    }
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Passes null processing_started_at to the guarded recovery update' {
+                $recoverParams = @{
+                    Cnpj          = $Script:Cnpj
+                    AbandonAfter  = $Script:AbandonAfter
+                    ReferenceTime = $Script:ReferenceTime
+                }
+
+                Repair-DFeDocumentProcessing @recoverParams | Out-Null
+
+                $shouldParams = @{
+                    CommandName     = 'Repair-DFeDocumentProcessingState'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $null -eq $ExpectedProcessingStartedAt
                     }
                 }
 
@@ -433,37 +477,11 @@ Describe 'Repair-DFeDocumentProcessing' {
                 }
             }
 
-            It 'Treats InvalidProcessingStateTransition as concurrently changed' {
-                Mock -CommandName Set-DFeDocumentProcessingState -MockWith {
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                        [System.InvalidOperationException]::new(
-                            'Invalid processing state transition.'
-                        ),
-                        'InvalidProcessingStateTransition',
-                        [System.Management.Automation.ErrorCategory]::WriteError,
-                        $null
-                    )
-
-                    throw $errorRecord
-                }
-
-                $recoverParams = @{
-                    Cnpj          = $Script:Cnpj
-                    AbandonAfter  = $Script:AbandonAfter
-                    ReferenceTime = $Script:ReferenceTime
-                }
-
-                $result = Repair-DFeDocumentProcessing @recoverParams
-
-                $result.Recovered           | Should -Be 0
-                $result.ConcurrentlyChanged | Should -Be 1
-            }
-
             It 'Treats ConcurrentProcessingStateChange as concurrently changed' {
-                Mock -CommandName Set-DFeDocumentProcessingState -MockWith {
+                Mock -CommandName Repair-DFeDocumentProcessingState -MockWith {
                     $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                         [System.InvalidOperationException]::new(
-                            'Processing state changed concurrently.'
+                            'Processing attempt changed concurrently.'
                         ),
                         'ConcurrentProcessingStateChange',
                         [System.Management.Automation.ErrorCategory]::WriteError,
@@ -491,14 +509,15 @@ Describe 'Repair-DFeDocumentProcessing' {
         Context 'Unexpected recovery failure' {
 
             BeforeEach {
+
                 Mock -CommandName Get-DFeDocumentEntry -MockWith {
                     New-TestEntry -ProcessingStartedAt '2026-09-25T11:00:00.0000000+00:00'
                 }
 
-                Mock -CommandName Set-DFeDocumentProcessingState -MockWith {
+                Mock -CommandName Repair-DFeDocumentProcessingState -MockWith {
                     $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                         [System.IO.IOException]::new('Database write failed.'),
-                        'DocumentProcessingStateUpdateFailed',
+                        'DocumentProcessingRecoveryStateUpdateFailed',
                         [System.Management.Automation.ErrorCategory]::WriteError,
                         $null
                     )
@@ -560,7 +579,7 @@ Describe 'Repair-DFeDocumentProcessing' {
                 Repair-DFeDocumentProcessing @recoverParams | Out-Null
 
                 $shouldParams = @{
-                    CommandName = 'Set-DFeDocumentProcessingState'
+                    CommandName = 'Repair-DFeDocumentProcessingState'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -632,7 +651,7 @@ Describe 'Repair-DFeDocumentProcessing' {
                 Repair-DFeDocumentProcessing @recoverParams | Out-Null
 
                 $shouldParams = @{
-                    CommandName = 'Set-DFeDocumentProcessingState'
+                    CommandName = 'Repair-DFeDocumentProcessingState'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
