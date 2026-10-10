@@ -44,9 +44,18 @@ Schema:
   dfe_nfe_total_*
       Normalized document totals for ICMS, IBS/CBS and retained taxes.
 
+  dfe_delivery
+      Persistent lifecycle of one delivery payload.
+
+  dfe_delivery_archive
+      Immutable archive metadata associated with a delivery.
+
+  dfe_delivery_recipient
+      Normalized recipients associated with a delivery.
+
 Schema evolution is tracked through SQLite PRAGMA user_version.
 
-Current schema version: 4.
+Current schema version: 5.
 
 .PARAMETER Cnpj
 14-digit normalized CNPJ identifying the company index.
@@ -514,6 +523,76 @@ CREATE TABLE IF NOT EXISTS dfe_nfe_total_rettrib (
 );
 '@
 
+            $createDeliverySchemaV5Sql = @'
+CREATE TABLE IF NOT EXISTS dfe_delivery (
+    delivery_id             TEXT NOT NULL PRIMARY KEY,
+    delivery_key            TEXT NOT NULL UNIQUE,
+    period_start            TEXT NOT NULL,
+    period_end              TEXT NOT NULL,
+    delivery_status         TEXT NOT NULL,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    delivery_started_at     TEXT,
+    delivered_at            TEXT,
+    delivery_error          TEXT,
+
+    CHECK (
+        delivery_status IN (
+            'Prepared',
+            'Sending',
+            'Delivered',
+            'Failed',
+            'Indeterminate'
+        )
+    ),
+
+    CHECK (
+        length(delivery_key) = 64
+        AND delivery_key NOT GLOB '*[^0-9a-f]*'
+    )
+);
+
+CREATE INDEX IF NOT EXISTS ix_dfe_delivery_status
+    ON dfe_delivery (delivery_status);
+
+CREATE INDEX IF NOT EXISTS ix_dfe_delivery_period
+    ON dfe_delivery (period_start, period_end);
+
+CREATE TABLE IF NOT EXISTS dfe_delivery_archive (
+    delivery_id     TEXT NOT NULL,
+    tipo_dfe        TEXT NOT NULL,
+    file_name       TEXT NOT NULL,
+    file_hash       TEXT NOT NULL,
+    dest_path       TEXT NOT NULL,
+
+    PRIMARY KEY (delivery_id, tipo_dfe),
+
+    CHECK (
+        length(file_hash) = 64
+        AND file_hash NOT GLOB '*[^0-9a-f]*'
+    ),
+
+    FOREIGN KEY (delivery_id)
+        REFERENCES dfe_delivery (delivery_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dfe_delivery_recipient (
+    delivery_id     TEXT NOT NULL,
+    recipient_type  TEXT NOT NULL,
+    address         TEXT NOT NULL,
+
+    PRIMARY KEY (delivery_id, recipient_type, address),
+
+    CHECK (
+        recipient_type IN ('To', 'Cc', 'Bcc')
+    ),
+
+    FOREIGN KEY (delivery_id)
+        REFERENCES dfe_delivery (delivery_id)
+        ON DELETE CASCADE
+);
+'@
             # -------------------------------------------------------------------------
             # Schema object inventory for v4.
             #
@@ -522,7 +601,7 @@ CREATE TABLE IF NOT EXISTS dfe_nfe_total_rettrib (
             # v4 database (recoverable) from a v1/v2 database left with user_version = 0
             # after an interrupted migration (structurally incompatible).
             # -------------------------------------------------------------------------
-            $v4DocumentColumns = @(
+            $currentDocumentColumns = @(
                 'chave_acesso'
                 'modelo'
                 'file_path'
@@ -542,7 +621,10 @@ CREATE TABLE IF NOT EXISTS dfe_nfe_total_rettrib (
             # Helper: query a scalar from sqlite_master inside the current transaction.
             # -------------------------------------------------------------------------
             $getObjectCount = {
-                param ([string]$Type, [string]$Name)
+                param (
+                    [string]$Type,
+                    [string]$Name
+                )
 
                 $countCmd = $connection.CreateCommand()
                 $countCmd.Transaction = $transaction
@@ -606,27 +688,22 @@ WHERE type = @type
                 #
                 #   (a) Empty database     - no tables or indexes exist.
                 #   (b) Partial creation   - some objects were created but the
-                #       transaction was interrupted before PRAGMA user_version = 4
+                #       transaction was interrupted before PRAGMA user_version = 5
                 #       and COMMIT could execute.
                 #
                 # Strategy: inspect sqlite_master to determine the physical state,
                 # then act deterministically without assumptions.
                 #
-                #   Empty → execute the full v4 schema (CREATE TABLE IF NOT EXISTS
-                #           is a safe no-op for any object that already exists).
+                #   Empty -> execute the full current schema.
                 #
-                #   Partial with compatible dfe_document columns → execute the same
-                #           full v4 DDL; CREATE TABLE/INDEX IF NOT EXISTS safely
-                #           skips already-present objects and creates any that are
-                #           missing. No object is dropped or altered.
+                #   Partial with compatible dfe_document columns -> execute the full
+                #           current DDL; CREATE TABLE/INDEX IF NOT EXISTS safely skips
+                #           already-present objects and creates missing ones.
                 #
-                #   Partial with incompatible dfe_document (e.g. a v1/v2 table left
-                #           with user_version = 0 after a crash before migration) →
-                #           fail explicitly. This database cannot be recovered by the
-                #           v0 path; it must go through the versioned migration path
-                #           (versions 1 or 2), which requires a known user_version.
-                #           Silently altering an incompatible table would risk data
-                #           loss or schema corruption.
+                #   Partial with incompatible dfe_document (for example, a v1/v2 table
+                #           left with user_version = 0 after a crash before migration)
+                #           -> fail explicitly. This database must go through the
+                #           versioned migration path using a known user_version.
                 # =====================================================================
                 0 {
                     $documentExists = (& $getObjectCount 'table' 'dfe_document') -eq 1
@@ -635,7 +712,7 @@ WHERE type = @type
                         $existingColumns = @(& $getColumnNames 'dfe_document')
 
                         $missingColumns = @(
-                            $v4DocumentColumns |
+                            $currentDocumentColumns |
                                 Where-Object { $_ -notin $existingColumns }
                         )
 
@@ -654,14 +731,10 @@ WHERE type = @type
                         }
                     }
 
-                    # Whether the database is empty or partially created with a
-                    # compatible dfe_document, executing the full v4 DDL is safe and
-                    # idempotent: CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT
-                    # EXISTS skip objects that already exist and create those that are
-                    # missing. The result is always a complete, consistent v4 schema.
                     @(
                         $createCoreSchemaSql
                         $createFiscalSchemaV4Sql
+                        $createDeliverySchemaV5Sql
                     )
                 }
 
@@ -675,38 +748,54 @@ WHERE type = @type
                         $migrateV1ToV2Sql
                         $migrateV2ToV3Sql
                         $createFiscalSchemaV4Sql
+                        $createDeliverySchemaV5Sql
                     )
                 }
 
                 # =====================================================================
                 # Version 2
                 #
-                # Add processing state columns, then normalized fiscal schema.
+                # Add processing state columns, normalized fiscal schema, and delivery
+                # lifecycle schema.
                 # =====================================================================
                 2 {
                     @(
                         $migrateV2ToV3Sql
                         $createFiscalSchemaV4Sql
+                        $createDeliverySchemaV5Sql
                     )
                 }
 
                 # =====================================================================
                 # Version 3
                 #
-                # Add normalized NF-e/NFC-e fiscal persistence schema.
+                # Add normalized NF-e/NFC-e fiscal persistence schema and delivery
+                # lifecycle schema.
                 # =====================================================================
                 3 {
                     @(
                         $createFiscalSchemaV4Sql
+                        $createDeliverySchemaV5Sql
                     )
                 }
 
                 # =====================================================================
                 # Version 4
                 #
-                # Current schema. No migration required.
+                # Add persistent delivery lifecycle schema.
                 # =====================================================================
                 4 {
+                    @(
+                        $createDeliverySchemaV5Sql
+                    )
+                }
+
+                # =====================================================================
+                # Version 5
+                #
+                # Current schema. No migration required.
+                # =====================================================================
+                5 {
                     @()
                 }
 
@@ -726,8 +815,8 @@ WHERE type = @type
                 $null = $command.ExecuteNonQuery()
             }
 
-            if ($currentVersion -ne 4) {
-                $command.CommandText = 'PRAGMA user_version = 4;'
+            if ($currentVersion -ne 5) {
+                $command.CommandText = 'PRAGMA user_version = 5;'
                 $null = $command.ExecuteNonQuery()
             }
 
