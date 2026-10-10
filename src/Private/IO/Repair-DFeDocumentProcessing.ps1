@@ -59,7 +59,7 @@ PS C:\> Write-Host "Recovered: $($result.Recovered)"
 .NOTES
 Private dependencies:
   Get-DFeDocumentEntry
-  Set-DFeDocumentProcessingState
+  Repair-DFeDocumentProcessingState
 #>
 function Repair-DFeDocumentProcessing {
     [CmdletBinding()]
@@ -128,7 +128,7 @@ function Repair-DFeDocumentProcessing {
                 'processing_started_at is missing or invalid.'
             )
         } else {
-            $elapsed      = $referenceUtc - $startedAt.ToUniversalTime()
+            $elapsed = $referenceUtc - $startedAt.ToUniversalTime()
             $errorMessage = (
                 'Processing recovery marked the document as Failed after an ' +
                 "abandoned Processing state lasting $($elapsed.ToString())."
@@ -136,24 +136,19 @@ function Repair-DFeDocumentProcessing {
         }
 
         $stateParams = @{
-            Cnpj         = $Cnpj
-            ChaveAcesso  = [string]$entry.chave_acesso
-            Status       = 'Failed'
-            ErrorMessage = $errorMessage
+            Cnpj                        = $Cnpj
+            ChaveAcesso                 = [string]$entry.chave_acesso
+            ExpectedProcessingStartedAt = $entry.processing_started_at
+            ErrorMessage                = $errorMessage
         }
 
         try {
-            Set-DFeDocumentProcessingState @stateParams
+            Repair-DFeDocumentProcessingState @stateParams
             $recovered++
         } catch {
             $errorId = $_.FullyQualifiedErrorId
 
-            $stateChanged = (
-                $errorId -like 'InvalidProcessingStateTransition*' -or
-                $errorId -like 'ConcurrentProcessingStateChange*'
-            )
-
-            if ($stateChanged) {
+            if ($errorId -like 'ConcurrentProcessingStateChange*') {
                 $concurrentlyChanged++
                 continue
             }
