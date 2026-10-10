@@ -86,10 +86,12 @@ function Repair-DFeDocumentProcessing {
         [System.DateTimeOffset]$ReferenceTime = [System.DateTimeOffset]::UtcNow
     )
 
-    $processingEntries = @(
-        Get-DFeDocumentEntry -Cnpj $Cnpj -ProcessingStatus 'Processing'
-    )
+    $processingParams = @{
+        Cnpj             = $Cnpj
+        ProcessingStatus = 'Processing'
+    }
 
+    $processingFound     = 0
     $active              = 0
     $recovered           = 0
     $inconsistent        = 0
@@ -98,7 +100,9 @@ function Repair-DFeDocumentProcessing {
     $referenceUtc = $ReferenceTime.ToUniversalTime()
     $threshold    = $referenceUtc.Subtract($AbandonAfter)
 
-    foreach ($entry in $processingEntries) {
+    foreach ($entry in @(Get-DFeDocumentEntry @processingParams)) {
+        $processingFound++
+
         $startedAt = [System.DateTimeOffset]::MinValue
         $validStartedAt = $false
 
@@ -166,7 +170,7 @@ function Repair-DFeDocumentProcessing {
 
     [pscustomobject]@{
         PSTypeName          = 'PipeDFe.DocumentProcessingRecoveryResult'
-        ProcessingFound     = $processingEntries.Count
+        ProcessingFound     = $processingFound
         Active              = $active
         Recovered           = $recovered
         Inconsistent        = $inconsistent
