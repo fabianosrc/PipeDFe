@@ -16,8 +16,8 @@ Orchestrates the complete DFe processing pipeline for one company:
   8. Resolves ZIP archive metadata per document type via Resolve-DFeArchiveInfo.
   9. Creates ZIP archives via New-DFeArchive.
  10. Resolves SMTP configuration via Resolve-DFeSmtp.
- 11. Sends the delivery notification via Send-DFeNotification when recipients
-     are configured and SMTP is available.
+ 11. Orchestrates the persistent delivery lifecycle via Invoke-DFeDelivery
+     when recipients are configured and SMTP is available.
 
 Only NF-e (55) and NFC-e (65) currently participate in the normalized fiscal
 processing workflow. Other indexed document models continue through the
@@ -78,7 +78,7 @@ Private dependencies:
   Resolve-DFeArchiveInfo
   New-DFeArchive
   Resolve-DFeSmtp
-  Send-DFeNotification
+  Invoke-DFeDelivery
 #>
 function Invoke-PipeDFeCompany {
     [CmdletBinding()]
@@ -343,14 +343,14 @@ function Invoke-PipeDFeCompany {
 
         if ($null -ne $smtp -and $para.Count -gt 0) {
             $notificationParams = @{
-                Company            = $Company
-                DateRange          = $DateRange
-                Smtp               = $smtp
-                Gaps               = $gapEntries
-                ZipFileDestination = @($archives | Select-Object -ExpandProperty DestPath)
+                Company   = $Company
+                DateRange = $DateRange
+                Smtp      = $smtp
+                Gaps      = $gapEntries
+                Archives  = $archives
             }
 
-            $notificationResult = Send-DFeNotification @notificationParams
+            $notificationResult = Invoke-DFeDelivery @notificationParams
 
             if ($notificationResult.Success) {
                 $emailEnviado = $true
