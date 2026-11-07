@@ -327,7 +327,7 @@ WHERE
     }
     #endregion
 
-    $connection    -= $null
+    $connection    = $null
     $transaction   = $null
     $command       = $null
     $lookupCommand = $null
