@@ -5,6 +5,10 @@ Opens a SQLite connection to the specified database file.
 .DESCRIPTION
 Creates and opens a live System.Data.SQLite.SQLiteConnection for the
 specified database path.
+
+Enables SQLite foreign-key enforcement on every opened connection.
+This setting is connection-scoped and must be applied before transactions.
+
 The caller owns the returned connection and is responsible for disposing
 it when it is no longer needed.
 
@@ -32,8 +36,9 @@ function Open-SqliteConnection {
         [string]$Path
     )
 
-    $connection   = $null
-    $databasePath = $null
+    $connection    = $null
+    $pragmaCommand = $null
+    $databasePath  = $null
 
     try {
         # Normalize the path without requiring the database file to exist.
@@ -45,14 +50,26 @@ function Open-SqliteConnection {
         $builder.Version     = 3
         $builder.BusyTimeout = 5000
 
-        $connectionString    = $builder.ConnectionString
+        $connectionString = $builder.ConnectionString
 
         $connection = [System.Data.SQLite.SQLiteConnection]::new($connectionString)
 
         $connection.Open()
 
+        # Foreign-key enforcement is disabled by default in SQLite and is
+        # scoped to each connection. Enable it before returning the connection.
+        $pragmaCommand = $connection.CreateCommand()
+        $pragmaCommand.CommandText = 'PRAGMA foreign_keys = ON;'
+        $pragmaCommand.ExecuteNonQuery() | Out-Null
+        $pragmaCommand.Dispose()
+        $pragmaCommand = $null
+
         $connection
     } catch {
+        if ($null -ne $pragmaCommand) {
+            $pragmaCommand.Dispose()
+        }
+
         if ($null -ne $connection) {
             $connection.Dispose()
             $connection = $null
