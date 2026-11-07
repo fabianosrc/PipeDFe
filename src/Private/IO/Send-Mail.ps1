@@ -38,9 +38,14 @@ Optional file paths to attach.
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
-Success    [bool]     Whether delivery succeeded.
-EmailsSent [string[]] Addresses of To recipients when successful.
-Error      [string]   Error message when Success is false. $null otherwise.
+Success       [bool]     Whether delivery succeeded.
+EmailsSent    [string[]] Addresses of To recipients when successful.
+Error         [string]   Error message when Success is false. $null otherwise.
+SendAttempted [bool]     True when SmtpClient.Send was called, regardless of
+                         outcome. False when the failure occurred during
+                         preparation (decryption, attachment, recipient
+                         validation). Used by callers to distinguish retryable
+                         failures from indeterminate ones.
 
 .NOTES
 Private dependencies:
@@ -85,6 +90,7 @@ function Send-Mail {
 
     $message        = $null
     $smtpClient     = $null
+    $sendAttempted  = $false
     $attachmentList = [System.Collections.Generic.List[System.Net.Mail.Attachment]]::new()
 
     try {
@@ -177,17 +183,15 @@ function Send-Mail {
             }
 
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                Write-Warning -Message ("Attachment not found, skipping: '$path'")
-                continue
+                throw [System.IO.FileNotFoundException]::new(
+                    "Attachment not found: '$path'.",
+                    $path
+                )
             }
 
-            try {
-                $attachment = [System.Net.Mail.Attachment]::new($path)
-                $attachmentList.Add($attachment)
-                $message.Attachments.Add($attachment)
-            } catch {
-                Write-Warning -Message ("Failed to attach file, skipping: '$path'")
-            }
+            $attachment = [System.Net.Mail.Attachment]::new($path)
+            $attachmentList.Add($attachment)
+            $message.Attachments.Add($attachment)
         }
 
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -199,18 +203,21 @@ function Send-Mail {
         $smtpClient.Credentials           = $credential
         $smtpClient.Timeout               = [int]$SmtpConfig.Timeout * 1000
 
+        $sendAttempted = $true
         $smtpClient.Send($message)
 
         [PSCustomObject]@{
-            Success    = $true
-            EmailsSent = @($message.To | ForEach-Object { $_.Address })
-            Error      = $null
+            Success       = $true
+            EmailsSent    = @($message.To | ForEach-Object { $_.Address })
+            Error         = $null
+            SendAttempted = $sendAttempted
         }
     } catch {
         [PSCustomObject]@{
-            Success    = $false
-            EmailsSent = @()
-            Error      = $_.Exception.Message
+            Success       = $false
+            EmailsSent    = @()
+            Error         = $_.Exception.Message
+            SendAttempted = $sendAttempted
         }
     } finally {
         foreach ($attachment in $attachmentList) {
