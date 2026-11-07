@@ -282,7 +282,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 return $Script:Smtp
             }
 
-            Mock -CommandName Send-DFeNotification -MockWith {
+            Mock -CommandName Invoke-DFeDelivery -MockWith {
                 return $Script:NotificationSuccess
             }
         }
@@ -443,9 +443,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Should -Invoke @shouldParams
             }
 
-            It 'Calls Send-DFeNotification once' {
+            It 'Calls Invoke-DFeDelivery once' {
                 $shouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -583,7 +583,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Should -Invoke @archiveShouldParams
 
                 $notificationShouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -713,7 +713,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Should -Invoke @archiveShouldParams
 
                 $notificationShouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -750,7 +750,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Should -Invoke @archiveShouldParams
 
                 $notificationShouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -882,9 +882,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Should -Invoke @shouldParams
             }
 
-            It 'Does not call Send-DFeNotification' {
+            It 'Does not call Invoke-DFeDelivery' {
                 $shouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -926,9 +926,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                     )
             }
 
-            It 'Does not call Send-DFeNotification' {
+            It 'Does not call Invoke-DFeDelivery' {
                 $shouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -966,9 +966,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                     )
             }
 
-            It 'Does not call Send-DFeNotification' {
+            It 'Does not call Invoke-DFeDelivery' {
                 $shouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
@@ -989,7 +989,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             BeforeEach {
 
-                Mock -CommandName Send-DFeNotification -MockWith {
+                Mock -CommandName Invoke-DFeDelivery -MockWith {
                     return $Script:NotificationFailure
                 }
 
@@ -1143,9 +1143,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $Script:Result.Erro | Should -Be 'ZIP creation failed.'
             }
 
-            It 'Does not call Send-DFeNotification' {
+            It 'Does not call Invoke-DFeDelivery' {
                 $shouldParams = @{
-                    CommandName = 'Send-DFeNotification'
+                    CommandName = 'Invoke-DFeDelivery'
                     ModuleName  = 'PipeDFe'
                     Scope       = 'It'
                     Exactly     = $true
