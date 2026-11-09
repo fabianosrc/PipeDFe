@@ -82,24 +82,37 @@ function Invoke-DFeDelivery {
         [pscustomobject[]]$Archives
     )
 
-    $cnpj = [string]$Company.Cnpj
+    $cnpj = $null
 
     #region Recipient resolution
-    $para = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Para)
+    try {
+        $cnpj = [string]$Company.Cnpj
 
-    if ($para.Count -eq 0) {
+        $mailTo = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Para)
+
+        if ($mailTo.Count -eq 0) {
+            return [PSCustomObject]@{
+                Success        = $false
+                EmailsSent     = @()
+                ErrorMessage   = 'No primary recipient (Para) configured.'
+                FailedAt       = 'Validation'
+                DeliveryId     = $null
+                DeliveryStatus = $null
+            }
+        }
+
+        $mailCc  = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cc)
+        $mailBcc = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cco)
+    } catch {
         return [PSCustomObject]@{
             Success        = $false
             EmailsSent     = @()
-            ErrorMessage   = 'No primary recipient (Para) configured.'
+            ErrorMessage   = $_.Exception.Message
             FailedAt       = 'Validation'
             DeliveryId     = $null
             DeliveryStatus = $null
         }
     }
-
-    $cc  = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cc)
-    $bcc = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cco)
     #endregion
 
     #region Create or retrieve delivery
@@ -111,9 +124,9 @@ function Invoke-DFeDelivery {
             PeriodStart = [DateTimeOffset]$DateRange.Start
             PeriodEnd   = [DateTimeOffset]$DateRange.End
             Archives    = $Archives
-            To          = $para
-            Cc          = $cc
-            Bcc         = $bcc
+            To          = $mailTo
+            Cc          = $mailCc
+            Bcc         = $mailBcc
         }
 
         $delivery = New-DFeDelivery @deliveryParams
@@ -251,7 +264,18 @@ function Invoke-DFeDelivery {
         ZipFileDestination = @($Archives | Select-Object -ExpandProperty DestPath)
     }
 
-    $notificationResult = Send-DFeNotification @notificationParams
+    try {
+        $notificationResult = Send-DFeNotification @notificationParams
+    } catch {
+        $notificationResult = [PSCustomObject]@{
+            Success       = $false
+            EmailsSent    = @()
+            ErrorMessage  = $_.Exception.Message
+            FailedAt      = 'Send'
+            SendAttempted = $true
+        }
+    }
+
     #endregion
 
     #region Transition from Sending
