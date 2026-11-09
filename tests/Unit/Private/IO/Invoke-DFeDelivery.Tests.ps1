@@ -1136,5 +1136,65 @@ Describe 'Invoke-DFeDelivery' {
             }
         }
         #endregion
+
+        #region Dependency errors
+        Context 'Unexpected dependency errors' {
+
+            It 'Returns Validation failure when recipient normalization throws' {
+                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
+                    throw [System.InvalidOperationException]::new(
+                        'Recipient normalization failed.'
+                    )
+                }
+
+                $result = Invoke-DFeDelivery @Script:BaseParams
+
+                $result.Success      | Should -BeFalse
+                $result.FailedAt     | Should -Be 'Validation'
+                $result.ErrorMessage | Should -Match 'Recipient normalization failed'
+                $result.DeliveryId   | Should -BeNullOrEmpty
+
+                Should -Invoke -CommandName New-DFeDelivery      -Times 0 -Exactly
+                Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly
+            }
+
+            It 'Returns Indeterminate when notification unexpectedly throws' {
+                Mock -CommandName Send-DFeNotification -MockWith {
+                    throw [System.InvalidOperationException]::new(
+                        'Unexpected notification failure.'
+                    )
+                }
+
+                Mock -CommandName Set-DFeDeliveryState -MockWith {
+                    if ($Status -eq 'Sending') {
+                        return $Script:SendingState
+                    }
+
+                    [PSCustomObject]@{
+                        DeliveryId     = $Script:DeliveryId
+                        DeliveryStatus = $Status
+                    }
+                }
+
+                $result = Invoke-DFeDelivery @Script:BaseParams
+
+                $result.Success        | Should -BeFalse
+                $result.FailedAt       | Should -Be 'Send'
+                $result.DeliveryStatus | Should -Be 'Indeterminate'
+
+                $assertParams = @{
+                    CommandName     = 'Set-DFeDeliveryState'
+                    Times           = 1
+                    Exactly         = $true
+                    ParameterFilter = {
+                        $Status -eq 'Indeterminate' -and
+                        $ExpectedStatus -eq 'Sending'
+                    }
+                }
+
+                Should -Invoke @assertParams
+            }
+        }
+        #endregion
     }
 }
