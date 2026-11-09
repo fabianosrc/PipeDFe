@@ -85,9 +85,10 @@ Describe 'Send-DFeNotification' {
             $Script:ValidZips = @('C:\Temp\NFe.zip')
 
             $Script:SuccessMailResult = [PSCustomObject]@{
-                Success    = $true
-                EmailsSent = @('dest@example.com')
-                Error      = $null
+                Success       = $true
+                EmailsSent    = @('dest@example.com')
+                Error         = $null
+                SendAttempted = $true
             }
 
             $Script:BaseParams = @{
@@ -131,7 +132,7 @@ Describe 'Send-DFeNotification' {
 
             It 'Exposes exactly the documented properties' {
                 $result   = Send-DFeNotification @Script:BaseParams
-                $expected = @('Success', 'EmailsSent', 'ErrorMessage', 'FailedAt')
+                $expected = @('Success', 'EmailsSent', 'ErrorMessage', 'FailedAt', 'SendAttempted')
                 $actual   = @($result.PSObject.Properties.Name)
 
                 $actual | Should -Be $expected
@@ -153,9 +154,10 @@ Describe 'Send-DFeNotification' {
             It 'Does not throw when Send-Mail returns failure' {
                 Mock -CommandName Send-Mail -MockWith {
                     [PSCustomObject]@{
-                        Success    = $false
-                        EmailsSent = @()
-                        Error      = 'Connection refused'
+                        Success       = $false
+                        EmailsSent    = @()
+                        Error         = 'Connection refused'
+                        SendAttempted = $false
                     }
                 }
 
@@ -277,9 +279,10 @@ Describe 'Send-DFeNotification' {
 
                 Mock -CommandName Send-Mail -MockWith {
                     [PSCustomObject]@{
-                        Success    = $false
-                        EmailsSent = @()
-                        Error      = 'Connection refused'
+                        Success       = $false
+                        EmailsSent    = @()
+                        Error         = 'Connection refused'
+                        SendAttempted = $false
                     }
                 }
 
@@ -300,6 +303,10 @@ Describe 'Send-DFeNotification' {
 
             It 'Returns empty EmailsSent on send failure' {
                 $Script:SendResult.EmailsSent | Should -HaveCount 0
+            }
+
+            It 'Propagates SendAttempted as false when SMTP was not attempted' {
+                $Script:SendResult.SendAttempted | Should -BeFalse
             }
         }
         #endregion

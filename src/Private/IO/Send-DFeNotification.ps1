@@ -1,4 +1,5 @@
-﻿<#
+﻿
+<#
 .SYNOPSIS
 Renders and sends the DFe delivery notification email.
 
@@ -13,12 +14,14 @@ Subject format: 'Arquivo XML {CompanyLabel} {PeriodLabel}'
 
 The company label is derived from the first three words of NomeFantasia
 (or RazaoSocial as fallback), with '&' replaced by 'E' for readability.
-This preserves names like 'RIBEIRO & BONAFE' as 'RIBEIRO E BONAFE'.
 
 This function never throws. Any exception raised during validation,
 rendering, or sending is caught and surfaced as Success = $false with
-FailedAt identifying the pipeline stage. Retry logic is the caller's
-responsibility.
+FailedAt identifying the pipeline stage.
+
+SendAttempted is propagated from Send-Mail so callers can distinguish
+failures before SMTP transmission from failures with an uncertain outcome.
+When the property is missing, the result is treated conservatively as true.
 
 .PARAMETER Company
 Company object with Email (Para, Cc, Cco), NomeFantasia, RazaoSocial,
@@ -40,26 +43,11 @@ Full paths to the destination ZIP files used as email attachments.
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
-  Success      [bool]     - Whether the message was sent successfully.
-  EmailsSent   [string[]] - Addresses the message was delivered to.
-  ErrorMessage [string]   - Error description on failure; $null on success.
-  FailedAt     [string]   - Stage that failed: 'Validation', 'Render', or
-                            'Send'. $null on success.
-
-.EXAMPLE
-PS C:\> $params = @{
-    Company            = $company
-    DateRange          = $range
-    Smtp               = $smtp
-    Gaps               = $gaps
-    ZipFileDestination = @($archive.DestPath)
-}
-
-PS C:\> $result = Send-DFeNotification @params
-
-if (-not $result.Success) {
-    Write-Warning "[$($result.FailedAt)] $($result.ErrorMessage)"
-}
+  Success        [bool]
+  EmailsSent     [string[]]
+  ErrorMessage   [string]
+  FailedAt       [string]
+  SendAttempted  [bool]
 
 .NOTES
 Dependencies:
@@ -98,10 +86,11 @@ function Send-DFeNotification {
 
     if ($para.Count -eq 0) {
         return [PSCustomObject]@{
-            Success      = $false
-            EmailsSent   = @()
-            ErrorMessage = 'No primary recipient (Para) configured.'
-            FailedAt     = 'Validation'
+            Success       = $false
+            EmailsSent    = @()
+            ErrorMessage  = 'No primary recipient (Para) configured.'
+            FailedAt      = 'Validation'
+            SendAttempted = $false
         }
     }
 
@@ -115,8 +104,6 @@ function Send-DFeNotification {
         }
 
         # Replace '&' with 'E' then take the first three words.
-        # Preserves 'RIBEIRO & BONAFE' as 'RIBEIRO E BONAFE' without
-        # stripping meaningful tokens the way the ZIP label strategy does.
         $subjectLabel = @(
             $companyLabel.ToUpper() -replace '&', 'E' -split '\s+' |
                 Where-Object { $_ } |
@@ -141,10 +128,11 @@ function Send-DFeNotification {
 
     } catch {
         return [PSCustomObject]@{
-            Success      = $false
-            EmailsSent   = @()
-            ErrorMessage = $_.Exception.Message
-            FailedAt     = 'Render'
+            Success       = $false
+            EmailsSent    = @()
+            ErrorMessage  = $_.Exception.Message
+            FailedAt      = 'Render'
+            SendAttempted = $false
         }
     }
 
@@ -164,29 +152,44 @@ function Send-DFeNotification {
 
         $mailResult = Send-Mail @mailParams
 
-        # Send-Mail never throws - result must always be read from the object.
         if (-not $mailResult.Success) {
+            $sendAttemptedProp = if ($null -ne $mailResult) {
+                $mailResult.PSObject.Properties['SendAttempted']
+            } else {
+                $null
+            }
+
+            # Missing information must never make an uncertain send retryable.
+            $sendAttempted = if ($null -eq $sendAttemptedProp) {
+                $true
+            } else {
+                [bool]$sendAttemptedProp.Value
+            }
+
             return [PSCustomObject]@{
-                Success      = $false
-                EmailsSent   = @()
-                ErrorMessage = $mailResult.Error
-                FailedAt     = 'Send'
+                Success       = $false
+                EmailsSent    = @()
+                ErrorMessage  = $mailResult.Error
+                FailedAt      = 'Send'
+                SendAttempted = $sendAttempted
             }
         }
 
         [PSCustomObject]@{
-            Success      = $true
-            EmailsSent   = @($mailResult.EmailsSent)
-            ErrorMessage = $null
-            FailedAt     = $null
+            Success       = $true
+            EmailsSent    = @($mailResult.EmailsSent)
+            ErrorMessage  = $null
+            FailedAt      = $null
+            SendAttempted = $true
         }
 
     } catch {
         [PSCustomObject]@{
-            Success      = $false
-            EmailsSent   = @()
-            ErrorMessage = $_.Exception.Message
-            FailedAt     = 'Send'
+            Success       = $false
+            EmailsSent    = @()
+            ErrorMessage  = $_.Exception.Message
+            FailedAt      = 'Send'
+            SendAttempted = $true
         }
     }
 }
