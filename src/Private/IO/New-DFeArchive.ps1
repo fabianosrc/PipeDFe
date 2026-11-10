@@ -6,16 +6,17 @@ Creates one ZIP archive per DFe document type.
 Orchestrates archive creation for each pre-calculated archive info:
 
     1. Ensures the company output directory exists.
-    2. Loads events from the index for all documents in the batch.
-    3. Maps store snake_case entries to PascalCase IO objects.
-    4. Preserves indexed SHA-256 values for source-integrity validation.
-    5. Groups documents by the archive's DFe model.
-    6. Selects only events belonging to documents in that archive.
-    7. Creates the temporary ZIP via Compress-DFeArchive.
-    8. Verifies that the temporary ZIP was created.
-    9. Computes the temporary ZIP SHA-256.
-   10. Publishes the validated ZIP atomically to its destination.
-   11. Removes the temporary ZIP on a best-effort basis.
+    2. Derives the internal period segment from DateRange.
+    3. Loads events from the index for all documents in the batch.
+    4. Maps store snake_case entries to PascalCase IO objects.
+    5. Preserves indexed SHA-256 values for source-integrity validation.
+    6. Groups documents by the archive's DFe model.
+    7. Selects only events belonging to documents in that archive.
+    8. Creates the temporary ZIP via Compress-DFeArchive.
+    9. Verifies that the temporary ZIP was created.
+   10. Computes the temporary ZIP SHA-256.
+   11. Publishes the validated ZIP atomically to its destination.
+   12. Removes the temporary ZIP on a best-effort basis.
 
 Source-integrity failures raised by Compress-DFeArchive are terminating and
 are allowed to propagate unchanged.
@@ -43,6 +44,10 @@ Each object must expose:
   TempPath
   DestPath
 
+.PARAMETER DateRange
+Object exposing Start and End DateTimeOffset values used to derive the
+internal period segment passed to Compress-DFeArchive.
+
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
@@ -63,6 +68,7 @@ PS C:\> $archiveParams = @{
     Company      = $company
     Entries      = $entries
     ArchiveInfos = $archiveInfos
+    DateRange    = $dateRange
 }
 
 PS C:\> $archives = New-DFeArchive @archiveParams
@@ -70,6 +76,7 @@ PS C:\> $archives = New-DFeArchive @archiveParams
 .NOTES
 Private dependencies:
   Compress-DFeArchive
+  Get-ArchivePeriodSegment
   Get-DFeEventoEntry
   Get-FileSha256
   Publish-DFeArchive
@@ -97,12 +104,18 @@ function New-DFeArchive {
 
         [Parameter(Mandatory)]
         [ValidateNotNull()]
-        [pscustomobject[]]$ArchiveInfos
+        [pscustomobject[]]$ArchiveInfos,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [pscustomobject]$DateRange
     )
 
     if (-not (Test-Path -LiteralPath $Company.OutputPath -PathType Container)) {
         [System.IO.Directory]::CreateDirectory($Company.OutputPath) | Out-Null
     }
+
+    $periodSegment = Get-ArchivePeriodSegment -DateRange $DateRange
 
     # Load every event once.
     $allEventos = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -182,11 +195,12 @@ function New-DFeArchive {
             )
 
             $compressParams = @{
-                XmlPath     = $Company.XmlPath
-                Entries     = $groupEntries
-                Eventos     = $groupEventos
-                ZipPath     = $archiveInfo.TempPath
-                ErrorAction = 'Stop'
+                XmlPath       = $Company.XmlPath
+                Entries       = $groupEntries
+                Eventos       = $groupEventos
+                ZipPath       = $archiveInfo.TempPath
+                PeriodSegment = $periodSegment
+                ErrorAction   = 'Stop'
             }
 
             Compress-DFeArchive @compressParams
@@ -231,13 +245,13 @@ function New-DFeArchive {
         } finally {
             # TempPath is never retained after an archive attempt.
             if (Test-Path -LiteralPath $archiveInfo.TempPath -PathType Leaf) {
-                $removeParams = @{
+                $removeItemParams = @{
                     LiteralPath = $archiveInfo.TempPath
                     Force       = $true
                     ErrorAction = 'SilentlyContinue'
                 }
 
-                Remove-Item @removeParams
+                Remove-Item @removeItemParams
             }
         }
     }
