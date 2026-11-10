@@ -16,7 +16,8 @@ Coverage includes:
   - Document grouping by ModeloDFe.
   - Event grouping by parent document.
   - One compression per ArchiveInfo.
-  - Correct XmlPath, Entries, Eventos and ZipPath.
+  - Correct XmlPath, Entries, Eventos, ZipPath and PeriodSegment.
+  - PeriodSegment derived from DateRange and passed to Compress-DFeArchive.
   - Unsupported archive-model errors.
   - Missing ZIP detection and error category.
   - Compressor error propagation.
@@ -36,16 +37,16 @@ Coverage includes:
 
 param ()
 
-# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-# because that's when Context/It are executed to register the test tree. If the
-# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-# BeforeEach ever runs.
 BeforeDiscovery {
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+    # because that's when Context/It are executed to register the test tree. If the
+    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+    # BeforeEach ever runs.
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
-    $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
+    $modulePath = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
 
-    Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
+    Import-Module -Name $modulePath -Force -Global -ErrorAction Stop
 }
 
 Describe 'New-DFeArchive' -Tag 'Unit' {
@@ -54,7 +55,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
         BeforeAll {
 
-            $Script:TestID = [guid]::NewGuid().ToString('N')
+            $testID = [guid]::NewGuid().ToString('N')
 
             $Script:Command = Get-Command -Name New-DFeArchive -ErrorAction Stop
 
@@ -69,6 +70,15 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
             $Script:ValidCompany = [PSCustomObject]@{
                 XmlPath    = $Script:XmlPath
                 OutputPath = $Script:OutputPath
+            }
+
+            $Script:DateRange = [PSCustomObject]@{
+                Start = [System.DateTimeOffset]::new(
+                    2026, 10, 1, 0, 0, 0, [System.TimeSpan]::Zero
+                )
+                End   = [System.DateTimeOffset]::new(
+                    2026, 10, 31, 23, 59, 59, [System.TimeSpan]::Zero
+                )
             }
 
             $Script:NFeKey = '1' * 44
@@ -120,14 +130,9 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 indexed_at = '2026-08-01T00:00:00+00:00'
             }
 
-            $Script:Cnpj = '12345678000199'
-
+            $Script:Cnpj     = '12345678000199'
             $Script:FakeHash = 'a' * 64
-        }
-
-        AfterAll {
-
-            Remove-Module -Name PipeDFe -Force -ErrorAction SilentlyContinue
+            $Script:TestId   = $testID
         }
 
         BeforeEach {
@@ -154,12 +159,17 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 return @()
             }
 
+            Mock -CommandName Get-ArchivePeriodSegment -MockWith {
+                '202610'
+            }
+
             Mock -CommandName Compress-DFeArchive -MockWith {
                 $Script:CapturedCompressionCalls += [PSCustomObject]@{
-                    XmlPath = $XmlPath
-                    Entries = @($Entries)
-                    Eventos = @($Eventos)
-                    ZipPath = $ZipPath
+                    XmlPath       = $XmlPath
+                    Entries       = @($Entries)
+                    Eventos       = @($Eventos)
+                    ZipPath       = $ZipPath
+                    PeriodSegment = $PeriodSegment
                 }
 
                 [System.IO.File]::WriteAllText($ZipPath, 'fake-zip')
@@ -169,9 +179,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 $Script:FakeHash
             }
 
-            Mock -CommandName Publish-DFeArchive -MockWith {
-
-            }
+            Mock -CommandName Publish-DFeArchive -MockWith {}
         }
 
         #region Parameter contract
@@ -216,6 +224,16 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
                 $mandatory | Should -Not -BeNullOrEmpty
             }
+
+            It 'Declares DateRange as mandatory' {
+                $mandatory = $Script:Command.Parameters['DateRange'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and
+                        $_.Mandatory
+                    }
+
+                $mandatory | Should -Not -BeNullOrEmpty
+            }
         }
         #endregion
 
@@ -224,7 +242,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
             It 'Creates OutputPath when it does not exist' {
                 $newOutput = Join-Path -Path $TestDrive -ChildPath (
-                    'output-{0}' -f $Script:TestID
+                    'output-{0}' -f $Script:TestId
                 )
 
                 $company = [PSCustomObject]@{
@@ -233,7 +251,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 }
 
                 $tempZip = Join-Path -Path $TestDrive -ChildPath (
-                    'temp-{0}.zip' -f $Script:TestID
+                    'temp-{0}.zip' -f $Script:TestId
                 )
 
                 $archiveInfo = [PSCustomObject]@{
@@ -248,6 +266,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $company
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($archiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -270,6 +289,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         $Script:NFeArchiveInfo
                         $Script:CTeArchiveInfo
                     )
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -291,6 +311,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -301,9 +322,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = {
-                        $ChavePai -eq $Script:NFeKey
-                    }
+                    ParameterFilter = { $ChavePai -eq $Script:NFeKey }
                 }
 
                 Should -Invoke @invokeParams
@@ -315,6 +334,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -325,9 +345,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = {
-                        $Cnpj -eq $Script:Cnpj
-                    }
+                    ParameterFilter = { $Cnpj -eq $Script:Cnpj }
                 }
 
                 Should -Invoke @invokeParams
@@ -344,6 +362,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -362,6 +381,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -379,6 +399,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -396,6 +417,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
                     ArchiveInfos = @($Script:CTeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -413,6 +435,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -429,6 +452,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
                     ArchiveInfos = @($Script:CTeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -441,7 +465,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
         }
         #endregion
 
-        #region Compression
+        #region Compression orchestration
         Context 'Compression orchestration' {
 
             It 'Calls Compress-DFeArchive once per ArchiveInfo' {
@@ -453,6 +477,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         $Script:NFeArchiveInfo
                         $Script:CTeArchiveInfo
                     )
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -474,6 +499,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -484,9 +510,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = {
-                        $XmlPath -eq $Script:ValidCompany.XmlPath
-                    }
+                    ParameterFilter = { $XmlPath -eq $Script:ValidCompany.XmlPath }
                 }
 
                 Should -Invoke @invokeParams
@@ -498,6 +522,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -508,9 +533,30 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = {
-                        $ZipPath -eq $Script:NFeArchiveInfo.TempPath
-                    }
+                    ParameterFilter = { $ZipPath -eq $Script:NFeArchiveInfo.TempPath }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Passes PeriodSegment derived from DateRange' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries[0])
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
+                }
+
+                New-DFeArchive @archiveParams | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Compress-DFeArchive'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { $PeriodSegment -eq '202610' }
                 }
 
                 Should -Invoke @invokeParams
@@ -519,7 +565,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
             It 'Throws ZipNotCreated when ZIP is absent after compression' {
                 $pathParams = @{
                     Path      = $TestDrive
-                    ChildPath = 'missing-{0}.zip' -f $Script:TestID
+                    ChildPath = 'missing-{0}.zip' -f $Script:TestId
                 }
 
                 $archiveInfo = [PSCustomObject]@{
@@ -529,9 +575,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
                 }
 
-                Mock -CommandName Compress-DFeArchive -MockWith {
-
-                }
+                Mock -CommandName Compress-DFeArchive -MockWith {}
 
                 $thrown = $null
 
@@ -541,6 +585,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         Company      = $Script:ValidCompany
                         Entries      = @($Script:ValidEntries[0])
                         ArchiveInfos = @($archiveInfo)
+                        DateRange    = $Script:DateRange
                         ErrorAction  = 'Stop'
                     }
 
@@ -556,7 +601,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
             It 'Uses ResourceUnavailable category for ZipNotCreated' {
                 $pathParams = @{
                     Path      = $TestDrive
-                    ChildPath = 'missing-{0}.zip' -f $Script:TestID
+                    ChildPath = 'missing-{0}.zip' -f $Script:TestId
                 }
 
                 $archiveInfo = [PSCustomObject]@{
@@ -566,9 +611,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
                 }
 
-                Mock -CommandName Compress-DFeArchive -MockWith {
-
-                }
+                Mock -CommandName Compress-DFeArchive -MockWith {}
 
                 $thrown = $null
 
@@ -578,6 +621,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         Company      = $Script:ValidCompany
                         Entries      = @($Script:ValidEntries[0])
                         ArchiveInfos = @($archiveInfo)
+                        DateRange    = $Script:DateRange
                         ErrorAction  = 'Stop'
                     }
 
@@ -614,6 +658,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         Company      = $Script:ValidCompany
                         Entries      = $Script:ValidEntries
                         ArchiveInfos = @($archiveInfo)
+                        DateRange    = $Script:DateRange
                         ErrorAction  = 'Stop'
                     }
 
@@ -627,7 +672,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
             }
 
             It 'Uses InvalidData category for ArchiveModelUnsupported' {
-                $tempZip = Join-Path -Path $TestDrive -ChildPath 'invalid-model.zip'
+                $tempZip = Join-Path -Path $TestDrive -ChildPath 'invalid-model-category.zip'
 
                 $archiveInfo = [PSCustomObject]@{
                     TipoDFe  = 'NotARealDFe'
@@ -644,6 +689,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         Company      = $Script:ValidCompany
                         Entries      = $Script:ValidEntries
                         ArchiveInfos = @($archiveInfo)
+                        DateRange    = $Script:DateRange
                         ErrorAction  = 'Stop'
                     }
 
@@ -670,6 +716,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = $Script:ValidEntries
                     ArchiveInfos = @($archiveInfo)
+                    DateRange    = $Script:DateRange
                     ErrorAction  = 'Stop'
                 }
 
@@ -697,6 +744,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -707,9 +755,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = {
-                        $Path -eq $Script:NFeArchiveInfo.TempPath
-                    }
+                    ParameterFilter = { $Path -eq $Script:NFeArchiveInfo.TempPath }
                 }
 
                 Should -Invoke @invokeParams
@@ -721,6 +767,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -761,6 +808,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         Company      = $Script:ValidCompany
                         Entries      = @($Script:ValidEntries[0])
                         ArchiveInfos = @($Script:NFeArchiveInfo)
+                        DateRange    = $Script:DateRange
                         ErrorAction  = 'Stop'
                     }
 
@@ -788,6 +836,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                     ErrorAction  = 'Stop'
                 }
 
@@ -805,6 +854,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                     ErrorAction  = 'Stop'
                 }
 
@@ -841,6 +891,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 New-DFeArchive @archiveParams | Out-Null
@@ -863,6 +914,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                     ErrorAction  = 'Stop'
                 }
 
@@ -886,6 +938,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                     ErrorAction  = 'Stop'
                 }
 
@@ -913,6 +966,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                         $Script:NFeArchiveInfo
                         $Script:CTeArchiveInfo
                     )
+                    DateRange    = $Script:DateRange
                 }
 
                 $results = @(New-DFeArchive @archiveParams)
@@ -926,6 +980,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 $result = @(New-DFeArchive @archiveParams)[0]
@@ -939,6 +994,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 $result = @(New-DFeArchive @archiveParams)[0]
@@ -962,6 +1018,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Company      = $Script:ValidCompany
                     Entries      = @($Script:ValidEntries[0])
                     ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
                 }
 
                 $result = @(New-DFeArchive @archiveParams)[0]
