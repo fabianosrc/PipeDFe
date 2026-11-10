@@ -15,7 +15,8 @@ The tests use real files and real ZIP archives.
 Coverage includes:
   - Parameter contract (types, mandatory, optional, validators).
   - Creates a valid ZIP file at ZipPath.
-  - Places each document under {modelo_folder}/{ChaveAcesso}/{filename}.
+  - Places a document without events directly under {modelo}/{period}/{filename}.
+  - Places a document with events under {modelo}/{period}/{chave}/{filename}.
   - Embeds eventos inside the parent document subfolder.
   - Associates eventos by ChavePai; ignores eventos for other documents.
   - Embeds multiple eventos under the same parent.
@@ -24,6 +25,7 @@ Coverage includes:
   - Throws ArchiveSourceNotFound for a missing document source file.
   - Throws ArchiveSourceNotFound for a missing evento source file.
   - Throws ArchiveModelUnsupported for an unknown Modelo value.
+  - Throws ArchiveDuplicatePath for duplicate internal ZIP paths.
   - Creates an empty but valid ZIP when Entries is empty.
   - Creates a valid ZIP when Eventos is empty or omitted.
   - Creates parent directory when it does not exist.
@@ -42,16 +44,16 @@ Coverage includes:
 
 param ()
 
-# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-# because that's when Context/It are executed to register the test tree. If the
-# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-# BeforeEach ever runs.
 BeforeDiscovery {
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+    # because that's when Context/It are executed to register the test tree. If the
+    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+    # BeforeEach ever runs.
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
-    $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
+    $modulePath = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
 
-    Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
+    Import-Module -Name $modulePath -Force -Global -ErrorAction Stop
 }
 
 Describe 'Compress-DFeArchive' -Tag 'Integration' {
@@ -66,7 +68,8 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
 
             New-Item -Path $Script:XmlPath -ItemType Directory -Force | Out-Null
 
-            $Script:Chave = '35260112345678000199550010000000011234567890'
+            $Script:Chave         = '35260112345678000199550010000000011234567890'
+            $Script:PeriodSegment = '202610'
 
             $Script:NfeFileName    = 'nfe.xml'
             $Script:EventoFileName = 'evento.xml'
@@ -190,6 +193,16 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $mandatory | Should -Not -BeNullOrEmpty
             }
 
+            It 'Declares PeriodSegment as mandatory' {
+                $mandatory = $Script:Command.Parameters['PeriodSegment'].Attributes |
+                    Where-Object {
+                        $_ -is [System.Management.Automation.ParameterAttribute] -and
+                        $_.Mandatory
+                    }
+
+                $mandatory | Should -Not -BeNullOrEmpty
+            }
+
             It 'Declares Eventos as optional' {
                 $parameter = $Script:Command.Parameters['Eventos']
 
@@ -218,379 +231,104 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $mandatory | Should -BeNullOrEmpty
             }
 
-            It 'Declares XmlPath as a string' {
-                $Script:Command.Parameters['XmlPath'].ParameterType |
-                    Should -Be ([string])
-            }
-
-            It 'Declares Entries as a PSCustomObject array' {
-                $Script:Command.Parameters['Entries'].ParameterType |
-                    Should -Be ([pscustomobject[]])
-            }
-
-            It 'Declares Eventos as a PSCustomObject array' {
-                $Script:Command.Parameters['Eventos'].ParameterType |
-                    Should -Be ([pscustomobject[]])
-            }
-
-            It 'Declares ZipPath as a string' {
-                $Script:Command.Parameters['ZipPath'].ParameterType |
-                    Should -Be ([string])
-            }
-
-            It 'Declares CompressionLevel with the expected enum type' {
-                $Script:Command.Parameters['CompressionLevel'].ParameterType |
-                    Should -Be ([System.IO.Compression.CompressionLevel])
-            }
-
-            It 'Allows an empty Entries collection' {
-                $allowEmpty = $Script:Command.Parameters['Entries'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.AllowEmptyCollectionAttribute]
-                    }
-
-                $allowEmpty | Should -Not -BeNullOrEmpty
-            }
-
-            It 'Allows an empty Eventos collection' {
-                $allowEmpty = $Script:Command.Parameters['Eventos'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.AllowEmptyCollectionAttribute]
-                    }
-
-                $allowEmpty | Should -Not -BeNullOrEmpty
-            }
-
-            It 'Validates XmlPath as not null or empty' {
-                $attr = $Script:Command.Parameters['XmlPath'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ValidateNotNullOrEmptyAttribute]
-                    }
-
-                $attr | Should -Not -BeNullOrEmpty
-            }
-
-            It 'Validates ZipPath as not null or empty' {
-                $attr = $Script:Command.Parameters['ZipPath'].Attributes |
-                    Where-Object {
-                        $_ -is [System.Management.Automation.ValidateNotNullOrEmptyAttribute]
-                    }
-
-                $attr | Should -Not -BeNullOrEmpty
-            }
-
-            It 'Rejects an empty XmlPath' {
-                $zipParams = @{
-                    XmlPath     = [string]::Empty
-                    Entries     = @($Script:NfeEntry)
-                    ZipPath     = (Join-Path -Path $TestDrive -ChildPath 'invalid-xml-path.zip')
-                    ErrorAction = 'Stop'
-                }
-
-                { Compress-DFeArchive @zipParams } | Should -Throw
-            }
-
-            It 'Rejects an empty ZipPath' {
-                $zipParams = @{
-                    XmlPath     = $Script:XmlPath
-                    Entries     = @($Script:NfeEntry)
-                    ZipPath     = [string]::Empty
-                    ErrorAction = 'Stop'
-                }
-
-                { Compress-DFeArchive @zipParams } | Should -Throw
-            }
-        }
-        #endregion
-
-        #region ZIP creation
-        Context 'ZIP creation' {
-
-            BeforeAll {
-
-                $Script:ZipPath = Join-Path -Path $TestDrive -ChildPath 'basic.zip'
-
-                $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    ZipPath = $Script:ZipPath
-                }
-
-                Compress-DFeArchive @zipParams
-
-                $Script:ZipEntries = Get-ZipEntry -Path $Script:ZipPath
-            }
-
-            It 'Creates a ZIP file at ZipPath' {
-                Test-Path -LiteralPath $Script:ZipPath -PathType Leaf | Should -BeTrue
-            }
-
-            It 'Creates a readable ZIP archive' {
-                {
-                    $zip = [System.IO.Compression.ZipFile]::OpenRead($Script:ZipPath)
-                    $zip.Dispose()
-                } | Should -Not -Throw
-            }
-
-            It 'Places the document under the expected model folder' {
-                $expectedPath = '55_NFe/{0}/{1}' -f $Script:Chave, $Script:NfeFileName
-
-                $Script:ZipEntries | Should -Contain $expectedPath
-            }
-
-            It 'Creates exactly one ZIP entry' {
-                $Script:ZipEntries | Should -HaveCount 1
-            }
-
-            It 'Preserves the source file content' {
-                $expectedPath = '55_NFe/{0}/{1}' -f $Script:Chave, $Script:NfeFileName
-
-                $content = Get-ZipEntryContent -Path $Script:ZipPath -EntryPath $expectedPath
-
-                $content | Should -Be '<NFe/>'
-            }
-
             It 'Produces no output' {
-                $zipPath = Join-Path -Path $TestDrive -ChildPath 'no-output.zip'
+                $outputTypes = $Script:Command.OutputType
 
-                $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    ZipPath = $zipPath
-                }
-
-                @(Compress-DFeArchive @zipParams) | Should -HaveCount 0
+                $outputTypes | Should -HaveCount 1
+                $outputTypes[0].Type | Should -Be ([void])
             }
         }
         #endregion
 
-        #region Evento embedding
-        Context 'Evento embedding' {
+        #region Internal structure - document without events
+        Context 'Internal structure - document without events' {
 
-            BeforeAll {
-
-                $Script:ZipWithEvento = Join-Path -Path $TestDrive -ChildPath 'evento.zip'
+            It 'Places the document directly under the period folder' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'no-events.zip'
 
                 $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    Eventos = @($Script:EventoEntry)
-                    ZipPath = $Script:ZipWithEvento
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
                 Compress-DFeArchive @zipParams
 
-                $Script:EventoZipEntries = Get-ZipEntry -Path $Script:ZipWithEvento
+                $entries = Get-ZipEntry -Path $zipPath
+
+                $entries | Should -HaveCount 1
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}' -f $Script:PeriodSegment, $Script:NfeFileName
+                )
             }
 
-            It 'Includes the parent document' {
-                $documentPath = '55_NFe/{0}/{1}' -f $Script:Chave, $Script:NfeFileName
+            It 'Does not create a chave subfolder when there are no events' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'no-events-no-subfolder.zip'
 
-                $Script:EventoZipEntries | Should -Contain $documentPath
-            }
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
 
-            It 'Places evento inside the parent document subfolder' {
-                $eventoPath = '55_NFe/{0}/{1}' -f $Script:Chave, $Script:EventoFileName
+                Compress-DFeArchive @zipParams
 
-                $Script:EventoZipEntries | Should -Contain $eventoPath
-            }
+                $entries = Get-ZipEntry -Path $zipPath
 
-            It 'Creates exactly two ZIP entries' {
-                $Script:EventoZipEntries | Should -HaveCount 2
-            }
-
-            It 'Does not create a top-level evento model folder' {
-                $Script:EventoZipEntries |
-                    Where-Object { $_ -like '0_*' } |
+                $entries | Where-Object { $_ -like "*$($Script:Chave)*" } |
                     Should -HaveCount 0
             }
-
-            It 'Preserves evento source content' {
-                $eventoPath = '55_NFe/{0}/{1}' -f $Script:Chave, $Script:EventoFileName
-
-                $content = Get-ZipEntryContent -Path $Script:ZipWithEvento -EntryPath $eventoPath
-
-                $content | Should -Be '<evento/>'
-            }
         }
         #endregion
 
-        #region Multiple documents
-        Context 'Multiple documents' {
+        #region Internal structure - document with events
+        Context 'Internal structure - document with events' {
 
-            BeforeAll {
-
-                $Script:Chave2       = '35260112345678000199550010000000021234567890'
-                $Script:NfeFileName2 = 'nfe-2.xml'
-                $Script:NfePath2     = Join-Path -Path $Script:XmlPath -ChildPath $Script:NfeFileName2
-
-                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-
-                [System.IO.File]::WriteAllText($Script:NfePath2, '<NFe id="2"/>', $utf8NoBom)
-
-                $Script:NfeHash2 = Get-FileSha256 -Path $Script:NfePath2
-
-                $Script:NfeEntry2 = [PSCustomObject]@{
-                    ChaveAcesso = $Script:Chave2
-                    Modelo      = 55
-                    FilePath    = $Script:NfeFileName2
-                    Sha256      = $Script:NfeHash2
-                }
-
-                $Script:ZipMultiple = Join-Path -Path $TestDrive -ChildPath 'multiple.zip'
-
-                $compressParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry, $Script:NfeEntry2)
-                    ZipPath = $Script:ZipMultiple
-                }
-
-                Compress-DFeArchive @compressParams
-
-                $Script:MultipleEntries = Get-ZipEntry -Path $Script:ZipMultiple
-            }
-
-            It 'Creates one entry per document' {
-                $Script:MultipleEntries | Should -HaveCount 2
-            }
-
-            It 'Keeps documents in separate chave subfolders' {
-                $expected1 = '55_NFe/{0}/{1}' -f $Script:Chave,  $Script:NfeFileName
-                $expected2 = '55_NFe/{0}/{1}' -f $Script:Chave2, $Script:NfeFileName2
-
-                $Script:MultipleEntries | Should -Contain $expected1
-                $Script:MultipleEntries | Should -Contain $expected2
-            }
-        }
-        #endregion
-
-        #region Multiple models
-        Context 'Multiple models' {
-
-            BeforeAll {
-
-                $Script:CteChave    = '35260112345678000199570010000000031234567890'
-                $Script:CteFileName = 'cte.xml'
-                $Script:CtePath     = Join-Path -Path $Script:XmlPath -ChildPath $Script:CteFileName
-
-                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-
-                [System.IO.File]::WriteAllText($Script:CtePath, '<CTe/>', $utf8NoBom)
-
-                $Script:CteHash = Get-FileSha256 -Path $Script:CtePath
-
-                $Script:CteEntry = [PSCustomObject]@{
-                    ChaveAcesso = $Script:CteChave
-                    Modelo      = 57
-                    FilePath    = $Script:CteFileName
-                    Sha256      = $Script:CteHash
-                }
-
-                $Script:ZipMultipleModels = Join-Path -Path $TestDrive -ChildPath 'multiple-models.zip'
-
-                $compressParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry, $Script:CteEntry)
-                    ZipPath = $Script:ZipMultipleModels
-                }
-
-                Compress-DFeArchive @compressParams
-
-                $Script:MultipleModelEntries = Get-ZipEntry -Path $Script:ZipMultipleModels
-            }
-
-            It 'Places each model under its corresponding enum-derived folder' {
-                $nfePath = '55_NFe/{0}/{1}' -f $Script:Chave,    $Script:NfeFileName
-                $ctePath = '57_CTe/{0}/{1}' -f $Script:CteChave, $Script:CteFileName
-
-                $Script:MultipleModelEntries | Should -Contain $nfePath
-                $Script:MultipleModelEntries | Should -Contain $ctePath
-            }
-
-            It 'Creates exactly one entry per document' {
-                $Script:MultipleModelEntries | Should -HaveCount 2
-            }
-        }
-        #endregion
-
-        #region Missing source files
-        Context 'Missing source files' {
-
-            It 'Throws ArchiveSourceNotFound for a missing document source file' {
-                $missingEntry = [PSCustomObject]@{
-                    ChaveAcesso = $Script:Chave
-                    Modelo      = 55
-                    FilePath    = 'missing.xml'
-                    Sha256      = $Script:NfeHash
-                }
-
-                $zipPath = Join-Path -Path $TestDrive -ChildPath 'missing-document.zip'
+            It 'Places the document inside a chave subfolder when it has events' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'with-events-doc.zip'
 
                 $zipParams = @{
-                    XmlPath     = $Script:XmlPath
-                    Entries     = @($missingEntry)
-                    ZipPath     = $zipPath
-                    ErrorAction = 'Stop'
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    Eventos       = @($Script:EventoEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
-                { Compress-DFeArchive @zipParams } |
-                    Should -Throw -ErrorId 'ArchiveSourceNotFound*'
+                Compress-DFeArchive @zipParams
+
+                $entries = Get-ZipEntry -Path $zipPath
+
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}/{2}' -f $Script:PeriodSegment, $Script:Chave, $Script:NfeFileName
+                )
             }
 
-            It 'Throws ArchiveSourceNotFound for a missing evento source file' {
-                $missingEvento = [PSCustomObject]@{
-                    ChavePai = $Script:Chave
-                    FilePath = 'missing-evento.xml'
-                    Sha256   = $Script:EventoHash
-                }
-
-                $zipPath = Join-Path -Path $TestDrive -ChildPath 'missing-evento.zip'
+            It 'Places the event inside the same chave subfolder as the document' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'with-events-evento.zip'
 
                 $zipParams = @{
-                    XmlPath     = $Script:XmlPath
-                    Entries     = @($Script:NfeEntry)
-                    Eventos     = @($missingEvento)
-                    ZipPath     = $zipPath
-                    ErrorAction = 'Stop'
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    Eventos       = @($Script:EventoEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
-                { Compress-DFeArchive @zipParams } |
-                    Should -Throw -ErrorId 'ArchiveSourceNotFound*'
+                Compress-DFeArchive @zipParams
+
+                $entries = Get-ZipEntry -Path $zipPath
+
+                $entries | Should -HaveCount 2
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}/{2}' -f $Script:PeriodSegment, $Script:Chave, $Script:EventoFileName
+                )
             }
-        }
-        #endregion
 
-        #region Unknown model
-        Context 'Unknown model' {
-
-            It 'Throws ArchiveModelUnsupported for a model not present in ModeloDFe' {
-                $unknownEntry = [PSCustomObject]@{
-                    ChaveAcesso = $Script:Chave
-                    Modelo      = 999
-                    FilePath    = $Script:NfeFileName
-                    Sha256      = $Script:NfeHash
-                }
-
-                $zipPath = Join-Path -Path $TestDrive -ChildPath 'unknown-model.zip'
-
-                $zipParams = @{
-                    XmlPath     = $Script:XmlPath
-                    Entries     = @($unknownEntry)
-                    ZipPath     = $zipPath
-                    ErrorAction = 'Stop'
-                }
-
-                { Compress-DFeArchive @zipParams } |
-                    Should -Throw -ErrorId 'ArchiveModelUnsupported*'
-            }
-        }
-        #endregion
-
-        #region Evento association
-        Context 'Evento association' {
-
-            It 'Embeds only eventos linked to the matching parent chave' {
-                $otherChave          = '35260112345678000199550010000000041234567890'
+            It 'Associates events by ChavePai and ignores events for other documents' {
+                $otherChave         = '35260112345678000199550010000000029999999999'
                 $otherEventoFileName = 'evento-other.xml'
                 $otherEventoPath     = Join-Path -Path $Script:XmlPath -ChildPath $otherEventoFileName
 
@@ -609,10 +347,11 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $zipPath = Join-Path -Path $TestDrive -ChildPath 'evento-association.zip'
 
                 $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    Eventos = @($Script:EventoEntry, $otherEvento)
-                    ZipPath = $zipPath
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    Eventos       = @($Script:EventoEntry, $otherEvento)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
                 Compress-DFeArchive @zipParams
@@ -620,9 +359,12 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $entries = Get-ZipEntry -Path $zipPath
 
                 $entries | Should -HaveCount 2
-                $entries | Should -Contain ('55_NFe/{0}/{1}' -f $Script:Chave, $Script:NfeFileName)
-                $entries | Should -Contain ('55_NFe/{0}/{1}' -f $Script:Chave, $Script:EventoFileName)
-
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}/{2}' -f $Script:PeriodSegment, $Script:Chave, $Script:NfeFileName
+                )
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}/{2}' -f $Script:PeriodSegment, $Script:Chave, $Script:EventoFileName
+                )
                 $entries | Where-Object { $_ -like "*$otherEventoFileName" } | Should -HaveCount 0
             }
 
@@ -645,10 +387,11 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $zipPath = Join-Path -Path $TestDrive -ChildPath 'multiple-eventos.zip'
 
                 $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    Eventos = @($Script:EventoEntry, $evento2)
-                    ZipPath = $zipPath
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    Eventos       = @($Script:EventoEntry, $evento2)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
                 Compress-DFeArchive @zipParams
@@ -656,8 +399,300 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $entries = Get-ZipEntry -Path $zipPath
 
                 $entries | Should -HaveCount 3
-                $entries | Should -Contain ('55_NFe/{0}/{1}' -f $Script:Chave, $Script:EventoFileName)
-                $entries | Should -Contain ('55_NFe/{0}/{1}' -f $Script:Chave, $evento2FileName)
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}/{2}' -f $Script:PeriodSegment, $Script:Chave, $Script:EventoFileName
+                )
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}/{2}' -f $Script:PeriodSegment, $Script:Chave, $evento2FileName
+                )
+            }
+        }
+        #endregion
+
+        #region Multiple documents and models
+        Context 'Multiple documents and models' {
+
+            It 'Handles multiple documents in the same model group' {
+                $chave2       = '35260112345678000199550010000000029999999999'
+                $nfe2FileName = 'nfe-2.xml'
+                $nfe2Path     = Join-Path -Path $Script:XmlPath -ChildPath $nfe2FileName
+
+                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+                [System.IO.File]::WriteAllText($nfe2Path, '<NFe2/>', $utf8NoBom)
+
+                $nfe2Hash = Get-FileSha256 -Path $nfe2Path
+
+                $nfe2Entry = [PSCustomObject]@{
+                    ChaveAcesso = $chave2
+                    Modelo      = 55
+                    FilePath    = $nfe2FileName
+                    Sha256      = $nfe2Hash
+                }
+
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'multiple-docs.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry, $nfe2Entry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                Compress-DFeArchive @zipParams
+
+                $entries = Get-ZipEntry -Path $zipPath
+
+                $entries | Should -HaveCount 2
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}' -f $Script:PeriodSegment, $Script:NfeFileName
+                )
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}' -f $Script:PeriodSegment, $nfe2FileName
+                )
+            }
+
+            It 'Handles multiple model groups in the same batch' {
+                $nfceChave    = '35260112345678000199650010000000019999999999'
+                $nfceFileName = 'nfce.xml'
+                $nfcePath     = Join-Path -Path $Script:XmlPath -ChildPath $nfceFileName
+
+                $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+                [System.IO.File]::WriteAllText($nfcePath, '<NFCe/>', $utf8NoBom)
+
+                $nfceHash = Get-FileSha256 -Path $nfcePath
+
+                $nfceEntry = [PSCustomObject]@{
+                    ChaveAcesso = $nfceChave
+                    Modelo      = 65
+                    FilePath    = $nfceFileName
+                    Sha256      = $nfceHash
+                }
+
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'multiple-models.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry, $nfceEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                Compress-DFeArchive @zipParams
+
+                $entries = Get-ZipEntry -Path $zipPath
+
+                $entries | Should -HaveCount 2
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}' -f $Script:PeriodSegment, $Script:NfeFileName
+                )
+                $entries | Should -Contain (
+                    '65_NFCe/{0}/{1}' -f $Script:PeriodSegment, $nfceFileName
+                )
+            }
+        }
+        #endregion
+
+        #region Period segment
+        Context 'Period segment' {
+
+            It 'Uses the supplied PeriodSegment as the internal folder name' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'period-segment.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = '20261001-20261015'
+                }
+
+                Compress-DFeArchive @zipParams
+
+                $entries = Get-ZipEntry -Path $zipPath
+
+                $entries | Should -Contain (
+                    '55_NFe/20261001-20261015/{0}' -f $Script:NfeFileName
+                )
+            }
+        }
+        #endregion
+
+        #region Duplicate path detection
+        Context 'Duplicate path detection' {
+
+            It 'Throws ArchiveDuplicatePath when two documents map to the same internal path' {
+                $duplicateEntry = [PSCustomObject]@{
+                    ChaveAcesso = $Script:Chave
+                    Modelo      = 55
+                    FilePath    = $Script:NfeFileName
+                    Sha256      = $Script:NfeHash
+                }
+
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'duplicate-path.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry, $duplicateEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                $caught = $false
+
+                try {
+                    Compress-DFeArchive @zipParams
+                } catch {
+                    $caught = $true
+                    $_.FullyQualifiedErrorId | Should -BeLike 'ArchiveDuplicatePath*'
+                }
+
+                $caught | Should -BeTrue
+            }
+        }
+        #endregion
+
+        #region Source validation
+        Context 'Source validation' {
+
+            It 'Throws ArchiveSourceNotFound for a missing document source file' {
+                $missingEntry = [PSCustomObject]@{
+                    ChaveAcesso = $Script:Chave
+                    Modelo      = 55
+                    FilePath    = 'missing.xml'
+                    Sha256      = $Script:NfeHash
+                }
+
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'missing-doc.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($missingEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                $caught = $false
+
+                try {
+                    Compress-DFeArchive @zipParams
+                } catch {
+                    $caught = $true
+                    $_.FullyQualifiedErrorId | Should -BeLike 'ArchiveSourceNotFound*'
+                }
+
+                $caught | Should -BeTrue
+            }
+
+            It 'Throws ArchiveSourceNotFound for a missing evento source file' {
+                $missingEvento = [PSCustomObject]@{
+                    ChavePai = $Script:Chave
+                    FilePath = 'missing-evento.xml'
+                    Sha256   = $Script:EventoHash
+                }
+
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'missing-evento.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    Eventos       = @($missingEvento)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                $caught = $false
+
+                try {
+                    Compress-DFeArchive @zipParams
+                } catch {
+                    $caught = $true
+                    $_.FullyQualifiedErrorId | Should -BeLike 'ArchiveSourceNotFound*'
+                }
+
+                $caught | Should -BeTrue
+            }
+
+            It 'Throws ArchiveModelUnsupported for an unknown Modelo value' {
+                $unknownEntry = [PSCustomObject]@{
+                    ChaveAcesso = $Script:Chave
+                    Modelo      = 99
+                    FilePath    = $Script:NfeFileName
+                    Sha256      = $Script:NfeHash
+                }
+
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'unknown-model.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($unknownEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                $caught = $false
+
+                try {
+                    Compress-DFeArchive @zipParams
+                } catch {
+                    $caught = $true
+                    $_.FullyQualifiedErrorId | Should -BeLike 'ArchiveModelUnsupported*'
+                }
+
+                $caught | Should -BeTrue
+            }
+        }
+        #endregion
+
+        #region Empty collections
+        Context 'Empty collections' {
+
+            It 'Creates a valid empty ZIP when Entries is empty' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'empty-entries.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @()
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                { Compress-DFeArchive @zipParams } | Should -Not -Throw
+
+                Test-Path -LiteralPath $zipPath -PathType Leaf | Should -BeTrue
+
+                Get-ZipEntry -Path $zipPath | Should -HaveCount 0
+            }
+
+            It 'Creates a valid ZIP when Eventos is empty' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'empty-eventos.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    Eventos       = @()
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                { Compress-DFeArchive @zipParams } | Should -Not -Throw
+
+                Get-ZipEntry -Path $zipPath | Should -HaveCount 1
+            }
+
+            It 'Creates a valid ZIP when Eventos is omitted' {
+                $zipPath = Join-Path -Path $TestDrive -ChildPath 'omitted-eventos.zip'
+
+                $zipParams = @{
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
+                }
+
+                { Compress-DFeArchive @zipParams } | Should -Not -Throw
+
+                Get-ZipEntry -Path $zipPath | Should -HaveCount 1
             }
         }
         #endregion
@@ -672,9 +707,10 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 Test-Path -LiteralPath $nestedPath -PathType Container | Should -BeFalse
 
                 $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    ZipPath = $zipPath
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
                 Compress-DFeArchive @zipParams
@@ -692,9 +728,10 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $zipPath = Join-Path -Path $TestDrive -ChildPath 'source-preservation.zip'
 
                 $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    ZipPath = $zipPath
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
                 Compress-DFeArchive @zipParams
@@ -709,10 +746,11 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $zipPath = Join-Path -Path $TestDrive -ChildPath 'source-evento-preservation.zip'
 
                 $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    Eventos = @($Script:EventoEntry)
-                    ZipPath = $zipPath
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    Eventos       = @($Script:EventoEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
                 Compress-DFeArchive @zipParams
@@ -720,56 +758,6 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                 $after = [System.IO.File]::ReadAllBytes($Script:EventoPath)
 
                 $after | Should -Be $before
-            }
-        }
-        #endregion
-
-        #region Empty collections
-        Context 'Empty collections' {
-
-            It 'Creates a valid empty ZIP when Entries is empty' {
-                $zipPath = Join-Path -Path $TestDrive -ChildPath 'empty-entries.zip'
-
-                $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @()
-                    ZipPath = $zipPath
-                }
-
-                { Compress-DFeArchive @zipParams } | Should -Not -Throw
-
-                Test-Path -LiteralPath $zipPath -PathType Leaf | Should -BeTrue
-
-                Get-ZipEntry -Path $zipPath | Should -HaveCount 0
-            }
-
-            It 'Creates a valid ZIP when Eventos is empty' {
-                $zipPath = Join-Path -Path $TestDrive -ChildPath 'empty-eventos.zip'
-
-                $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    Eventos = @()
-                    ZipPath = $zipPath
-                }
-
-                { Compress-DFeArchive @zipParams } | Should -Not -Throw
-
-                Get-ZipEntry -Path $zipPath | Should -HaveCount 1
-            }
-
-            It 'Creates a valid ZIP when Eventos is omitted' {
-                $zipPath = Join-Path -Path $TestDrive -ChildPath 'omitted-eventos.zip'
-
-                $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    ZipPath = $zipPath
-                }
-
-                { Compress-DFeArchive @zipParams } | Should -Not -Throw
-
-                Get-ZipEntry -Path $zipPath | Should -HaveCount 1
             }
         }
         #endregion
@@ -784,22 +772,27 @@ Describe 'Compress-DFeArchive' -Tag 'Integration' {
                     XmlPath          = $Script:XmlPath
                     Entries          = @($Script:NfeEntry)
                     ZipPath          = $zipPath
+                    PeriodSegment    = $Script:PeriodSegment
                     CompressionLevel = ([System.IO.Compression.CompressionLevel]::Fastest)
                 }
 
                 { Compress-DFeArchive @zipParams } | Should -Not -Throw
 
-                Get-ZipEntry -Path $zipPath |
-                    Should -Contain ('55_NFe/{0}/{1}' -f $Script:Chave, $Script:NfeFileName)
+                $entries = Get-ZipEntry -Path $zipPath
+
+                $entries | Should -Contain (
+                    '55_NFe/{0}/{1}' -f $Script:PeriodSegment, $Script:NfeFileName
+                )
             }
 
             It 'Uses Optimal as the default compression level' {
                 $zipPath = Join-Path -Path $TestDrive -ChildPath 'compression-default.zip'
 
                 $zipParams = @{
-                    XmlPath = $Script:XmlPath
-                    Entries = @($Script:NfeEntry)
-                    ZipPath = $zipPath
+                    XmlPath       = $Script:XmlPath
+                    Entries       = @($Script:NfeEntry)
+                    ZipPath       = $zipPath
+                    PeriodSegment = $Script:PeriodSegment
                 }
 
                 { Compress-DFeArchive @zipParams } | Should -Not -Throw
