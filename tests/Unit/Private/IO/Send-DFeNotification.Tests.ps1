@@ -23,8 +23,6 @@ Coverage includes:
   - Returns null ErrorMessage and FailedAt on success.
   - Passes Gaps to Build-MailBody context.
   - Uses RazaoSocial in subject when NomeFantasia is blank.
-  - Excludes single-character tokens from the subject company label.
-  - Uses the new subject format: 'Documentos Fiscais | {label} | {period}'.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -47,7 +45,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Send-DFeNotification' {
+Describe 'Send-DFeNotification' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -98,6 +96,7 @@ Describe 'Send-DFeNotification' {
                 DateRange          = $Script:ValidDateRange
                 Smtp               = $Script:ValidSmtp
                 Gaps               = @()
+                Entries            = @()
                 ZipFileDestination = $Script:ValidZips
             }
         }
@@ -438,40 +437,6 @@ Describe 'Send-DFeNotification' {
                 Send-DFeNotification @gapParams | Out-Null
             }
 
-            It 'Uses RazaoSocial in subject when NomeFantasia is blank' {
-                $company = [PSCustomObject]@{
-                    NomeFantasia = ''
-                    RazaoSocial  = 'Empresa Razao Ltda'
-                    Cnpj         = '11222333000181'
-                    Ie           = $null
-                    Email        = [PSCustomObject]@{
-                        Para = @(
-                            [PSCustomObject]@{
-                                Name  = 'D'
-                                Email = 'dest@example.com'
-                            }
-                        )
-                        Cc   = @()
-                        Cco  = @()
-                    }
-                }
-
-                $companyParams = $Script:BaseParams.Clone()
-
-                $companyParams.Company = $company
-
-                Send-DFeNotification @companyParams | Out-Null
-
-                $invokeParams = @{
-                    CommandName     = 'Send-Mail'
-                    Times           = 1
-                    Exactly         = $true
-                    ParameterFilter = { $Subject -match 'EMPRESA' }
-                }
-
-                Should -Invoke @invokeParams
-            }
-
             It 'Uses the Documentos Fiscais subject format' {
                 Send-DFeNotification @Script:BaseParams | Out-Null
 
@@ -517,6 +482,40 @@ Describe 'Send-DFeNotification' {
                         $Subject -match 'AUTOCOM TECNOLOGIA SERVICOS' -and
                         $Subject -notmatch '\bE\b'
                     }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Uses RazaoSocial in subject when NomeFantasia is blank' {
+                $company = [PSCustomObject]@{
+                    NomeFantasia = ''
+                    RazaoSocial  = 'Empresa Razao Ltda'
+                    Cnpj         = '11222333000181'
+                    Ie           = $null
+                    Email        = [PSCustomObject]@{
+                        Para = @(
+                            [PSCustomObject]@{
+                                Name  = 'D'
+                                Email = 'dest@example.com'
+                            }
+                        )
+                        Cc   = @()
+                        Cco  = @()
+                    }
+                }
+
+                $companyParams = $Script:BaseParams.Clone()
+
+                $companyParams.Company = $company
+
+                Send-DFeNotification @companyParams | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Send-Mail'
+                    Times           = 1
+                    Exactly         = $true
+                    ParameterFilter = { $Subject -match 'EMPRESA' }
                 }
 
                 Should -Invoke @invokeParams
