@@ -38,6 +38,11 @@ SMTP configuration object as returned by Resolve-DFeSmtp.
 Sequence gaps for inclusion in the mail body. An empty collection
 is valid and means no gaps were detected.
 
+.PARAMETER Entries
+DFe document index entries for the period, used to build the fiscal
+document summary in the email body. Each entry must expose modelo and
+chave_acesso. An empty collection produces an empty summary table.
+
 .PARAMETER ZipFileDestination
 Full paths to the destination ZIP files used as email attachments.
 
@@ -76,6 +81,10 @@ function Send-DFeNotification {
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
         [pscustomobject[]]$Gaps,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [pscustomobject[]]$Entries,
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -118,12 +127,37 @@ function Send-DFeNotification {
 
         $subject = 'Documentos Fiscais | {0} | {1}' -f $subjectLabel, $periodLabel
 
+        # Build the fiscal document summary from indexed entries grouped by model.
+        $resumoDocumentos = @()
+
+        if ($null -ne $Entries -and $Entries.Count -gt 0) {
+            $resumoDocumentos = @(
+                $Entries |
+                    Group-Object -Property modelo |
+                    ForEach-Object {
+                        $modelValue = [int]$_.Name
+                        $modelName  = try {
+                            ([ModeloDFe]$modelValue).ToString()
+                        } catch {
+                            "Modelo $modelValue"
+                        }
+
+                        [PSCustomObject]@{
+                            Tipo       = $modelName
+                            Quantidade = $_.Count
+                        }
+                    } |
+                    Sort-Object -Property Tipo
+            )
+        }
+
         $context = [PSCustomObject]@{
-            Empresa          = $Company
-            PeriodoDisplay   = $periodLabel
-            DataEmissao      = [System.DateTimeOffset]::Now.ToString('dd/MM/yyyy HH:mm', $ptBr)
-            ReplyTo          = Resolve-SmtpReplyTo -Smtp $Smtp
-            NotasNaoLancadas = $Gaps
+            Empresa           = $Company
+            PeriodoDisplay    = $periodLabel
+            DataEmissao       = [System.DateTimeOffset]::Now.ToString('dd/MM/yyyy HH:mm', $ptBr)
+            ReplyTo           = Resolve-SmtpReplyTo -Smtp $Smtp
+            NotasNaoLancadas  = $Gaps
+            ResumoDocumentos  = $resumoDocumentos
         }
 
         $body = Build-MailBody -Context $context
