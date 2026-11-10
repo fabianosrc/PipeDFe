@@ -1,5 +1,4 @@
-﻿
-<#
+﻿<#
 .SYNOPSIS
 Renders and sends the DFe delivery notification email.
 
@@ -10,10 +9,12 @@ Orchestrates three sequential steps:
   2. Renders the email body from the notification template via Build-MailBody.
   3. Sends the email with all ZIP archives as attachments via Send-Mail.
 
-Subject format: 'Arquivo XML {CompanyLabel} {PeriodLabel}'
+Subject format: 'Documentos Fiscais | {CompanyLabel} | {PeriodLabel}'
 
 The company label is derived from the first three words of NomeFantasia
-(or RazaoSocial as fallback), with '&' replaced by 'E' for readability.
+(or RazaoSocial as fallback) that contain more than one character, with
+'&' replaced by 'E' for readability. Single-character tokens such as
+the connective 'E' are excluded before the three-word limit is applied.
 
 This function never throws. Any exception raised during validation,
 rendering, or sending is caught and surfaced as Success = $false with
@@ -103,10 +104,11 @@ function Send-DFeNotification {
             $Company.RazaoSocial
         }
 
-        # Replace '&' with 'E' then take the first three words.
+        # Replace '&' with 'E', discard single-character tokens such as the
+        # connective 'E', then take the first three remaining words.
         $subjectLabel = @(
             $companyLabel.ToUpper() -replace '&', 'E' -split '\s+' |
-                Where-Object { $_ } |
+                Where-Object { $_.Length -gt 1 } |
                 Select-Object -First 3
         ) -join ' '
 
@@ -114,7 +116,7 @@ function Send-DFeNotification {
         $periodLabel = $DateRange.Start.ToString('MMMM/yyyy', $ptBr)
         $periodLabel = $periodLabel.Substring(0, 1).ToUpper() + $periodLabel.Substring(1)
 
-        $subject = 'Arquivo XML {0} {1}' -f $subjectLabel, $periodLabel
+        $subject = 'Documentos Fiscais | {0} | {1}' -f $subjectLabel, $periodLabel
 
         $context = [PSCustomObject]@{
             Empresa          = $Company
