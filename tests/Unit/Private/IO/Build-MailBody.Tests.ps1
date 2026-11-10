@@ -31,6 +31,10 @@ Coverage includes:
   - Removes ArquivosManuais block.
   - Includes reply block when ReplyTo is present.
   - Removes reply block when ReplyTo is null or whitespace.
+  - Renders ResumoDocumentos rows when entries are present.
+  - Renders empty ResumoDocumentos when list is empty.
+  - Renders zebra striping for odd-index resumo rows.
+  - HTML-escapes the Tipo field in ResumoDocumentos rows.
   - Leaves no unreplaced {{...}} tokens in the output.
 #>
 
@@ -89,6 +93,7 @@ Describe 'Build-MailBody' {
         {{#TemLogotipo}}
             <logo>{{Logotipo}}|{{NomeFantasia}}</logo>
         {{/TemLogotipo}}
+        <resumo>{{ResumoDocumentos}}</resumo>
         {{#TemNotasNaoLancadas}}
             <gaps>{{NotasNaoLancadas}}</gaps>
         {{/TemNotasNaoLancadas}}
@@ -101,7 +106,11 @@ Describe 'Build-MailBody' {
 
             $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
-            [System.IO.File]::WriteAllText($Script:TemplatePath, $templateContent, $utf8NoBom)
+            [System.IO.File]::WriteAllText(
+                $Script:TemplatePath,
+                $templateContent,
+                $utf8NoBom
+            )
 
             $Script:ModuleRoot = $Script:TempRoot
 
@@ -121,6 +130,7 @@ Describe 'Build-MailBody' {
                     DataEmissao      = '01/01/2026 10:00'
                     ReplyTo          = $null
                     NotasNaoLancadas = @()
+                    ResumoDocumentos = @()
                 }
             }
         }
@@ -326,6 +336,68 @@ Describe 'Build-MailBody' {
 
                 $result = Build-MailBody -Context $ctx
                 $result | Should -Not -Match 'background-color:#f9f9f9;'
+            }
+        }
+        #endregion
+
+        #region ResumoDocumentos
+        Context 'ResumoDocumentos' {
+
+            It 'Renders a row for each entry in ResumoDocumentos' {
+                $ctx = New-BaseContext
+                $ctx.ResumoDocumentos = @(
+                    [PSCustomObject]@{
+                        Tipo       = 'NFe'
+                        Quantidade = 10
+                    }
+                    [PSCustomObject]@{
+                        Tipo       = 'NFCom'
+                        Quantidade = 3
+                    }
+                )
+
+                $result = Build-MailBody -Context $ctx
+
+                $result | Should -Match 'NFe'
+                $result | Should -Match '10'
+                $result | Should -Match 'NFCom'
+                $result | Should -Match '3'
+            }
+
+            It 'Renders an empty resumo when ResumoDocumentos is empty' {
+                $result = Build-MailBody -Context (New-BaseContext)
+                $result | Should -Match '<resumo></resumo>'
+            }
+
+            It 'Renders zebra striping for odd-index resumo rows' {
+                $ctx = New-BaseContext
+                $ctx.ResumoDocumentos = @(
+                    [PSCustomObject]@{
+                        Tipo       = 'NFe'
+                        Quantidade = 5
+                    }
+                    [PSCustomObject]@{
+                        Tipo       = 'NFCom'
+                        Quantidade = 2
+                    }
+                )
+
+                $result = Build-MailBody -Context $ctx
+                $result | Should -Match 'background-color:#f9f9f9;'
+            }
+
+            It 'HTML-escapes the Tipo field' {
+                $ctx = New-BaseContext
+                $ctx.ResumoDocumentos = @(
+                    [PSCustomObject]@{
+                        Tipo       = 'NF&e'
+                        Quantidade = 1
+                    }
+                )
+
+                $result = Build-MailBody -Context $ctx
+                $result | Should -Match '&amp;'
+                $result | Should -Not -Match 'NF&e'
             }
         }
         #endregion
