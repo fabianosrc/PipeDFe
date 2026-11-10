@@ -45,7 +45,7 @@ Describe 'Backup-DFeSqliteDatabase' -Tag 'Integration' {
 
         BeforeAll {
 
-            $Script:PreviousDataRoot = $env:PIPEDFE_DATA_ROOT
+            $Script:PreviousDataRoot = $env:LOCALAPPDATA
 
             $testId = [guid]::NewGuid().ToString('N')
 
@@ -56,12 +56,12 @@ Describe 'Backup-DFeSqliteDatabase' -Tag 'Integration' {
 
             New-Item -ItemType Directory -Path $Script:TempRoot -Force | Out-Null
 
-            $env:PIPEDFE_DATA_ROOT = [System.IO.Path]::Combine(
+            $env:LOCALAPPDATA = [System.IO.Path]::Combine(
                 $Script:TempRoot,
                 'data'
             )
 
-            New-Item -ItemType Directory -Path $env:PIPEDFE_DATA_ROOT -Force | Out-Null
+            New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null
 
             $Script:BackupDirectory = [System.IO.Path]::Combine(
                 $Script:TempRoot,
@@ -127,7 +127,7 @@ Describe 'Backup-DFeSqliteDatabase' -Tag 'Integration' {
 
         AfterAll {
 
-            $env:PIPEDFE_DATA_ROOT = $Script:PreviousDataRoot
+            $env:LOCALAPPDATA = $Script:PreviousDataRoot
 
             $removeItemParams = @{
                 LiteralPath = $Script:TempRoot
