@@ -23,6 +23,8 @@ Coverage includes:
   - Returns null ErrorMessage and FailedAt on success.
   - Passes Gaps to Build-MailBody context.
   - Uses RazaoSocial in subject when NomeFantasia is blank.
+  - Excludes single-character tokens from the subject company label.
+  - Uses the new subject format: 'Documentos Fiscais | {label} | {period}'.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -33,11 +35,11 @@ Coverage includes:
 
 param ()
 
-# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-# because that's when Context/It are executed to register the test tree. If the
-# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-# BeforeEach ever runs.
 BeforeDiscovery {
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+    # because that's when Context/It are executed to register the test tree. If the
+    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+    # BeforeEach ever runs.
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
     $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
@@ -465,6 +467,56 @@ Describe 'Send-DFeNotification' {
                     Times           = 1
                     Exactly         = $true
                     ParameterFilter = { $Subject -match 'EMPRESA' }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Uses the Documentos Fiscais subject format' {
+                Send-DFeNotification @Script:BaseParams | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Send-Mail'
+                    Times           = 1
+                    Exactly         = $true
+                    ParameterFilter = { $Subject -like 'Documentos Fiscais |*' }
+                }
+
+                Should -Invoke @invokeParams
+            }
+
+            It 'Excludes single-character tokens from the subject label' {
+                $company = [PSCustomObject]@{
+                    NomeFantasia = 'Autocom Tecnologia E Servicos'
+                    RazaoSocial  = 'Autocom Tecnologia E Servicos Ltda'
+                    Cnpj         = '11222333000181'
+                    Ie           = $null
+                    Email        = [PSCustomObject]@{
+                        Para = @(
+                            [PSCustomObject]@{
+                                Name  = 'Dest'
+                                Email = 'dest@example.com'
+                            }
+                        )
+                        Cc   = @()
+                        Cco  = @()
+                    }
+                }
+
+                $companyParams = $Script:BaseParams.Clone()
+
+                $companyParams.Company = $company
+
+                Send-DFeNotification @companyParams | Out-Null
+
+                $invokeParams = @{
+                    CommandName     = 'Send-Mail'
+                    Times           = 1
+                    Exactly         = $true
+                    ParameterFilter = {
+                        $Subject -match 'AUTOCOM TECNOLOGIA SERVICOS' -and
+                        $Subject -notmatch '\bE\b'
+                    }
                 }
 
                 Should -Invoke @invokeParams
