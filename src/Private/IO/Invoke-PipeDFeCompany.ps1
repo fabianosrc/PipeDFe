@@ -312,6 +312,7 @@ function Invoke-PipeDFeCompany {
             Company      = $Company
             Entries      = $entries
             ArchiveInfos = $archiveInfos
+            DateRange    = $DateRange
         }
 
         $archives = @(New-DFeArchive @archiveParams)
