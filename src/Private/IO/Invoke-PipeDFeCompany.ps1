@@ -376,6 +376,16 @@ function Invoke-PipeDFeCompany {
             Write-Warning -Message "[$cnpj] $aviso"
         }
 
+        # An execution with documents is not successful until delivery completes.
+        # Invoke-DFeDelivery owns the persistent delivery state and retry policy.
+        # Do not attempt another SMTP send here.
+        if (-not $emailEnviado) {
+            throw [System.InvalidOperationException]::new(
+                'A entrega dos arquivos XML não foi concluída. ' +
+                'Consulte os avisos da empresa e o estado persistido da entrega.'
+            )
+        }
+
         $status = if ($avisos.Count -gt 0) { 'Aviso' } else { 'OK' }
 
         Write-Verbose -Message "[$cnpj] Concluído com status '$status'."
