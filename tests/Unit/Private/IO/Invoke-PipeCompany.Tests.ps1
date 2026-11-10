@@ -914,8 +914,8 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $Script:Result = Invoke-TestCompany
             }
 
-            It 'Returns Status Aviso' {
-                $Script:Result.Status | Should -Be 'Aviso'
+            It 'Returns Falha when SMTP is not configured' {
+                $Script:Result.Status | Should -Be 'Falha'
             }
 
             It 'Records a warning about missing SMTP in Avisos' {
@@ -942,8 +942,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $Script:Result.EmailEnviado | Should -BeFalse
             }
 
-            It 'Returns Erro as null' {
-                $Script:Result.Erro | Should -BeNullOrEmpty
+            It 'Reports that XML delivery was not completed' {
+                $Script:Result.Erro |
+                    Should -Match 'A entrega dos arquivos XML não foi concluída'
             }
         }
 
@@ -954,8 +955,13 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $Script:Result = Invoke-TestCompany -Company $Script:CompanyWithoutRecipients
             }
 
-            It 'Returns Status Aviso' {
-                $Script:Result.Status | Should -Be 'Aviso'
+            It 'Returns Falha when no recipients are configured' {
+                $Script:Result.Status | Should -Be 'Falha'
+            }
+
+            It 'Reports that XML delivery was not completed' {
+                $Script:Result.Erro |
+                    Should -Match 'A entrega dos arquivos XML não foi concluída'
             }
 
             It 'Records a warning about missing recipients in Avisos' {
@@ -996,8 +1002,13 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $Script:Result = Invoke-TestCompany
             }
 
-            It 'Returns Status Aviso' {
-                $Script:Result.Status | Should -Be 'Aviso'
+            It 'Returns Falha when notification delivery fails' {
+                $Script:Result.Status | Should -Be 'Falha'
+            }
+
+            It 'Reports that XML delivery was not completed' {
+                $Script:Result.Erro |
+                    Should -Match 'A entrega dos arquivos XML não foi concluída'
             }
 
             It 'Records a warning about the failed notification in Avisos' {
@@ -1007,10 +1018,6 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             It 'Returns EmailEnviado false' {
                 $Script:Result.EmailEnviado | Should -BeFalse
-            }
-
-            It 'Returns Erro as null' {
-                $Script:Result.Erro | Should -BeNullOrEmpty
             }
         }
         #endregion
