@@ -3,29 +3,42 @@
 Renders the HTML email body for a DFe notification.
 
 .DESCRIPTION
-Loads the HTML template from the module's templates directory and replaces
-all placeholders with data from the provided context object.
+Loads the HTML template from the module's templates directory and
+replaces placeholders with HTML-encoded values from the context object.
 
-Conditional blocks ({{#Block}}...{{/Block}}) are included when the
-corresponding context property is present and non-empty, or removed
-entirely when absent.
+Conditional blocks are included when their corresponding data is
+available and removed otherwise.
 
-Throws MailTemplateNotFound when the HTML template file does not exist.
+Document summary and sequence-gap rows are rendered as HTML tables.
 
-Placeholders deferred for future implementation (replaced with empty string):
-  {{ResumoDocumentos}}
-  {{#TemArquivosManuais}}...{{/TemArquivosManuais}}
+Throws MailTemplateNotFound when the template file does not exist.
+
+The TemArquivosManuais block is reserved for future implementation
+and is currently removed from the rendered output.
 
 .PARAMETER Context
-A PSCustomObject with the following properties:
+A PSCustomObject containing:
 
-  Empresa          [pscustomobject]   - Company data: Cnpj, NomeFantasia,
-                                        RazaoSocial, Ie, Logotipo (optional).
-  PeriodoDisplay   [string]           - Human-readable period, e.g. 'Marco/2025'.
-  DataEmissao      [string]           - Formatted emission date for display.
-  ReplyTo          [string]           - Reply-to address. $null if absent.
-  NotasNaoLancadas [pscustomobject[]] - Sequence gaps: Inicial, Final, Serie,
-                                        Especie. Empty array is valid.
+    Empresa          [pscustomobject]
+        Cnpj
+        NomeFantasia
+        RazaoSocial
+        Ie
+        Logotipo (optional)
+
+    PeriodoDisplay   [string]
+    DataEmissao      [string]
+    ReplyTo          [string]
+
+    NotasNaoLancadas [pscustomobject[]]
+        Inicial
+        Final
+        Serie
+        Especie
+
+    ResumoDocumentos [pscustomobject[]]
+        Tipo
+        Quantidade
 
 .OUTPUTS
 System.String
@@ -36,12 +49,14 @@ PS C:\> $html = Build-MailBody -Context $context
 .NOTES
 Private dependencies:
   ConvertTo-FormattedCnpj
+
+Compatible with Windows PowerShell 5.1 and PowerShell 7+.
 #>
 function Build-MailBody {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
         'PSUseApprovedVerbs',
         '',
-        Justification = 'Build- is semantically correct for template rendering. Format- refers to output formatting. New- implies object creation without template dependency.'
+        Justification = 'Build- describes the rendering of an HTML email body from a template.'
     )]
     [CmdletBinding()]
     [OutputType([string])]
@@ -51,8 +66,12 @@ function Build-MailBody {
         [pscustomobject]$Context
     )
 
+    #region Template
     $templatePath = [System.IO.Path]::Combine(
-        $Script:ModuleRoot, 'templates', 'mail', 'dfe-notification.html'
+        $Script:ModuleRoot,
+        'templates',
+        'mail',
+        'dfe-notification.html'
     )
 
     if (-not (Test-Path -LiteralPath $templatePath -PathType Leaf)) {
@@ -69,70 +88,191 @@ function Build-MailBody {
         )
     }
 
-    $html    = [System.IO.File]::ReadAllText($templatePath, [System.Text.Encoding]::UTF8)
-    $empresa = $Context.Empresa
+    $html = [System.IO.File]::ReadAllText(
+        $templatePath,
+        [System.Text.Encoding]::UTF8
+    )
+    #endregion
 
-    $nomeEmpresa = if (-not [string]::IsNullOrWhiteSpace($empresa.NomeFantasia)) {
-        $empresa.NomeFantasia
-    } else {
-        $empresa.RazaoSocial
+    #region Context
+    $empresaProp = $Context.PSObject.Properties['Empresa']
+
+    if ($null -eq $empresaProp -or $null -eq $empresaProp.Value) {
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.ArgumentException]::new(
+                    "The context must contain a non-null 'Empresa' property."
+                ),
+                'MailTemplateInvalidContext',
+                [System.Management.Automation.ErrorCategory]::InvalidArgument,
+                $Context
+            )
+        )
     }
 
-    $ieValue = if (-not [string]::IsNullOrWhiteSpace($empresa.Ie)) {
-        $empresa.Ie
+    $empresa = $empresaProp.Value
+
+    $nomeEmpresa = if (-not [string]::IsNullOrWhiteSpace([string]$empresa.NomeFantasia)) {
+        [string]$empresa.NomeFantasia
+    } else {
+        [string]$empresa.RazaoSocial
+    }
+
+    $ieValue = if (-not [string]::IsNullOrWhiteSpace([string]$empresa.Ie)) {
+        [string]$empresa.Ie
     } else {
         [string]::Empty
     }
 
-    $html = $html.Replace('{{NomeEmpresa}}',       $nomeEmpresa)
-    $html = $html.Replace('{{NomeFantasia}}',      $nomeEmpresa)
-    $html = $html.Replace('{{RazaoSocial}}',       $empresa.RazaoSocial)
-    $html = $html.Replace('{{CnpjFormatado}}',     (ConvertTo-FormattedCnpj -Value $empresa.Cnpj))
-    $html = $html.Replace('{{InscricaoEstadual}}', $ieValue)
-    $html = $html.Replace('{{PeriodoDisplay}}',    $Context.PeriodoDisplay)
-    $html = $html.Replace('{{PeriodoTitulo}}',     $Context.PeriodoDisplay)
-    $html = $html.Replace('{{DataEmissao}}',       $Context.DataEmissao)
+    $logoProp = $empresa.PSObject.Properties['Logotipo']
 
-    $logoProp  = $empresa.PSObject.Properties['Logotipo']
-    $logoValue = if ($null -ne $logoProp) { $logoProp.Value } else { $null }
-
-    if (-not [string]::IsNullOrWhiteSpace($logoValue)) {
-        $html = $html.Replace('{{#TemLogotipo}}', [string]::Empty)
-        $html = $html.Replace('{{/TemLogotipo}}', [string]::Empty)
-        $html = $html.Replace('{{Logotipo}}',     $logoValue)
+    $logoValue = if ($null -ne $logoProp) {
+        [string]$logoProp.Value
     } else {
-        $html = [string]($html -replace '(?s){{#TemLogotipo}}.*?{{/TemLogotipo}}', [string]::Empty)
+        [string]::Empty
     }
 
-    if ($Context.NotasNaoLancadas -and $Context.NotasNaoLancadas.Count -gt 0) {
-        $rows  = $Context.NotasNaoLancadas
-        $lines = for ($i = 0; $i -lt $rows.Count; $i++) {
-            $row   = $rows[$i]
+    $resumoProp = $Context.PSObject.Properties['ResumoDocumentos']
+
+    $resumoRows = @(
+        if ($null -ne $resumoProp -and $null -ne $resumoProp.Value) {
+            @($resumoProp.Value) | Where-Object { $null -ne $_ }
+        }
+    )
+
+    $notasProp = $Context.PSObject.Properties['NotasNaoLancadas']
+
+    $notasRows = @(
+        if ($null -ne $notasProp -and $null -ne $notasProp.Value) {
+            @($notasProp.Value) | Where-Object { $null -ne $_ }
+        }
+    )
+    #endregion
+
+    #region Conditional blocks
+    $conditionalBlocks = @(
+        @{
+            Name    = 'TemLogotipo'
+            Include = -not [string]::IsNullOrWhiteSpace($logoValue)
+        },
+        @{
+            Name    = 'TemNotasNaoLancadas'
+            Include = $notasRows.Count -gt 0
+        },
+        @{
+            Name    = 'TemReplyTo'
+            Include = -not [string]::IsNullOrWhiteSpace([string]$Context.ReplyTo)
+        },
+        @{
+            Name    = 'TemArquivosManuais'
+            Include = $false
+        }
+    )
+
+    foreach ($block in $conditionalBlocks) {
+        $startMarker = '{{#' + $block.Name + '}}'
+        $endMarker   = '{{/' + $block.Name + '}}'
+
+        if ($block.Include) {
+            $html = $html.Replace($startMarker, [string]::Empty)
+            $html = $html.Replace($endMarker,   [string]::Empty)
+        } else {
+            $pattern = '(?s){0}.*?{1}' -f [regex]::Escape($startMarker), [regex]::Escape($endMarker)
+            $html    = [regex]::Replace($html, $pattern, [string]::Empty)
+        }
+    }
+    #endregion
+
+    #region Document summary
+    $resumoLines = @(
+        for ($i = 0; $i -lt $resumoRows.Count; $i++) {
+            $row   = $resumoRows[$i]
             $zebra = if ($i % 2 -ne 0) { 'background-color:#f9f9f9;' } else { [string]::Empty }
 
-            '<tr style="{0}border-bottom:1px solid #eeeeee;">' -f $zebra +
-            '<td align="right" style="padding:10px 14px;color:#111111;font-size:13px;">{0}</td>' -f $row.Inicial +
-            '<td align="right" style="padding:10px 14px;color:#111111;font-size:13px;">{0}</td>' -f $row.Final +
-            '<td align="right" style="padding:10px 14px;color:#111111;font-size:13px;">{0}</td>' -f $row.Serie +
-            '<td style="padding:10px 14px;color:#111111;font-size:13px;">{0}</td>' -f $row.Especie +
-            '</tr>'
+            $tipo       = [System.Net.WebUtility]::HtmlEncode([string]$row.Tipo)
+            $quantidade = [System.Net.WebUtility]::HtmlEncode([string]$row.Quantidade)
+
+            $rowHtml = @(
+                '<tr style="{0}border-bottom:1px solid #eeeeee;">'
+                '<td style="padding:10px 14px;color:#111111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:18px;">{1}</td>'
+                '<td align="right" style="padding:10px 14px;color:#111111;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:18px;">{2}</td>'
+                '</tr>'
+            ) -join ''
+
+            $rowHtml -f $zebra, $tipo, $quantidade
+        }
+    )
+
+    $resumoHtml = $resumoLines -join ''
+    #endregion
+
+    #region Sequence gaps
+    $notasLines = @(
+        for ($i = 0; $i -lt $notasRows.Count; $i++) {
+            $row   = $notasRows[$i]
+            $zebra = if ($i % 2 -ne 0) { 'background-color:#f9f9f9;' } else { [string]::Empty }
+
+            $inicial = [System.Net.WebUtility]::HtmlEncode([string]$row.Inicial)
+            $final   = [System.Net.WebUtility]::HtmlEncode([string]$row.Final)
+            $serie   = [System.Net.WebUtility]::HtmlEncode([string]$row.Serie)
+            $especie = [System.Net.WebUtility]::HtmlEncode([string]$row.Especie)
+
+            $rowHtml = @(
+                '<tr style="{0}border-bottom:1px solid #eeeeee;">'
+                '<td align="right" style="padding:10px 14px;color:#111111;font-size:13px;">{1}</td>'
+                '<td align="right" style="padding:10px 14px;color:#111111;font-size:13px;">{2}</td>'
+                '<td align="right" style="padding:10px 14px;color:#111111;font-size:13px;">{3}</td>'
+                '<td style="padding:10px 14px;color:#111111;font-size:13px;">{4}</td>'
+                '</tr>'
+            ) -join ''
+
+            $rowHtml -f $zebra, $inicial, $final, $serie, $especie
+        }
+    )
+
+    $notasHtml = $notasLines -join ''
+    #endregion
+
+    #region Placeholder rendering
+    $cnpjFormatado = ConvertTo-FormattedCnpj -Value $empresa.Cnpj
+
+    $encodedValues = @{
+        NomeEmpresa       = [System.Net.WebUtility]::HtmlEncode($nomeEmpresa)
+        NomeFantasia      = [System.Net.WebUtility]::HtmlEncode($nomeEmpresa)
+        RazaoSocial       = [System.Net.WebUtility]::HtmlEncode([string]$empresa.RazaoSocial)
+        CnpjFormatado     = [System.Net.WebUtility]::HtmlEncode([string]$cnpjFormatado)
+        InscricaoEstadual = [System.Net.WebUtility]::HtmlEncode($ieValue)
+        PeriodoDisplay    = [System.Net.WebUtility]::HtmlEncode([string]$Context.PeriodoDisplay)
+        PeriodoTitulo     = [System.Net.WebUtility]::HtmlEncode([string]$Context.PeriodoDisplay)
+        DataEmissao       = [System.Net.WebUtility]::HtmlEncode([string]$Context.DataEmissao)
+        ReplyTo           = [System.Net.WebUtility]::HtmlEncode([string]$Context.ReplyTo)
+        Logotipo          = $logoValue
+
+        # Table content is already HTML-encoded row by row.
+        ResumoDocumentos  = $resumoHtml
+        NotasNaoLancadas  = $notasHtml
+    }
+
+    # A single pass prevents inserted values from being interpreted
+    # as additional placeholders during subsequent replacements.
+    $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
+        param ([System.Text.RegularExpressions.Match]$match)
+
+        $key = $match.Groups[1].Value
+
+        if ($encodedValues.ContainsKey($key)) {
+            return [string]$encodedValues[$key]
         }
 
-        $html = $html.Replace('{{#TemNotasNaoLancadas}}', [string]::Empty)
-        $html = $html.Replace('{{/TemNotasNaoLancadas}}', [string]::Empty)
-        $html = $html.Replace('{{NotasNaoLancadas}}',     ($lines -join ''))
-    } else {
-        $html = [string]($html -replace '(?s){{#TemNotasNaoLancadas}}.*?{{/TemNotasNaoLancadas}}', [string]::Empty)
+        return $match.Value
     }
 
+    $html = [regex]::Replace(
+        $html,
+        '\{\{([A-Za-z][A-Za-z0-9]*)\}\}',
+        $evaluator
+    )
+    #endregion
 
-    if (-not [string]::IsNullOrWhiteSpace($Context.ReplyTo)) {
-        $html = $html.Replace('{{#TemReplyTo}}',  [string]::Empty)
-        $html = $html.Replace('{{/TemReplyTo}}',  [string]::Empty)
-        $html = $html.Replace('{{ReplyTo}}',       $Context.ReplyTo)
-    } else {
-        $html = [string]($html -replace '(?s){{#TemReplyTo}}.*?{{/TemReplyTo}}', [string]::Empty)
-    }
-
-    $html
+    return $html
 }
