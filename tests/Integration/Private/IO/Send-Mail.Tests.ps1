@@ -312,25 +312,26 @@ Describe 'Send-Mail' -Tag 'Integration' -Skip:(-not $Script:SmtpIntegrationEnabl
                 $result.Error   | Should -BeNullOrEmpty
             }
 
-            It 'Skips a missing attachment and still delivers' {
+            It 'Rejects a missing attachment without attempting SMTP delivery' {
 
                 $missingPath = [System.IO.Path]::Combine(
                     [System.IO.Path]::GetTempPath(),
-                    'PipeDFe-nonexistent-attachment.zip'
+                    'PipeDFe-nonexistent-{0}.zip' -f [guid]::NewGuid().ToString('N')
                 )
 
                 $sendParams = @{
                     SmtpConfig  = $Script:SmtpConfig
                     To          = $Script:ToRecipient
-                    Subject     = '[PipeDFe] Integration test - missing attachment - ignore'
+                    Subject     = '[PipeDFe] Integration test - missing attachment'
                     Body        = '<p>Automated integration test with missing attachment.</p>'
                     Attachments = @($missingPath)
                 }
 
                 $result = Send-Mail @sendParams
 
-                $result.Success | Should -BeTrue
-                $result.Error   | Should -BeNullOrEmpty
+                $result.Success       | Should -BeFalse
+                $result.SendAttempted | Should -BeFalse
+                $result.Error         | Should -Match 'Attachment not found'
             }
         }
         #endregion
