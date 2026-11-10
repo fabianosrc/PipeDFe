@@ -40,6 +40,12 @@ Coverage includes:
     Justification = 'ShouldProcess would add no value here.'
 )]
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    '',
+    Justification = 'Required by the mock signature for New-DFeArchive.'
+)]
+
 param ()
 
 # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
@@ -275,6 +281,23 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             }
 
             Mock -CommandName New-DFeArchive -MockWith {
+                param (
+                    [Parameter()]
+                    [string]$Cnpj,
+
+                    [Parameter()]
+                    [pscustomobject]$Company,
+
+                    [Parameter()]
+                    [pscustomobject[]]$Entries,
+
+                    [Parameter()]
+                    [pscustomobject[]]$ArchiveInfos,
+
+                    [Parameter()]
+                    [pscustomobject]$DateRange
+                )
+
                 return $Script:Archive
             }
 
@@ -570,7 +593,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $result = Invoke-TestCompany
 
                 $result.Status | Should -Be 'Falha'
-                $result.Erro | Should -Match 'processamento fiscal não concluído'
+                $result.Erro   | Should -Match 'processamento fiscal não concluído'
 
                 $archiveShouldParams = @{
                     CommandName = 'New-DFeArchive'
@@ -1136,6 +1159,23 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             BeforeEach {
 
                 Mock -CommandName New-DFeArchive -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$Cnpj,
+
+                        [Parameter()]
+                        [pscustomobject]$Company,
+
+                        [Parameter()]
+                        [pscustomobject[]]$Entries,
+
+                        [Parameter()]
+                        [pscustomobject[]]$ArchiveInfos,
+
+                        [Parameter()]
+                        [pscustomobject]$DateRange
+                    )
+
                     throw [System.IO.IOException]::new('ZIP creation failed.')
                 }
 
@@ -1213,6 +1253,23 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             It 'Does not throw when New-DFeArchive throws' {
                 Mock -CommandName New-DFeArchive -MockWith {
+                    param (
+                        [Parameter()]
+                        [string]$Cnpj,
+
+                        [Parameter()]
+                        [pscustomobject]$Company,
+
+                        [Parameter()]
+                        [pscustomobject[]]$Entries,
+
+                        [Parameter()]
+                        [pscustomobject[]]$ArchiveInfos,
+
+                        [Parameter()]
+                        [pscustomobject]$DateRange
+                    )
+
                     throw [System.InvalidOperationException]::new('boom')
                 }
 
