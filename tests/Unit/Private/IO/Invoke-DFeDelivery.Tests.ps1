@@ -36,6 +36,7 @@ Coverage includes:
   - Returns FailedAt = Persistence when failure state cannot be persisted.
   - Passes Archives DestPath as ZipFileDestination to Send-DFeNotification.
   - Passes Gaps to Send-DFeNotification.
+  - Passes Entries to Send-DFeNotification.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -138,12 +139,20 @@ Describe 'Invoke-DFeDelivery' {
                 FailedAt     = $null
             }
 
+            $Script:ValidEntries = @(
+                [PSCustomObject]@{
+                    chave_acesso = '1' * 44
+                    modelo       = 55
+                }
+            )
+
             $Script:BaseParams = @{
                 Company   = $Script:ValidCompany
                 DateRange = $Script:ValidDateRange
                 Smtp      = $Script:ValidSmtp
                 Gaps      = @()
                 Archives  = @($Script:ValidArchive)
+                Entries   = $Script:ValidEntries
             }
         }
 
@@ -1131,6 +1140,20 @@ Describe 'Invoke-DFeDelivery' {
                 }
 
                 Invoke-DFeDelivery @gapParams | Out-Null
+
+                Should -Invoke @assertParams
+            }
+
+            It 'Passes Entries to Send-DFeNotification' {
+                $assertParams = @{
+                    CommandName     = 'Send-DFeNotification'
+                    Times           = 1
+                    Exactly         = $true
+                    Scope           = 'It'
+                    ParameterFilter = { $Entries.Count -eq 1 }
+                }
+
+                Invoke-DFeDelivery @Script:BaseParams | Out-Null
 
                 Should -Invoke @assertParams
             }
