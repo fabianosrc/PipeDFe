@@ -52,6 +52,8 @@ Describe 'Set-DFeDeliveryState' -Tag 'Integration' {
         #region Infrastructure
         BeforeAll {
 
+            $Script:TestPeriodIndex = -1
+
             $testID = [guid]::NewGuid().ToString('N')
 
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
@@ -254,6 +256,20 @@ WHERE delivery_id = @delivery_id;
 
                 $caught | Should -BeTrue
             }
+        }
+
+        BeforeEach {
+            # Isolate delivery identities between tests while preserving
+            # the same period for every operation within a single test.
+            $Script:TestPeriodIndex++
+
+            $Script:PeriodStart = (
+                [DateTimeOffset]::Parse('2026-11-01T00:00:00-03:00')
+            ).AddMonths($Script:TestPeriodIndex)
+
+            $Script:PeriodEnd = (
+                $Script:PeriodStart.AddMonths(1).AddSeconds(-1)
+            )
         }
 
         AfterAll {
