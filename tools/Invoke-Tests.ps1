@@ -77,6 +77,9 @@ param (
     [string]$OutputFormat = 'NUnitXml',
 
     [Parameter()]
+    [switch]$DetailedOutput,
+
+    [Parameter()]
     [string]$TestPath,
 
     [Parameter()]
@@ -219,7 +222,7 @@ $config = New-PesterConfiguration
 
 $config.Run.Path                = $resolvedTestPath
 $config.Run.PassThru            = $true
-$config.Output.Verbosity        = 'Detailed'
+$config.Output.Verbosity        = if ($DetailedOutput) { 'Detailed' } else { 'Normal' }
 $config.TestResult.Enabled      = $true
 $config.TestResult.OutputPath   = Join-Path -Path $resultsDir -ChildPath "TestResults.$OutputFormat.xml"
 $config.TestResult.OutputFormat = $OutputFormat
@@ -255,6 +258,8 @@ $result = Invoke-Pester -Configuration $config
 
 #endregion
 
+$coveragePercent = $null
+
 #region Coverage report
 
 if ($Coverage -and $null -ne $result.CodeCoverage) {
@@ -285,6 +290,8 @@ if ($Coverage -and $null -ne $result.CodeCoverage) {
             $pct = [System.Math]::Round((($totalCmds - $missedCmds) / $totalCmds) * 100, 2)
         }
     }
+
+    $coveragePercent = $pct
 
     $coverageColor = if ($pct -ge $CoverageTarget) {
         'Green'
@@ -408,10 +415,30 @@ if ($PassThru) {
 }
 
 if ($result.TotalCount -eq 0) {
-    Write-Warning 'No tests were discovered. Check the -TestPath and file naming (*.Tests.ps1).'
+    Write-Warning 'No tests were discovered.'
     exit 2
 }
 
-exit $(if ($result.FailedCount -gt 0) { 1 } else { 0 })
+if ($result.FailedCount -gt 0) {
+    exit 1
+}
+
+if ($Coverage) {
+    if ($null -eq $coveragePercent) {
+        Write-Warning 'Code coverage results are unavailable.'
+        exit 1
+    }
+
+    if ($coveragePercent -lt $CoverageTarget) {
+        Write-Warning (
+            'Code coverage {0}% is below the required {1}%.' -f
+            $coveragePercent, $CoverageTarget
+        )
+
+        exit 1
+    }
+}
+
+exit 0
 
 #endregion
