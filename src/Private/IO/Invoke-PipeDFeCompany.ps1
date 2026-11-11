@@ -349,6 +349,7 @@ function Invoke-PipeDFeCompany {
                 Smtp      = $smtp
                 Gaps      = $gapEntries
                 Archives  = $archives
+                Entries   = $entries
             }
 
             $notificationResult = Invoke-DFeDelivery @notificationParams
