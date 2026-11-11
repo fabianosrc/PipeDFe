@@ -48,11 +48,11 @@ Coverage includes:
 
 param ()
 
-# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-# because that's when Context/It are executed to register the test tree. If the
-# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-# BeforeEach ever runs.
 BeforeDiscovery {
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+    # because that's when Context/It are executed to register the test tree. If the
+    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+    # BeforeEach ever runs.
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
     $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
@@ -306,6 +306,26 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             }
 
             Mock -CommandName Invoke-DFeDelivery -MockWith {
+                param (
+                    [Parameter()]
+                    [pscustomobject]$Company,
+
+                    [Parameter()]
+                    [pscustomobject]$DateRange,
+
+                    [Parameter()]
+                    [pscustomobject]$Smtp,
+
+                    [Parameter()]
+                    [pscustomobject[]]$Gaps,
+
+                    [Parameter()]
+                    [pscustomobject[]]$Archives,
+
+                    [Parameter()]
+                    [pscustomobject[]]$Entries
+                )
+
                 return $Script:NotificationSuccess
             }
         }
@@ -593,7 +613,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 $result = Invoke-TestCompany
 
                 $result.Status | Should -Be 'Falha'
-                $result.Erro   | Should -Match 'processamento fiscal não concluído'
+                $result.Erro | Should -Match 'processamento fiscal não concluído'
 
                 $archiveShouldParams = @{
                     CommandName = 'New-DFeArchive'
@@ -793,7 +813,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
                 Mock -CommandName Invoke-DFeDocumentProcessing -MockWith {
                     if ($Entry.chave_acesso -eq $Script:Entry.chave_acesso) {
-                        throw [System.InvalidOperationException]::new('First document failed.')
+                        throw [System.InvalidOperationException]::new(
+                            'First document failed.'
+                        )
                     }
                 }
 
@@ -827,7 +849,9 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             It 'Blocks archive after an Indexed document processing failure' {
                 Mock -CommandName Invoke-DFeDocumentProcessing -MockWith {
-                    throw [System.InvalidOperationException]::new('Fiscal processing failed.')
+                    throw [System.InvalidOperationException]::new(
+                        'Fiscal processing failed.'
+                    )
                 }
 
                 $result = Invoke-TestCompany
@@ -1019,6 +1043,26 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             BeforeEach {
 
                 Mock -CommandName Invoke-DFeDelivery -MockWith {
+                    param (
+                        [Parameter()]
+                        [pscustomobject]$Company,
+
+                        [Parameter()]
+                        [pscustomobject]$DateRange,
+
+                        [Parameter()]
+                        [pscustomobject]$Smtp,
+
+                        [Parameter()]
+                        [pscustomobject[]]$Gaps,
+
+                        [Parameter()]
+                        [pscustomobject[]]$Archives,
+
+                        [Parameter()]
+                        [pscustomobject[]]$Entries
+                    )
+
                     return $Script:NotificationFailure
                 }
 
