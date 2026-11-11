@@ -382,34 +382,92 @@ Describe 'Publish-DFeArchive' -Tag 'Unit' {
                 )
             }
 
-            It 'Atomically replaces an existing destination' {
+            It 'Preserves an existing archive when its hash matches' {
+                Mock -CommandName Get-FileSha256 -MockWith {
+                    $Script:FakeHash
+                }
+
                 $publishParams = @{
                     SourcePath      = $Script:SourcePath
                     DestinationPath = $Script:DestinationPath
                     ExpectedHash    = $Script:FakeHash
                 }
 
-                Publish-DFeArchive @publishParams
+                { Publish-DFeArchive @publishParams } |
+                    Should -Not -Throw
 
                 [System.IO.File]::ReadAllText($Script:DestinationPath) |
-                    Should -BeExactly 'new archive content'
+                    Should -BeExactly 'old archive content'
             }
 
-            It 'Does not leave a backup file after replacing the destination' {
+            It 'Rejects an existing archive with different content' {
+                Mock -CommandName Get-FileSha256 -MockWith {
+                    if ($Path -eq $Script:DestinationPath) {
+                        return ('b' * 64)
+                    }
+
+                    return $Script:FakeHash
+                }
+
                 $publishParams = @{
                     SourcePath      = $Script:SourcePath
                     DestinationPath = $Script:DestinationPath
                     ExpectedHash    = $Script:FakeHash
                 }
 
-                Publish-DFeArchive @publishParams
+                { Publish-DFeArchive @publishParams } |
+                    Should -Throw -ErrorId 'ArchivePublishConflict*'
+            }
 
-                $itemParams = @{
-                    LiteralPath = $Script:OutputPath
-                    Filter      = '*.backup'
+            It 'Preserves existing archive content after a conflict' {
+                Mock -CommandName Get-FileSha256 -MockWith {
+                    if ($Path -eq $Script:DestinationPath) {
+                        return ('b' * 64)
+                    }
+
+                    return $Script:FakeHash
                 }
 
-                (Get-ChildItem @itemParams) | Should -HaveCount 0
+                $publishParams = @{
+                    SourcePath      = $Script:SourcePath
+                    DestinationPath = $Script:DestinationPath
+                    ExpectedHash    = $Script:FakeHash
+                }
+
+                { Publish-DFeArchive @publishParams } |
+                    Should -Throw -ErrorId 'ArchivePublishConflict*'
+
+                [System.IO.File]::ReadAllText($Script:DestinationPath) |
+                    Should -BeExactly 'old archive content'
+            }
+
+            It 'Removes staging files after a publication conflict' {
+                Mock -CommandName Get-FileSha256 -MockWith {
+                    if ($Path -eq $Script:DestinationPath) {
+                        return ('b' * 64)
+                    }
+
+                    return $Script:FakeHash
+                }
+
+                $publishParams = @{
+                    SourcePath      = $Script:SourcePath
+                    DestinationPath = $Script:DestinationPath
+                    ExpectedHash    = $Script:FakeHash
+                }
+
+                { Publish-DFeArchive @publishParams } |
+                    Should -Throw -ErrorId 'ArchivePublishConflict*'
+
+                $stageFiles = @(
+                    Get-ChildItem -LiteralPath $Script:OutputPath |
+                        Where-Object {
+                            $_.Name -like '.publish-*.tmp' -or
+                            $_.Name -like '.publish-*.backup'
+                        }
+                )
+
+                $stageFiles | Should -HaveCount 0
             }
         }
         #endregion
