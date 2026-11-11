@@ -8,9 +8,9 @@ Owns the full delivery lifecycle:
   1. Creates or retrieves the delivery record via New-DFeDelivery.
   2. Returns immediately when the delivery is already Delivered.
   3. Blocks and returns immediately when the delivery is Indeterminate.
-  4. Recovers a Sending record found during startup - the global execution
+  4. Recovers a Sending record found during startup — the global execution
      mutex held by Invoke-PipeDFe guarantees that Sending here belongs to
-     an interrupted execution, not a concurrent one - and transitions it
+     an interrupted execution, not a concurrent one — and transitions it
      to Indeterminate to block automatic retry.
   5. Transitions Prepared or Failed to Sending.
   6. Delegates rendering and SMTP delivery to Send-DFeNotification.
@@ -40,6 +40,10 @@ Sequence gaps for inclusion in the mail body. An empty collection is valid.
 .PARAMETER Archives
 Archive objects as returned by New-DFeArchive. Each must expose TipoDFe,
 FileName, FileHash, and DestPath.
+
+.PARAMETER Entries
+DFe document index entries for the period. Passed to Send-DFeNotification
+to build the fiscal document summary in the email body.
 
 .OUTPUTS
 System.Management.Automation.PSCustomObject
@@ -79,35 +83,40 @@ function Invoke-DFeDelivery {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [pscustomobject[]]$Archives
+        [pscustomobject[]]$Archives,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [pscustomobject[]]$Entries
     )
 
-    $cnpj = $null
+    $cnpj = [string]$Company.Cnpj
 
     #region Recipient resolution
+    $para = $null
+    $cc   = @()
+    $bcc  = @()
+
     try {
-        $cnpj = [string]$Company.Cnpj
-
-        $mailTo = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Para)
-
-        if ($mailTo.Count -eq 0) {
-            return [PSCustomObject]@{
-                Success        = $false
-                EmailsSent     = @()
-                ErrorMessage   = 'No primary recipient (Para) configured.'
-                FailedAt       = 'Validation'
-                DeliveryId     = $null
-                DeliveryStatus = $null
-            }
-        }
-
-        $mailCc  = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cc)
-        $mailBcc = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cco)
+        $para = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Para)
+        $cc   = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cc)
+        $bcc  = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Cco)
     } catch {
         return [PSCustomObject]@{
             Success        = $false
             EmailsSent     = @()
             ErrorMessage   = $_.Exception.Message
+            FailedAt       = 'Validation'
+            DeliveryId     = $null
+            DeliveryStatus = $null
+        }
+    }
+
+    if ($para.Count -eq 0) {
+        return [PSCustomObject]@{
+            Success        = $false
+            EmailsSent     = @()
+            ErrorMessage   = 'No primary recipient (Para) configured.'
             FailedAt       = 'Validation'
             DeliveryId     = $null
             DeliveryStatus = $null
@@ -124,9 +133,9 @@ function Invoke-DFeDelivery {
             PeriodStart = [DateTimeOffset]$DateRange.Start
             PeriodEnd   = [DateTimeOffset]$DateRange.End
             Archives    = $Archives
-            To          = $mailTo
-            Cc          = $mailCc
-            Bcc         = $mailBcc
+            To          = $para
+            Cc          = $cc
+            Bcc         = $bcc
         }
 
         $delivery = New-DFeDelivery @deliveryParams
@@ -261,12 +270,17 @@ function Invoke-DFeDelivery {
         DateRange          = $DateRange
         Smtp               = $Smtp
         Gaps               = $Gaps
+        Entries            = $Entries
         ZipFileDestination = @($Archives | Select-Object -ExpandProperty DestPath)
     }
+
+    $notificationResult = $null
 
     try {
         $notificationResult = Send-DFeNotification @notificationParams
     } catch {
+        # An unexpected exception from Send-DFeNotification is treated
+        # conservatively as Indeterminate — the SMTP outcome is unknown.
         $notificationResult = [PSCustomObject]@{
             Success       = $false
             EmailsSent    = @()
@@ -275,7 +289,6 @@ function Invoke-DFeDelivery {
             SendAttempted = $true
         }
     }
-
     #endregion
 
     #region Transition from Sending
@@ -292,7 +305,7 @@ function Invoke-DFeDelivery {
             Set-DFeDeliveryState @deliveredParams | Out-Null
         } catch {
             # SMTP confirmed the send but Delivered could not be persisted.
-            # Return failure to prevent silent data loss - the caller will
+            # Return failure to prevent silent data loss — the caller will
             # surface this as a warning and the delivery remains in Sending,
             # which will be recovered as Indeterminate on the next execution.
             return [PSCustomObject]@{
