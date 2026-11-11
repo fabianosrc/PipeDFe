@@ -200,15 +200,34 @@ function Publish-DFeArchive {
         # Publish only after successful staging and hash validation.
         try {
             if ([System.IO.File]::Exists($destinationFullPath)) {
-                [System.IO.File]::Replace(
-                    $stagePath,
-                    $destinationFullPath,
-                    $backupPath
+                $existingHash = Get-FileSha256 -Path $destinationFullPath -ErrorAction Stop
+
+                $hashMatches = [string]::Equals(
+                    $existingHash,
+                    $ExpectedHash,
+                    [System.StringComparison]::OrdinalIgnoreCase
                 )
+
+                if (-not $hashMatches) {
+                    throw [System.Management.Automation.ErrorRecord]::new(
+                        [System.IO.InvalidDataException]::new(
+                            "The destination archive already exists with different content: '$destinationFullPath'."
+                        ),
+                        'ArchivePublishConflict',
+                        [System.Management.Automation.ErrorCategory]::ResourceExists,
+                        $destinationFullPath
+                    )
+                }
+
+                # Identical content is already published. Preserve the existing file.
             } else {
                 [System.IO.File]::Move($stagePath, $destinationFullPath)
             }
         } catch {
+            if ($_.FullyQualifiedErrorId -like 'ArchivePublishConflict*') {
+                throw
+            }
+
             throw [System.Management.Automation.ErrorRecord]::new(
                 [System.IO.IOException]::new(
                     "Failed to publish archive to '$destinationFullPath'.",
