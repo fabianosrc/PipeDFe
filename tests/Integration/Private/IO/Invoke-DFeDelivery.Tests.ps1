@@ -51,6 +51,8 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
         BeforeAll {
 
+            $Script:TestPeriodIndex = -1
+
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
 
             $testID = [guid]::NewGuid().ToString('N')
@@ -160,6 +162,18 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
         }
 
         BeforeEach {
+            # Isolate delivery identities between tests while preserving
+            # the same period for every operation within a single test.
+            $Script:TestPeriodIndex++
+
+            $periodStart = (
+                [DateTimeOffset]::Parse('2026-11-01T00:00:00-03:00')
+            ).AddMonths($Script:TestPeriodIndex)
+
+            $Script:DateRange = [pscustomobject]@{
+                Start = $periodStart
+                End   = $periodStart.AddMonths(1).AddSeconds(-1)
+            }
 
             $Script:Archive = New-LifecycleArchive
 
