@@ -589,10 +589,16 @@ WHERE delivery_id = @delivery_id;
             }
 
             It 'Does not reset an existing delivery state to Prepared' {
+                # Use an isolated company index so a Delivered record cannot
+                # interfere with subsequent delivery identity tests.
+                $cnpj = '12345678000901'
+
+                Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
                 $archive = New-TestArchive -TipoDFe 'NFe' -Content 'preserve delivery state'
 
                 $params = @{
-                    Cnpj        = $Script:TestCnpj
+                    Cnpj        = $cnpj
                     PeriodStart = $Script:PeriodStart
                     PeriodEnd   = $Script:PeriodEnd
                     Archives    = @($archive)
@@ -602,13 +608,12 @@ WHERE delivery_id = @delivery_id;
                 $first = New-DFeDelivery @params
 
                 $deliveryStatusParams = @{
-                    Cnpj       = $Script:TestCnpj
+                    Cnpj       = $cnpj
                     DeliveryId = $first.DeliveryId
                     Status     = 'Delivered'
                 }
 
                 Set-TestDeliveryStatus @deliveryStatusParams
-
 
                 $second = New-DFeDelivery @params
 
@@ -617,6 +622,7 @@ WHERE delivery_id = @delivery_id;
                 $second.DeliveryStatus | Should -Be 'Delivered'
                 $second.DeliveredAt    | Should -Not -BeNullOrEmpty
             }
+
         }
         #endregion
 
@@ -862,6 +868,99 @@ WHERE delivery_id = @delivery_id;
 
                 $second.Created     | Should -BeTrue
                 $second.DeliveryKey | Should -Not -Be $first.DeliveryKey
+            }
+        }
+        #endregion
+
+        #region Conflicting delivery states
+        Context 'Conflicting delivery states' {
+
+            It 'Blocks changed archive content after a delivered period' {
+                $cnpj = '12345678000432'
+                Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
+                $firstArchive  = New-TestArchive -TipoDFe 'NFe' -Content 'original archive'
+                $secondArchive = New-TestArchive -TipoDFe 'NFe' -Content 'changed archive'
+
+                $params = @{
+                    Cnpj        = $cnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($firstArchive)
+                    To          = @('accounting@example.com')
+                }
+
+                $first = New-DFeDelivery @params
+
+                Set-TestDeliveryStatus -Cnpj $cnpj -DeliveryId $first.DeliveryId -Status 'Delivered'
+
+                $params.Archives = @($secondArchive)
+
+                {
+                    New-DFeDelivery @params
+                } | Should -Throw -ErrorId 'DFeDeliveryCreateFailed*'
+
+                $count = Get-TestScalar -Cnpj $cnpj -Sql @'
+SELECT COUNT(*) FROM dfe_delivery;
+'@
+
+                [int]$count | Should -Be 1
+            }
+
+            It 'Blocks changed recipients after a delivered period' {
+                $cnpj = '12345678000513'
+                Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
+                $archive = New-TestArchive -TipoDFe 'NFCom' -Content 'fiscal archive'
+
+                $params = @{
+                    Cnpj        = $cnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($archive)
+                    To          = @('first@example.com')
+                }
+
+                $first = New-DFeDelivery @params
+
+                Set-TestDeliveryStatus -Cnpj $cnpj -DeliveryId $first.DeliveryId -Status 'Delivered'
+
+                $params.To = @('second@example.com')
+
+                {
+                    New-DFeDelivery @params
+                } | Should -Throw -ErrorId 'DFeDeliveryCreateFailed*'
+
+                $count = Get-TestScalar -Cnpj $cnpj -Sql @'
+SELECT COUNT(*) FROM dfe_delivery;
+'@
+
+                [int]$count | Should -Be 1
+            }
+
+            It 'Preserves idempotent retrieval for an identical delivered delivery' {
+                $cnpj = '12345678000602'
+                Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
+                $archive = New-TestArchive -TipoDFe 'NFe' -Content 'unchanged archive'
+
+                $params = @{
+                    Cnpj        = $cnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($archive)
+                    To          = @('accounting@example.com')
+                }
+
+                $first = New-DFeDelivery @params
+
+                Set-TestDeliveryStatus -Cnpj $cnpj -DeliveryId $first.DeliveryId -Status 'Delivered'
+
+                $second = New-DFeDelivery @params
+
+                $second.Created | Should -BeFalse
+                $second.DeliveryId | Should -Be $first.DeliveryId
+                $second.DeliveryStatus | Should -Be 'Delivered'
             }
         }
         #endregion
