@@ -392,6 +392,7 @@ function New-DFeDelivery {
     # Pre-initialize so the catch block always has a non-null targetObject
     # even when an exception is raised before the hash is computed.
     $deliveryKey = $null
+
     # Ordinal sorting avoids dependence on the machine's current culture.
     # Null separators distinguish the components of each composite identity.
     $archiveIdentity = [System.Collections.Generic.List[string]]::new()
@@ -468,20 +469,65 @@ function New-DFeDelivery {
         $invariantCulture
     )
 
-    $connection = $null
+    $connection  = $null
     $transaction = $null
-    $reader = $null
+    $reader      = $null
 
-    $insertCommand = $null
-    $archiveCommand = $null
-    $recipientCommand = $null
-    $deliveryCommand = $null
-    $archiveSelectCommand = $null
+    $insertCommand          = $null
+    $archiveCommand         = $null
+    $conflictCommand        = $null
+    $recipientCommand       = $null
+    $deliveryCommand        = $null
+    $archiveSelectCommand   = $null
     $recipientSelectCommand = $null
 
     try {
         $connection = Open-DFeIndexConnection -Cnpj $Cnpj
         $transaction = $connection.BeginTransaction()
+
+        # Block a new delivery identity when the same company and period
+        # already has a completed or potentially transmitted delivery.
+        # The existing delivery_key remains the idempotency authority
+        # when the archive hashes and recipients have not changed.
+        $conflictCommand = $connection.CreateCommand()
+        $conflictCommand.Transaction = $transaction
+        $conflictCommand.CommandText = @'
+SELECT delivery_id
+FROM dfe_delivery
+WHERE period_start = @period_start
+AND period_end = @period_end
+AND delivery_key <> @delivery_key
+AND delivery_status IN ('Delivered', 'Sending', 'Indeterminate')
+LIMIT 1;
+'@
+
+        $conflictCommand.Parameters.AddWithValue(
+            '@period_start',
+            $periodStartText
+        ) | Out-Null
+
+        $conflictCommand.Parameters.AddWithValue(
+            '@period_end',
+            $periodEndText
+        ) | Out-Null
+
+        $conflictCommand.Parameters.AddWithValue(
+            '@delivery_key',
+            $deliveryKey
+        ) | Out-Null
+
+        $conflictingDeliveryId = $conflictCommand.ExecuteScalar()
+
+        if ($null -ne $conflictingDeliveryId -and
+            $conflictingDeliveryId -isnot [System.DBNull]
+        ) {
+            throw [System.InvalidOperationException]::new(
+                'A delivery with a different identity already exists ' +
+                'for this company and period in a terminal or uncertain ' +
+                'SMTP state. Automatic redelivery is blocked. ' +
+                "Existing DeliveryId: $conflictingDeliveryId"
+            )
+        }
 
         # Insert first to acquire SQLite's write lock before deciding whether
         # this delivery already exists. The unique key serializes concurrent
@@ -814,6 +860,10 @@ ORDER BY recipient_type COLLATE BINARY, address COLLATE BINARY;
 
         if ($null -ne $archiveCommand) {
             $archiveCommand.Dispose()
+        }
+
+        if ($null -ne $conflictCommand) {
+            $conflictCommand.Dispose()
         }
 
         if ($null -ne $recipientCommand) {
