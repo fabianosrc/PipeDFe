@@ -896,9 +896,8 @@ WHERE delivery_id = @delivery_id;
 
                 $params.Archives = @($secondArchive)
 
-                {
-                    New-DFeDelivery @params
-                } | Should -Throw -ErrorId 'DFeDeliveryCreateFailed*'
+                { New-DFeDelivery @params } |
+                    Should -Throw -ErrorId 'DFeDeliveryCreateFailed*'
 
                 $count = Get-TestScalar -Cnpj $cnpj -Sql @'
 SELECT COUNT(*) FROM dfe_delivery;
@@ -927,9 +926,8 @@ SELECT COUNT(*) FROM dfe_delivery;
 
                 $params.To = @('second@example.com')
 
-                {
-                    New-DFeDelivery @params
-                } | Should -Throw -ErrorId 'DFeDeliveryCreateFailed*'
+                { New-DFeDelivery @params } |
+                    Should -Throw -ErrorId 'DFeDeliveryCreateFailed*'
 
                 $count = Get-TestScalar -Cnpj $cnpj -Sql @'
 SELECT COUNT(*) FROM dfe_delivery;
@@ -958,9 +956,126 @@ SELECT COUNT(*) FROM dfe_delivery;
 
                 $second = New-DFeDelivery @params
 
-                $second.Created | Should -BeFalse
-                $second.DeliveryId | Should -Be $first.DeliveryId
+                $second.Created        | Should -BeFalse
+                $second.DeliveryId     | Should -Be $first.DeliveryId
                 $second.DeliveryStatus | Should -Be 'Delivered'
+            }
+
+            It 'Blocks changed identities for Sending and Indeterminate deliveries' {
+                $cases = @(
+                    @{
+                        Status = 'Sending'
+                        Cnpj   = '12345678000701'
+                    }
+                    @{
+                        Status = 'Indeterminate'
+                        Cnpj   = '12345678000801'
+                    }
+                )
+
+                foreach ($case in $cases) {
+                    $cnpj = $case.Cnpj
+
+                    Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
+                    $original = New-TestArchive -TipoDFe 'NFe' -Content 'original content'
+                    $changed  = New-TestArchive -TipoDFe 'NFe' -Content 'changed content'
+
+                    $deliveryParams = @{
+                        Cnpj        = $cnpj
+                        PeriodStart = $Script:PeriodStart
+                        PeriodEnd   = $Script:PeriodEnd
+                        Archives    = @($original)
+                        To          = @('accounting@example.com')
+                    }
+
+                    $delivery = New-DFeDelivery @deliveryParams
+
+                    $sendingParams = @{
+                        Cnpj                      = $cnpj
+                        DeliveryId                = $delivery.DeliveryId
+                        ExpectedStatus            = 'Prepared'
+                        ExpectedDeliveryStartedAt = $null
+                        Status                    = 'Sending'
+                    }
+
+                    $sending = Set-DFeDeliveryState @sendingParams
+
+                    if ($case.Status -eq 'Indeterminate') {
+                        $indeterminateParams = @{
+                            Cnpj                      = $cnpj
+                            DeliveryId                = $delivery.DeliveryId
+                            ExpectedStatus            = 'Sending'
+                            ExpectedDeliveryStartedAt = $sending.DeliveryStartedAt
+                            Status                    = 'Indeterminate'
+                            ErrorMessage              = 'SMTP outcome cannot be confirmed.'
+                        }
+
+                        $null = Set-DFeDeliveryState @indeterminateParams
+                    }
+
+                    $deliveryParams.Archives = @($changed)
+
+                    { New-DFeDelivery @deliveryParams } |
+                        Should -Throw -ErrorId 'DFeDeliveryCreateFailed*'
+
+                    $count = Get-TestScalar -Cnpj $cnpj -Sql @'
+            SELECT COUNT(*) FROM dfe_delivery;
+'@
+
+                    [int]$count | Should -Be 1
+                }
+            }
+
+            It 'Allows a changed identity after a failed delivery' {
+                $cnpj = '12345678000902'
+
+                Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
+                $firstArchive   = New-TestArchive -TipoDFe 'NFe' -Content 'original content'
+                $changedArchive = New-TestArchive -TipoDFe 'NFe' -Content 'changed content'
+
+                $params = @{
+                    Cnpj        = $cnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($firstArchive)
+                    To          = @('accounting@example.com')
+                }
+
+                $first = New-DFeDelivery @params
+
+                $deliveryStateParams = @{
+                    Cnpj                      = $cnpj
+                    DeliveryId                = $first.DeliveryId
+                    ExpectedStatus            = 'Prepared'
+                    ExpectedDeliveryStartedAt = $null
+                    Status                    = 'Sending'
+                }
+
+                $sending = Set-DFeDeliveryState @deliveryStateParams
+
+                $otherDeliveryStateParams = @{
+                    Cnpj                      = $cnpj
+                    DeliveryId                = $first.DeliveryId
+                    ExpectedStatus            = 'Sending'
+                    ExpectedDeliveryStartedAt = $sending.DeliveryStartedAt
+                    Status                    = 'Failed'
+                    ErrorMessage              = 'SMTP was not attempted.'
+                }
+
+                Set-DFeDeliveryState @otherDeliveryStateParams | Out-Null
+
+                $params.Archives = @($changedArchive)
+
+                $second = New-DFeDelivery @params
+                $second.Created | Should -BeTrue
+
+                $count = Get-TestScalar -Cnpj $cnpj -Sql @'
+SELECT COUNT(*) FROM dfe_delivery;
+'@
+
+                [int]$count | Should -Be 2
             }
         }
         #endregion
