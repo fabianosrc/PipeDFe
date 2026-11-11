@@ -53,11 +53,11 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
 
-            $testId = [guid]::NewGuid().ToString('N')
+            $testID = [guid]::NewGuid().ToString('N')
 
             $Script:TempRoot = [System.IO.Path]::Combine(
                 [System.IO.Path]::GetTempPath(),
-                'PipeDFe.DeliveryLifecycle.Tests-{0}' -f $testId
+                'PipeDFe.DeliveryLifecycle.Tests-{0}' -f $testID
             )
 
             New-Item -ItemType Directory -Path $Script:TempRoot -Force | Out-Null
@@ -169,6 +169,7 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
                 Smtp      = $Script:Smtp
                 Gaps      = @()
                 Archives  = @($Script:Archive)
+                Entries   = @()
             }
 
             Mock -CommandName Send-DFeNotification -MockWith {
