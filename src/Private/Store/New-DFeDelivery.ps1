@@ -485,6 +485,47 @@ function New-DFeDelivery {
         $connection = Open-DFeIndexConnection -Cnpj $Cnpj
         $transaction = $connection.BeginTransaction()
 
+        # Insert first to acquire SQLite's write lock before deciding whether
+        # this delivery already exists. The unique key serializes concurrent
+        # attempts for the same identity.
+        $insertCommand = $connection.CreateCommand()
+        $insertCommand.Transaction = $transaction
+        $insertCommand.CommandText = @'
+INSERT INTO dfe_delivery (
+    delivery_id,
+    delivery_key,
+    period_start,
+    period_end,
+    delivery_status,
+    created_at,
+    updated_at
+) VALUES (
+    @delivery_id,
+    @delivery_key,
+    @period_start,
+    @period_end,
+    'Prepared',
+    @created_at,
+    @updated_at
+)
+ON CONFLICT (delivery_key) DO NOTHING;
+'@
+
+        $insertCommand.Parameters.AddWithValue('@delivery_id', $deliveryId) | Out-Null
+        $insertCommand.Parameters.AddWithValue('@delivery_key', $deliveryKey) | Out-Null
+        $insertCommand.Parameters.AddWithValue('@period_start', $periodStartText) | Out-Null
+        $insertCommand.Parameters.AddWithValue('@period_end', $periodEndText) | Out-Null
+        $insertCommand.Parameters.AddWithValue('@created_at', $timestamp) | Out-Null
+        $insertCommand.Parameters.AddWithValue('@updated_at', $timestamp) | Out-Null
+
+        $rowsInserted = [int]$insertCommand.ExecuteNonQuery()
+
+        if ($rowsInserted -notin @(0, 1)) {
+            throw [System.InvalidOperationException]::new(
+                "Unexpected number of delivery rows inserted: $rowsInserted."
+            )
+        }
+
         # Block a new delivery identity when the same company and period
         # already has a completed or potentially transmitted delivery.
         # The existing delivery_key remains the idempotency authority
@@ -526,47 +567,6 @@ LIMIT 1;
                 'for this company and period in a terminal or uncertain ' +
                 'SMTP state. Automatic redelivery is blocked. ' +
                 "Existing DeliveryId: $conflictingDeliveryId"
-            )
-        }
-
-        # Insert first to acquire SQLite's write lock before deciding whether
-        # this delivery already exists. The unique key serializes concurrent
-        # attempts for the same identity.
-        $insertCommand = $connection.CreateCommand()
-        $insertCommand.Transaction = $transaction
-        $insertCommand.CommandText = @'
-INSERT INTO dfe_delivery (
-    delivery_id,
-    delivery_key,
-    period_start,
-    period_end,
-    delivery_status,
-    created_at,
-    updated_at
-) VALUES (
-    @delivery_id,
-    @delivery_key,
-    @period_start,
-    @period_end,
-    'Prepared',
-    @created_at,
-    @updated_at
-)
-ON CONFLICT (delivery_key) DO NOTHING;
-'@
-
-        $insertCommand.Parameters.AddWithValue('@delivery_id', $deliveryId) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@delivery_key', $deliveryKey) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@period_start', $periodStartText) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@period_end', $periodEndText) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@created_at', $timestamp) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@updated_at', $timestamp) | Out-Null
-
-        $rowsInserted = [int]$insertCommand.ExecuteNonQuery()
-
-        if ($rowsInserted -notin @(0, 1)) {
-            throw [System.InvalidOperationException]::new(
-                "Unexpected number of delivery rows inserted: $rowsInserted."
             )
         }
 
