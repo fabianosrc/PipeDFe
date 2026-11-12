@@ -89,7 +89,7 @@ function Restore-DFeSqliteDatabase {
 
     $targetDirectory = [System.IO.Path]::GetDirectoryName($targetPath)
 
-    $expectedVersion = if ($Scope -eq 'Index') { 5 } else { 1 }
+    $expectedVersion = if ($Scope -eq 'Index') { 6 } else { 1 }
 
     $requiredTables = if ($Scope -eq 'Index') {
         @(
@@ -97,6 +97,11 @@ function Restore-DFeSqliteDatabase {
             'dfe_delivery'
             'dfe_delivery_archive'
             'dfe_delivery_recipient'
+            'dfe_nfcom'
+            'dfe_nfcom_participante'
+            'dfe_nfcom_item'
+            'dfe_nfcom_item_ibscbs'
+            'dfe_nfcom_total'
         )
     } else {
         @(
