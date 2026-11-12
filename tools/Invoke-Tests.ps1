@@ -202,11 +202,23 @@ foreach ($dir in $resultsDir, $coverageDir) {
 
 #region Banner
 
-$pesterVersion = (
-    Get-Module -Name Pester -ListAvailable |
-        Sort-Object Version -Descending |
-        Select-Object -First 1
-).Version
+$requiredVersion = $env:PIPEDFE_PESTER_VERSION
+
+$importParams = @{
+    Name        = 'Pester'
+    Force       = $true
+    ErrorAction = 'Stop'
+}
+
+if (-not [string]::IsNullOrWhiteSpace($requiredVersion)) {
+    $importParams.RequiredVersion = $requiredVersion
+} else {
+    $importParams.MinimumVersion = '5.0.0'
+}
+
+Import-Module @importParams
+
+$pesterVersion = (Get-Module -Name Pester).Version
 
 Write-Host ''
 Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
