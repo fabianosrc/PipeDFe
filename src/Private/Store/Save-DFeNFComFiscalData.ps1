@@ -79,8 +79,8 @@ function Save-DFeNFComFiscalData {
     }
 
     if ($null -eq $FiscalData.SchemaVersion -or
-        [string]$FiscalData.SchemaVersion -cne '1') {
-
+        [string]$FiscalData.SchemaVersion -cne '1')
+    {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
                 [System.NotSupportedException]::new(
@@ -123,8 +123,8 @@ function Save-DFeNFComFiscalData {
 
     foreach ($required in @('Identificacao', 'Emitente', 'Itens')) {
         if ($null -eq $FiscalData.PSObject.Properties[$required] -or
-            $null -eq $FiscalData.$required
-        ) {
+            $null -eq $FiscalData.$required) {
+
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
@@ -141,7 +141,9 @@ function Save-DFeNFComFiscalData {
     $itemNumbers = [System.Collections.Generic.HashSet[int]]::new()
 
     foreach ($item in $FiscalData.Itens) {
-        if ($null -eq $item -or $null -eq $item.Produto -or $null -eq $item.Tributos) {
+        if ($null -eq $item -or $null -eq
+            $item.Produto -or $null -eq $item.Tributos)
+        {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
@@ -162,8 +164,7 @@ function Save-DFeNFComFiscalData {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
-                        'NFCom item numbers must be positive integers ' +
-                        'and unique within the document.'
+                        'NFCom item numbers must be positive integers and unique within the document.'
                     ),
                     'NFComFiscalDataInvalidItemNumber',
                     [System.Management.Automation.ErrorCategory]::InvalidArgument,
@@ -234,9 +235,7 @@ function Save-DFeNFComFiscalData {
 
             try {
                 $cmd.CommandText = 'INSERT INTO {0} ({1}) VALUES ({2});' -f (
-                    $Table,
-                    ($columns -join ', '),
-                    ($parameterNames -join ', ')
+                    $Table, ($columns -join ', '), ($parameterNames -join ', ')
                 )
 
                 for ($i = 0; $i -lt $columns.Count; $i++) {
@@ -245,7 +244,7 @@ function Save-DFeNFComFiscalData {
                     if ($null -eq $value) {
                         $value = [System.DBNull]::Value
                     } elseif ($value -is [decimal]) {
-                        $value = $value.ToString($invariant)
+                        $value = $value.ToString('G29', $invariant)
                     } elseif ($value -is [System.DateTimeOffset]) {
                         $value = $value.ToString('o')
                     } elseif ($value -isnot [int]) {
@@ -297,9 +296,11 @@ WHERE chave_acesso = @key;
                 $reader.Dispose()
             }
 
-            if ($indexedModel -ne 62 -or -not $indexedHash.Equals($normalizedHash,
+            if ($indexedModel -ne 62 -or
+                -not $indexedHash.Equals($normalizedHash,
                     [System.StringComparison]::OrdinalIgnoreCase)
             ) {
+
                 $PSCmdlet.ThrowTerminatingError(
                     [System.Management.Automation.ErrorRecord]::new(
                         [System.IO.InvalidDataException]::new(
