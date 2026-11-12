@@ -64,6 +64,8 @@ Describe 'New-DFeDelivery' -Tag 'Integration' {
                 'PipeDFe.New-DFeDelivery.Tests-{0}' -f $testId
             )
 
+            $Script:ModuleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
+
             New-Item -Path $Script:TempRoot -ItemType Directory -Force |
                 Out-Null
 
@@ -83,7 +85,7 @@ Describe 'New-DFeDelivery' -Tag 'Integration' {
 
             function New-TestArchive {
                 [CmdletBinding()]
-                [OutputType([pscustomobject])]
+                [OutputType([PSCustomObject])]
                 param (
                     [Parameter(Mandatory)]
                     [string]$TipoDFe,
@@ -198,7 +200,7 @@ Describe 'New-DFeDelivery' -Tag 'Integration' {
 
             function Get-TestDeliveryCount {
                 [CmdletBinding()]
-                [OutputType([pscustomobject])]
+                [OutputType([PSCustomObject])]
                 param (
                     [Parameter(Mandatory)]
                     [string]$Cnpj,
@@ -1076,6 +1078,192 @@ SELECT COUNT(*) FROM dfe_delivery;
 '@
 
                 [int]$count | Should -Be 2
+            }
+
+            It 'Blocks a concurrent identity after the original delivery commits as Delivered' {
+                $cnpj = '12345678000903'
+
+                Initialize-DFeIndex -Cnpj $cnpj | Out-Null
+
+                $originalArchive = New-TestArchive -TipoDFe 'NFe' -Content 'original concurrent archive'
+                $changedArchive  = New-TestArchive -TipoDFe 'NFe' -Content 'changed concurrent archive'
+
+                $params = @{
+                    Cnpj        = $cnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($originalArchive)
+                    To          = @('accounting@example.com')
+                }
+
+                $first = New-DFeDelivery @params
+
+                $connection  = $null
+                $transaction = $null
+                $command     = $null
+                $job         = $null
+
+                $readyPath = Join-Path $Script:TempRoot (
+                    'concurrent-ready-{0}.txt' -f [guid]::NewGuid().ToString('N')
+                )
+
+                try {
+                    $connection = Open-DFeIndexConnection -Cnpj $cnpj
+                    $transaction = $connection.BeginTransaction()
+
+                    $command = $connection.CreateCommand()
+                    $command.Transaction = $transaction
+                    $command.CommandText = @'
+UPDATE dfe_delivery
+SET delivery_status = 'Delivered',
+    delivered_at = @timestamp,
+    updated_at = @timestamp
+WHERE delivery_id = @delivery_id;
+'@
+
+                    $command.Parameters.AddWithValue(
+                        '@delivery_id',
+                        $first.DeliveryId
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@timestamp',
+                        [DateTimeOffset]::UtcNow.ToString('o')
+                    ) | Out-Null
+
+                    $command.ExecuteNonQuery() | Should -Be 1
+
+                    $modulePath = Join-Path $Script:ModuleRoot 'PipeDFe.psd1'
+
+                    $concurrentParams = @{
+                        Cnpj        = $cnpj
+                        PeriodStart = $Script:PeriodStart.ToString('o')
+                        PeriodEnd   = $Script:PeriodEnd.ToString('o')
+                        Archives    = @($changedArchive)
+                        To          = @('accounting@example.com')
+                    }
+
+                    $job = Start-Job -ArgumentList @(
+                        $modulePath,
+                        $Script:TempRoot,
+                        $readyPath,
+                        $concurrentParams
+                    ) -ScriptBlock {
+                        param (
+                            [Parameter()]
+                            $ModulePath,
+
+                            [Parameter()]
+                            $TempRoot,
+
+                            [Parameter()]
+                            $ReadyPath,
+
+                            [Parameter()]
+                            $DeliveryParams
+                        )
+
+                        try {
+                            $env:LOCALAPPDATA = $TempRoot
+
+                            Import-Module -Name $ModulePath -Force -ErrorAction Stop
+
+                            # Reconstruct values serialized by Start-Job.
+                            $DeliveryParams.PeriodStart = [DateTimeOffset]::Parse(
+                                $DeliveryParams.PeriodStart,
+                                [System.Globalization.CultureInfo]::InvariantCulture
+                            )
+
+                            $DeliveryParams.PeriodEnd = [DateTimeOffset]::Parse(
+                                $DeliveryParams.PeriodEnd,
+                                [System.Globalization.CultureInfo]::InvariantCulture
+                            )
+
+                            [System.IO.File]::WriteAllText($ReadyPath, 'ready')
+
+                            $null = & (Get-Module -Name PipeDFe) {
+                                param (
+                                    [Parameter()]
+                                    $Parameters
+                                )
+
+                                New-DFeDelivery @Parameters
+                            } $DeliveryParams
+
+                            [PSCustomObject]@{
+                                Blocked = $false
+                                ErrorId = $null
+                                Message = $null
+                            }
+                        } catch {
+                            [PSCustomObject]@{
+                                Blocked = $true
+                                ErrorId = $_.FullyQualifiedErrorId
+                                Message = $_.Exception.Message
+                            }
+                        }
+                    }
+
+                    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+
+                    while (-not (Test-Path -LiteralPath $readyPath)) {
+                        if ($job.State -ne 'Running') {
+                            throw 'Concurrent job terminated before signalling readiness.'
+                        }
+
+                        if ($watch.Elapsed.TotalSeconds -gt 15) {
+                            throw 'Timed out waiting for the concurrent delivery job.'
+                        }
+
+                        Start-Sleep -Milliseconds 50
+                    }
+
+                    # Give the second process time to reach the SQLite write attempt.
+                    Start-Sleep -Milliseconds 500
+
+                    $transaction.Commit()
+                    $transaction.Dispose()
+                    $transaction = $null
+
+                    $completed = Wait-Job -Job $job -Timeout 20
+
+                    $completed | Should -Not -BeNullOrEmpty
+
+                    $result = Receive-Job -Job $job -ErrorAction Stop
+
+                    $result.Blocked | Should -BeTrue
+                    $result.ErrorId | Should -BeLike 'DFeDeliveryCreateFailed*'
+                    $result.Message | Should -Match 'different identity'
+
+                    $count = Get-TestScalar -Cnpj $cnpj -Sql @'
+SELECT COUNT(*) FROM dfe_delivery;
+'@
+
+                    [int]$count | Should -Be 1
+                } finally {
+                    if ($null -ne $transaction) {
+                        $transaction.Rollback()
+                        $transaction.Dispose()
+                    }
+
+                    if ($null -ne $command) {
+                        $command.Dispose()
+                    }
+
+                    if ($null -ne $connection) {
+                        $connection.Dispose()
+                    }
+
+                    if ($null -ne $job) {
+                        if ($job.State -eq 'Running') {
+                            Stop-Job -Job $job
+                        }
+
+                        Remove-Job -Job $job -Force
+                    }
+
+                    Remove-Item -LiteralPath $readyPath -Force -ErrorAction SilentlyContinue
+                }
             }
         }
         #endregion
