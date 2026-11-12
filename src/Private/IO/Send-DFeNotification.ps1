@@ -92,13 +92,19 @@ function Send-DFeNotification {
     )
 
     # Fail fast: validate primary recipients before any rendering or I/O.
-    $para = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Para)
+    try {
+        $para = @(ConvertTo-NormalizedMailRecipient -InputObject $Company.Email.Para)
 
-    if ($para.Count -eq 0) {
+        if ($para.Count -eq 0) {
+            throw [System.ArgumentException]::new(
+                'No primary recipient (Para) configured.'
+            )
+        }
+    } catch {
         return [PSCustomObject]@{
             Success       = $false
             EmailsSent    = @()
-            ErrorMessage  = 'No primary recipient (Para) configured.'
+            ErrorMessage  = $_.Exception.Message
             FailedAt      = 'Validation'
             SendAttempted = $false
         }
