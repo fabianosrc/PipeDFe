@@ -164,6 +164,23 @@ Describe 'Send-DFeNotification' -Tag 'Unit' {
 
                 { Send-DFeNotification @Script:BaseParams } | Should -Not -Throw
             }
+
+            It 'Returns a validation failure when recipient normalization throws' {
+                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
+                    throw 'Recipient normalization failed.'
+                }
+
+                $result = Send-DFeNotification @Script:BaseParams
+
+                $result.Success       | Should -BeFalse
+                $result.FailedAt      | Should -Be 'Validation'
+                $result.SendAttempted | Should -BeFalse
+                $result.EmailsSent    | Should -HaveCount 0
+                $result.ErrorMessage  | Should -Match 'Recipient normalization failed'
+
+                Should -Invoke -CommandName Build-MailBody -Times 0 -Exactly
+                Should -Invoke -CommandName Send-Mail -Times 0 -Exactly
+            }
         }
         #endregion
 
