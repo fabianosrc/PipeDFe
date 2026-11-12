@@ -239,7 +239,7 @@ INSERT INTO audit_execution (
                 $result.PSTypeNames    | Should -Contain 'PipeDFe.SqliteRestore'
                 $result.Scope          | Should -Be 'Index'
                 $result.IntegrityCheck | Should -Be 'ok'
-                $result.SchemaVersion  | Should -Be 5
+                $result.SchemaVersion  | Should -Be 6
                 $result.SizeBytes      | Should -BeGreaterThan 0
 
                 $target = Get-StorePath -Scope Index -Cnpj $Script:IndexTargetCnpj
@@ -252,7 +252,7 @@ INSERT INTO audit_execution (
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                [int](Get-TestScalar @queryParams) | Should -Be 5
+                [int](Get-TestScalar @queryParams) | Should -Be 6
             }
 
             It 'Restores persisted audit records into a new database' {
@@ -303,7 +303,7 @@ WHERE execution_id = @execution_id;
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                [int](Get-TestScalar @queryParams) | Should -Be 5
+                [int](Get-TestScalar @queryParams) | Should -Be 6
             }
 
             It 'Rejects the destination database as its own source' {
