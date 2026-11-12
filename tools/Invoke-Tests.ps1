@@ -420,6 +420,51 @@ Write-Host ''
 
 #endregion
 
+#region GitHub Actions summary
+
+if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
+    $coverageSummary = 'Not requested'
+
+    if ($Coverage) {
+        $coverageSummary = if ($null -ne $coveragePercent) {
+            '{0}% (target: {1}%)' -f $coveragePercent, $CoverageTarget
+        } else {
+            'Unavailable'
+        }
+    }
+
+    $summary = @(
+        '## PipeDFe - Test Results'
+        ''
+        '| Metric | Value |'
+        '| --- | ---: |'
+        ('| PowerShell | {0} |' -f $PSVersionTable.PSVersion)
+        ('| Pester | {0} |' -f $pesterVersion)
+        ('| Passed | {0} |' -f $result.PassedCount)
+        ('| Failed | {0} |' -f $result.FailedCount)
+        ('| Skipped | {0} |' -f $result.SkippedCount)
+        ('| Total | {0} |' -f $result.TotalCount)
+        ('| Duration | {0:N2}s |' -f $result.Duration.TotalSeconds)
+        ('| Coverage | {0} |' -f $coverageSummary)
+        ''
+    )
+
+    $summaryParams = @{
+        LiteralPath = $env:GITHUB_STEP_SUMMARY
+        Value       = $summary
+        Encoding    = 'UTF8'
+        ErrorAction = 'Stop'
+    }
+
+    try {
+        Add-Content @summaryParams
+    } catch {
+        Write-Warning "Unable to write GitHub Actions summary: $($_.Exception.Message)"
+    }
+}
+
+#endregion
+
 #region Exit code
 
 if ($PassThru) {
