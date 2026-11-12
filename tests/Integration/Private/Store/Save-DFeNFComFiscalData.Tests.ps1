@@ -86,6 +86,7 @@ Describe 'Save-DFeNFComFiscalData' -Tag 'Integration' {
                             [string]$entry.Key,
                             [System.Data.DbType]::String
                         )
+
                         $param.Value = $entry.Value
                     }
 
@@ -158,9 +159,9 @@ INSERT INTO dfe_document (
                 [OutputType([pscustomobject])]
                 param ()
 
-                $item = [pscustomobject]@{
+                $item = [PSCustomObject]@{
                     Numero   = '1'
-                    Produto  = [pscustomobject]@{
+                    Produto  = [PSCustomObject]@{
                         Codigo         = 'SERV1'
                         Descricao      = 'Internet'
                         Classificacao  = '0400401'
@@ -172,36 +173,36 @@ INSERT INTO dfe_document (
                         Desconto       = $null
                         OutrasDespesas = $null
                     }
-                    Tributos = [pscustomobject]@{
+                    Tributos = [PSCustomObject]@{
                         IndSemCST = $null
                         ICMS      = $null
                         IBSCBS    = $null
                     }
                 }
 
-                [pscustomobject]@{
+                [PSCustomObject]@{
                     PSTypeName    = 'PipeDFe.Fiscal.NFComDocument'
                     SchemaVersion = 1
                     Modelo        = 62
                     ChaveAcesso   = $Script:Key
-                    Identificacao = [pscustomobject]@{
-                        CUF    = '35'
+                    Identificacao = [PSCustomObject]@{
+                        CUF      = '35'
                         Ambiente = '1'
-                        Serie  = '1'
-                        Numero = '3390'
-                        DhEmi  = '2026-10-29T11:37:26-03:00'
+                        Serie    = '1'
+                        Numero   = '3390'
+                        DhEmi    = '2026-10-29T11:37:26-03:00'
                     }
-                    Emitente     = [pscustomobject]@{
+                    Emitente     = [PSCustomObject]@{
                         Cnpj        = $Script:Cnpj
                         RazaoSocial = 'Emissor de Teste'
                     }
                     Destinatario = $null
                     Assinante    = $null
-                    Faturamento  = [pscustomobject]@{
+                    Faturamento  = [PSCustomObject]@{
                         Competencia = '202609'
                     }
                     Protocolo    = $null
-                    Totais       = [pscustomobject]@{
+                    Totais       = [PSCustomObject]@{
                         VProd     = [decimal]'222.76'
                         VNF       = [decimal]'222.76'
                         IBSCBSTot = $null
@@ -255,10 +256,11 @@ INSERT INTO dfe_document (
                 Parameters = @{ '@key' = $Script:Key }
             }
 
-            Get-TestScalar @vnfParams           | Should -Be '222.76'
-            Get-TestScalar @typeofParams        | Should -Be 'text'
-            [int](Get-TestScalar @ibscbsParams) | Should -Be 0
-            Get-TestScalar @competenciaParams   | Should -Be '202609'
+            [decimal](Get-TestScalar @vnfParams) | Should -Be ([decimal]'222.76')
+            Get-TestScalar @typeofParams         | Should -Be 'text'
+
+            [int](Get-TestScalar @ibscbsParams)  | Should -Be 0
+            Get-TestScalar @competenciaParams    | Should -Be '202609'
         }
 
         It 'Replaces an existing projection without duplicating items' {
@@ -283,19 +285,19 @@ INSERT INTO dfe_document (
         It 'Persists IBS/CBS values when present and removes them on replacement' {
             $data = New-NFComProjection
 
-            $data.Itens[0].Tributos.IBSCBS = [pscustomobject]@{
+            $data.Itens[0].Tributos.IBSCBS = [PSCustomObject]@{
                 CST               = '000'
                 CClassTrib        = '000001'
                 IndDoacao         = $null
-                Valores           = [pscustomobject]@{
+                Valores           = [PSCustomObject]@{
                     VBC           = [decimal]'222.76'
                     VIBS          = [decimal]'0.22'
-                    IBSUF         = [pscustomobject]@{
+                    IBSUF         = [PSCustomObject]@{
                         PIBSUF = [decimal]'0.10'
                         VIBSUF = [decimal]'0.22'
                     }
                     IBSMun        = $null
-                    CBS           = [pscustomobject]@{
+                    CBS           = [PSCustomObject]@{
                         PCBS = [decimal]'0.90'
                         VCBS = [decimal]'2.00'
                     }
@@ -327,11 +329,13 @@ INSERT INTO dfe_document (
                 Parameters = @{ '@key' = $Script:Key }
             }
 
-            Get-TestScalar @cstParams | Should -Be '000'
-            Get-TestScalar @vbcParams | Should -Be '222.76'
-            Get-TestScalar @cbsParams | Should -Be '2.00'
+            Get-TestScalar @cstParams            | Should -Be '000'
+            [decimal](Get-TestScalar @vbcParams) | Should -Be ([decimal]'222.76')
+            [decimal](Get-TestScalar @cbsParams) | Should -Be ([decimal]'2.00')
 
-            $data.Itens[0].Tributos.IBSCBS = $null
+            # Recreate the projection without IBS/CBS - PSCustomObject property
+            # assignment is not reliable across PowerShell versions.
+            $params.FiscalData = New-NFComProjection
 
             Save-DFeNFComFiscalData @params
 
@@ -360,7 +364,7 @@ INSERT INTO dfe_document (
                 Parameters = @{ '@key' = $Script:Key }
             }
 
-            Get-TestScalar @vnfParams | Should -Be '222.76'
+            [decimal](Get-TestScalar @vnfParams) | Should -Be ([decimal]'222.76')
         }
 
         It 'Rolls back all changes when a mid-write SQLite error occurs' {
@@ -396,7 +400,7 @@ END;
                     Parameters = @{ '@key' = $Script:Key }
                 }
 
-                Get-TestScalar @vnfParams          | Should -Be '222.76'
+                [decimal](Get-TestScalar @vnfParams) | Should -Be ([decimal]'222.76')
                 [int](Get-TestScalar @itemParams)  | Should -Be 1
             } finally {
                 Invoke-TestNonQuery -Sql 'DROP TRIGGER IF EXISTS fail_nfcom_item_insert;'
