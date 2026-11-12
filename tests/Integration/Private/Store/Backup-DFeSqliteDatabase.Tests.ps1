@@ -169,7 +169,7 @@ Describe 'Backup-DFeSqliteDatabase' -Tag 'Integration' {
                 Sql  = 'PRAGMA integrity_check;'
             }
 
-            [int](Get-TestScalar @userVersionParams)  | Should -Be 5
+            [int](Get-TestScalar @userVersionParams)  | Should -Be 6
             [string](Get-TestScalar @integrityParams) | Should -Be 'ok'
         }
 
@@ -274,7 +274,7 @@ INSERT INTO audit_execution (
                 Sql  = 'PRAGMA user_version;'
             }
 
-            [int](Get-TestScalar @userVersionParams) | Should -Be 5
+            [int](Get-TestScalar @userVersionParams) | Should -Be 6
         }
 
         It 'Rejects a missing destination directory' {
