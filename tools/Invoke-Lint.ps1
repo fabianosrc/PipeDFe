@@ -158,21 +158,36 @@ if (-not (Test-Path -LiteralPath $resolvedPath -PathType Container)) {
 #endregion
 
 #region Verify PSScriptAnalyzer
-$analyzer = Get-Module -Name PSScriptAnalyzer -ListAvailable -ErrorAction SilentlyContinue |
-    Sort-Object -Property Version -Descending |
-    Select-Object -First 1
+$requiredVersion = $env:PIPEDFE_ANALYZER_VERSION
 
-if (-not $analyzer) {
-    Write-Host ''
-    Write-Host '  PSScriptAnalyzer is not installed.' -ForegroundColor Red
-    Write-Host ''
-    Write-Host '  Install with:' -ForegroundColor Gray
-    Write-Host '    Install-Module PSScriptAnalyzer -Scope CurrentUser' -ForegroundColor DarkGray
-    Write-Host ''
-    exit 1
+$availableModules = @(
+    Get-Module -Name PSScriptAnalyzer -ListAvailable -ErrorAction SilentlyContinue
+)
+
+if (-not [string]::IsNullOrWhiteSpace($requiredVersion)) {
+    $analyzer = $availableModules |
+        Where-Object {
+            $_.Version -eq [version]$requiredVersion
+        } |
+        Select-Object -First 1
+} else {
+    $analyzer = $availableModules |
+        Sort-Object -Property Version -Descending |
+        Select-Object -First 1
 }
 
-Import-Module -Name PSScriptAnalyzer -MinimumVersion $analyzer.Version -ErrorAction Stop
+if (-not $analyzer) {
+    throw "Required PSScriptAnalyzer version '$requiredVersion' is not installed."
+}
+
+$importParams = @{
+    Name            = 'PSScriptAnalyzer'
+    RequiredVersion = $analyzer.Version.ToString()
+    Force           = $true
+    ErrorAction     = 'Stop'
+}
+
+Import-Module @importParams
 #endregion
 
 #region Banner
