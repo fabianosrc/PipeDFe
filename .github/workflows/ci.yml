@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -16,15 +17,19 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PIPEDFE_PESTER_VERSION: '6.2.0'
+  PIPEDFE_ANALYZER_VERSION: '1.25.0'
 
-# ============================================================================
-# PowerShell 5.1
-# ============================================================================
 jobs:
 
+  # ==========================================================================
+  # PowerShell 5.1
+  # ==========================================================================
   powershell-5-1:
     name: CI / PowerShell 5.1
     runs-on: windows-latest
+    timeout-minutes: 30
 
     defaults:
       run:
@@ -60,56 +65,68 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          [Net.ServicePointManager]::SecurityProtocol = `
-            [Net.ServicePointManager]::SecurityProtocol -bor `
+          [Net.ServicePointManager]::SecurityProtocol = (
+            [Net.ServicePointManager]::SecurityProtocol -bor
             [Net.SecurityProtocolType]::Tls12
+          )
 
-          if (-not (Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue)) {
-            Install-PackageProvider `
-              -Name NuGet `
-              -MinimumVersion '2.8.5.201' `
-              -Force `
-              -Scope CurrentUser
+          $provider = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue
+
+          if (-not $provider) {
+            $providerParams = @{
+              Name           = 'NuGet'
+              MinimumVersion = '2.8.5.201'
+              Scope          = 'CurrentUser'
+              Force          = $true
+            }
+
+            Install-PackageProvider @providerParams
           }
 
-          Set-PSRepository `
-            -Name PSGallery `
-            -InstallationPolicy Trusted
+          $repositoryParams = @{
+            Name               = 'PSGallery'
+            InstallationPolicy = 'Trusted'
+          }
+
+          Set-PSRepository @repositoryParams
 
       # ----------------------------------------------------------------------
-      # Install Pester 5+
+      # Install Pester
       # ----------------------------------------------------------------------
       - name: Install Pester
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $pester = Get-Module Pester -ListAvailable |
-            Where-Object {
-              $_.Version -ge [version]'5.0.0'
-            } |
-            Sort-Object Version -Descending |
+          $version = [version]$env:PIPEDFE_PESTER_VERSION
+
+          $installed = Get-Module -Name Pester -ListAvailable |
+            Where-Object { $_.Version -eq $version } |
             Select-Object -First 1
 
-          if (-not $pester) {
-            Write-Host 'Installing Pester 5+...'
+          if (-not $installed) {
+            $installParams = @{
+              Name               = 'Pester'
+              RequiredVersion    = $version.ToString()
+              Scope              = 'CurrentUser'
+              Force              = $true
+              SkipPublisherCheck = $true
+              AllowClobber       = $true
+              ErrorAction        = 'Stop'
+            }
 
-            Install-Module `
-              -Name Pester `
-              -MinimumVersion '5.0.0' `
-              -Scope CurrentUser `
-              -Force `
-              -SkipPublisherCheck `
-              -AllowClobber
+            Install-Module @installParams
           }
-          else {
-            Write-Host "Pester $($pester.Version) already installed."
+
+          $importParams = @{
+            Name            = 'Pester'
+            RequiredVersion = $version.ToString()
+            Force           = $true
+            ErrorAction     = 'Stop'
           }
 
-          Import-Module Pester -MinimumVersion 5.0.0 -Force
+          Import-Module @importParams
 
-          $loadedPester = Get-Module Pester
-
-          Write-Host "Using Pester $($loadedPester.Version)"
+          Write-Host "Using Pester $((Get-Module -Name Pester).Version)"
 
       # ----------------------------------------------------------------------
       # Install PSScriptAnalyzer
@@ -118,28 +135,35 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $analyzer = Get-Module PSScriptAnalyzer -ListAvailable |
-            Sort-Object Version -Descending |
+          $version = [version]$env:PIPEDFE_ANALYZER_VERSION
+
+          $installed = Get-Module -Name PSScriptAnalyzer -ListAvailable |
+            Where-Object { $_.Version -eq $version } |
             Select-Object -First 1
 
-          if (-not $analyzer) {
-            Write-Host 'Installing PSScriptAnalyzer...'
+          if (-not $installed) {
+            $installParams = @{
+              Name            = 'PSScriptAnalyzer'
+              RequiredVersion = $version.ToString()
+              Scope           = 'CurrentUser'
+              Force           = $true
+              AllowClobber    = $true
+              ErrorAction     = 'Stop'
+            }
 
-            Install-Module `
-              -Name PSScriptAnalyzer `
-              -Scope CurrentUser `
-              -Force `
-              -AllowClobber
+            Install-Module @installParams
           }
-          else {
-            Write-Host "PSScriptAnalyzer $($analyzer.Version) already installed."
+
+          $importParams = @{
+            Name            = 'PSScriptAnalyzer'
+            RequiredVersion = $version.ToString()
+            Force           = $true
+            ErrorAction     = 'Stop'
           }
 
-          Import-Module PSScriptAnalyzer -Force
+          Import-Module @importParams
 
-          $loadedAnalyzer = Get-Module PSScriptAnalyzer
-
-          Write-Host "Using PSScriptAnalyzer $($loadedAnalyzer.Version)"
+          Write-Host "Using PSScriptAnalyzer $((Get-Module -Name PSScriptAnalyzer).Version)"
 
       # ----------------------------------------------------------------------
       # Lint
@@ -154,7 +178,11 @@ jobs:
             throw "Lint script not found: $script"
           }
 
-          & $script -Strict
+          $lintParams = @{
+            Strict = $true
+          }
+
+          & $script @lintParams
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -173,9 +201,12 @@ jobs:
             throw "Test script not found: $script"
           }
 
-          & $script `
-            -Coverage `
-            -CoverageTarget 80
+          $testParams = @{
+            Coverage       = $true
+            CoverageTarget = 80
+          }
+
+          & $script @testParams
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -205,14 +236,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-
   # ==========================================================================
   # PowerShell 7
   # ==========================================================================
-
   powershell-7:
     name: CI / PowerShell 7
     runs-on: windows-latest
+    timeout-minutes: 30
 
     defaults:
       run:
@@ -248,55 +278,68 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          [Net.ServicePointManager]::SecurityProtocol = `
+          [Net.ServicePointManager]::SecurityProtocol = (
+            [Net.ServicePointManager]::SecurityProtocol -bor
             [Net.SecurityProtocolType]::Tls12
+          )
 
-          if (-not (Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue)) {
-            Install-PackageProvider `
-              -Name NuGet `
-              -MinimumVersion '2.8.5.201' `
-              -Force `
-              -Scope CurrentUser
+          $provider = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue
+
+          if (-not $provider) {
+            $providerParams = @{
+              Name           = 'NuGet'
+              MinimumVersion = '2.8.5.201'
+              Scope          = 'CurrentUser'
+              Force          = $true
+            }
+
+            Install-PackageProvider @providerParams
           }
 
-          Set-PSRepository `
-            -Name PSGallery `
-            -InstallationPolicy Trusted
+          $repositoryParams = @{
+            Name               = 'PSGallery'
+            InstallationPolicy = 'Trusted'
+          }
+
+          Set-PSRepository @repositoryParams
 
       # ----------------------------------------------------------------------
-      # Install Pester 5+
+      # Install Pester
       # ----------------------------------------------------------------------
       - name: Install Pester
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $pester = Get-Module Pester -ListAvailable |
-            Where-Object {
-              $_.Version -ge [version]'5.0.0'
-            } |
-            Sort-Object Version -Descending |
+          $version = [version]$env:PIPEDFE_PESTER_VERSION
+
+          $installed = Get-Module -Name Pester -ListAvailable |
+            Where-Object { $_.Version -eq $version } |
             Select-Object -First 1
 
-          if (-not $pester) {
-            Write-Host 'Installing Pester 5+...'
+          if (-not $installed) {
+            $installParams = @{
+              Name               = 'Pester'
+              RequiredVersion    = $version.ToString()
+              Scope              = 'CurrentUser'
+              Force              = $true
+              SkipPublisherCheck = $true
+              AllowClobber       = $true
+              ErrorAction        = 'Stop'
+            }
 
-            Install-Module `
-              -Name Pester `
-              -MinimumVersion '5.0.0' `
-              -Scope CurrentUser `
-              -Force `
-              -SkipPublisherCheck `
-              -AllowClobber
+            Install-Module @installParams
           }
-          else {
-            Write-Host "Pester $($pester.Version) already installed."
+
+          $importParams = @{
+            Name            = 'Pester'
+            RequiredVersion = $version.ToString()
+            Force           = $true
+            ErrorAction     = 'Stop'
           }
 
-          Import-Module Pester -MinimumVersion 5.0.0 -Force
+          Import-Module @importParams
 
-          $loadedPester = Get-Module Pester
-
-          Write-Host "Using Pester $($loadedPester.Version)"
+          Write-Host "Using Pester $((Get-Module -Name Pester).Version)"
 
       # ----------------------------------------------------------------------
       # Install PSScriptAnalyzer
@@ -305,28 +348,35 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $analyzer = Get-Module PSScriptAnalyzer -ListAvailable |
-            Sort-Object Version -Descending |
+          $version = [version]$env:PIPEDFE_ANALYZER_VERSION
+
+          $installed = Get-Module -Name PSScriptAnalyzer -ListAvailable |
+            Where-Object { $_.Version -eq $version } |
             Select-Object -First 1
 
-          if (-not $analyzer) {
-            Write-Host 'Installing PSScriptAnalyzer...'
+          if (-not $installed) {
+            $installParams = @{
+              Name            = 'PSScriptAnalyzer'
+              RequiredVersion = $version.ToString()
+              Scope           = 'CurrentUser'
+              Force           = $true
+              AllowClobber    = $true
+              ErrorAction     = 'Stop'
+            }
 
-            Install-Module `
-              -Name PSScriptAnalyzer `
-              -Scope CurrentUser `
-              -Force `
-              -AllowClobber
+            Install-Module @installParams
           }
-          else {
-            Write-Host "PSScriptAnalyzer $($analyzer.Version) already installed."
+
+          $importParams = @{
+            Name            = 'PSScriptAnalyzer'
+            RequiredVersion = $version.ToString()
+            Force           = $true
+            ErrorAction     = 'Stop'
           }
 
-          Import-Module PSScriptAnalyzer -Force
+          Import-Module @importParams
 
-          $loadedAnalyzer = Get-Module PSScriptAnalyzer
-
-          Write-Host "Using PSScriptAnalyzer $($loadedAnalyzer.Version)"
+          Write-Host "Using PSScriptAnalyzer $((Get-Module -Name PSScriptAnalyzer).Version)"
 
       # ----------------------------------------------------------------------
       # Lint
@@ -341,7 +391,11 @@ jobs:
             throw "Lint script not found: $script"
           }
 
-          & $script -Strict
+          $lintParams = @{
+            Strict = $true
+          }
+
+          & $script @lintParams
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -360,9 +414,12 @@ jobs:
             throw "Test script not found: $script"
           }
 
-          & $script `
-            -Coverage `
-            -CoverageTarget 80
+          $testParams = @{
+            Coverage       = $true
+            CoverageTarget = 80
+          }
+
+          & $script @testParams
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
