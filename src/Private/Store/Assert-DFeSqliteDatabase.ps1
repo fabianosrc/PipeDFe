@@ -1,5 +1,4 @@
-﻿
-<#
+﻿<#
 .SYNOPSIS
 Validates an existing PipeDFe SQLite database.
 
@@ -45,7 +44,7 @@ function Assert-DFeSqliteDatabase {
         )
     }
 
-    $expectedVersion = if ($Scope -eq 'Index') { 5 } else { 1 }
+    $expectedVersion = if ($Scope -eq 'Index') { 6 } else { 1 }
 
     $requiredTables = if ($Scope -eq 'Index') {
         @(
@@ -56,6 +55,11 @@ function Assert-DFeSqliteDatabase {
             'dfe_delivery'
             'dfe_delivery_archive'
             'dfe_delivery_recipient'
+            'dfe_nfcom'
+            'dfe_nfcom_participante'
+            'dfe_nfcom_item'
+            'dfe_nfcom_item_ibscbs'
+            'dfe_nfcom_total'
         )
     } else {
         @(
