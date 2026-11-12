@@ -55,7 +55,7 @@ Schema:
 
 Schema evolution is tracked through SQLite PRAGMA user_version.
 
-Current schema version: 5.
+Current schema version: 6.
 
 .PARAMETER Cnpj
 14-digit normalized CNPJ identifying the company index.
@@ -593,6 +593,178 @@ CREATE TABLE IF NOT EXISTS dfe_delivery_recipient (
         ON DELETE CASCADE
 );
 '@
+            $createNFComSchemaV6Sql = @'
+CREATE TABLE IF NOT EXISTS dfe_nfcom (
+    chave_acesso TEXT NOT NULL PRIMARY KEY,
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = 64),
+    extracted_at TEXT NOT NULL,
+    modelo INTEGER NOT NULL DEFAULT 62 CHECK (modelo = 62),
+    uf_emissao TEXT,
+    ambiente TEXT,
+    serie TEXT,
+    numero TEXT,
+    codigo_numerico TEXT,
+    digito_verificador TEXT,
+    emitido_em TEXT,
+    tipo_emissao TEXT,
+    municipio_fato_gerador TEXT,
+    finalidade TEXT,
+    tipo_faturamento TEXT,
+    versao_processo TEXT,
+    assinante_codigo TEXT,
+    assinante_tipo TEXT,
+    assinante_tipo_servico TEXT,
+    assinante_contrato TEXT,
+    assinante_contrato_inicio TEXT,
+    assinante_contrato_fim TEXT,
+    assinante_terminal TEXT,
+    assinante_uf_principal TEXT,
+    faturamento_competencia TEXT,
+    faturamento_vencimento TEXT,
+    faturamento_periodo_inicio TEXT,
+    faturamento_periodo_fim TEXT,
+    faturamento_codigo_barras TEXT,
+    protocolo_numero TEXT,
+    protocolo_status TEXT,
+    protocolo_motivo TEXT,
+    protocolo_recebido_em TEXT,
+    FOREIGN KEY (chave_acesso) REFERENCES dfe_document(chave_acesso) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dfe_nfcom_participante (
+    chave_acesso TEXT NOT NULL,
+    tipo_participante TEXT NOT NULL CHECK (tipo_participante IN ('Emitente','Destinatario')),
+    cnpj TEXT,
+    cpf TEXT,
+    razao_social TEXT,
+    nome_fantasia TEXT,
+    inscricao_estadual TEXT,
+    regime_tributario TEXT,
+    indicador_ie_destinatario TEXT,
+    email TEXT,
+    logradouro TEXT,
+    numero TEXT,
+    complemento TEXT,
+    bairro TEXT,
+    codigo_municipio TEXT,
+    municipio TEXT,
+    uf TEXT,
+    cep TEXT,
+    codigo_pais TEXT,
+    pais TEXT,
+    telefone TEXT,
+    endereco_email TEXT,
+    PRIMARY KEY (chave_acesso, tipo_participante),
+    FOREIGN KEY (chave_acesso) REFERENCES dfe_nfcom(chave_acesso) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dfe_nfcom_item (
+    chave_acesso TEXT NOT NULL,
+    n_item INTEGER NOT NULL CHECK (n_item > 0),
+    cod_produto TEXT,
+    descricao TEXT,
+    classificacao TEXT,
+    cfop TEXT,
+    unidade TEXT,
+    qte_faturada TEXT,
+    vlr_item TEXT,
+    vlr_produto TEXT,
+    vlr_desconto TEXT,
+    vlr_outras_despesas TEXT,
+    ind_sem_cst TEXT,
+    icms_grupo TEXT,
+    icms_cst TEXT,
+    icms_ind_sn TEXT,
+    icms_vbc TEXT,
+    icms_picms TEXT,
+    icms_vicms TEXT,
+    PRIMARY KEY (chave_acesso, n_item),
+    FOREIGN KEY (chave_acesso) REFERENCES dfe_nfcom(chave_acesso) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dfe_nfcom_item_ibscbs (
+    chave_acesso TEXT NOT NULL,
+    n_item INTEGER NOT NULL,
+    cst TEXT,
+    cclass_trib TEXT,
+    ind_doacao TEXT,
+    vbc TEXT,
+    vibs TEXT,
+    ibsuf_pibsuf TEXT,
+    ibsuf_vibsuf TEXT,
+    ibsuf_pdif TEXT,
+    ibsuf_vdif TEXT,
+    ibsuf_vdevtrib TEXT,
+    ibsuf_predaliq TEXT,
+    ibsuf_paliqefet TEXT,
+    ibsmun_pibsmun TEXT,
+    ibsmun_vibsmun TEXT,
+    ibsmun_pdif TEXT,
+    ibsmun_vdif TEXT,
+    ibsmun_vdevtrib TEXT,
+    ibsmun_predaliq TEXT,
+    ibsmun_paliqefet TEXT,
+    cbs_pcbs TEXT,
+    cbs_vcbs TEXT,
+    cbs_pdif TEXT,
+    cbs_vdif TEXT,
+    cbs_vdevtrib TEXT,
+    cbs_predaliq TEXT,
+    cbs_paliqefet TEXT,
+    regular_cst TEXT,
+    regular_cclass_trib TEXT,
+    regular_paliq_ibsuf TEXT,
+    regular_vtrib_ibsuf TEXT,
+    regular_paliq_ibsmun TEXT,
+    regular_vtrib_ibsmun TEXT,
+    regular_paliq_cbs TEXT,
+    regular_vtrib_cbs TEXT,
+    gov_paliq_ibsuf TEXT,
+    gov_vtrib_ibsuf TEXT,
+    gov_paliq_ibsmun TEXT,
+    gov_vtrib_ibsmun TEXT,
+    gov_paliq_cbs TEXT,
+    gov_vtrib_cbs TEXT,
+    PRIMARY KEY (chave_acesso, n_item),
+    FOREIGN KEY (chave_acesso, n_item) REFERENCES dfe_nfcom_item(chave_acesso, n_item) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dfe_nfcom_total (
+    chave_acesso TEXT NOT NULL PRIMARY KEY,
+    vprod TEXT,
+    vbc TEXT,
+    vicms TEXT,
+    vicms_deson TEXT,
+    vfcp TEXT,
+    vpis TEXT,
+    vcofins TEXT,
+    vfust TEXT,
+    vfunttel TEXT,
+    vdesc TEXT,
+    voutro TEXT,
+    vnf TEXT,
+    ret_vpis TEXT,
+    ret_vcofins TEXT,
+    ret_vcsll TEXT,
+    ret_virrf TEXT,
+    ibscbs_vbc TEXT,
+    ibscbs_vibsuf TEXT,
+    ibscbs_vibsmun TEXT,
+    ibscbs_vibs TEXT,
+    ibscbs_vcbs TEXT,
+    ibscbs_vdif_ibsuf TEXT,
+    ibscbs_vdevtrib_ibsuf TEXT,
+    ibscbs_vdif_ibsmun TEXT,
+    ibscbs_vdevtrib_ibsmun TEXT,
+    ibscbs_vdif_cbs TEXT,
+    ibscbs_vdevtrib_cbs TEXT,
+    ibscbs_vibs_est_cred TEXT,
+    ibscbs_vcbs_est_cred TEXT,
+    FOREIGN KEY (chave_acesso) REFERENCES dfe_nfcom(chave_acesso) ON DELETE CASCADE
+);
+'@
+
             # -------------------------------------------------------------------------
             # Schema object inventory for v4.
             #
@@ -735,6 +907,7 @@ WHERE type = @type
                         $createCoreSchemaSql
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
+                        $createNFComSchemaV6Sql
                     )
                 }
 
@@ -749,6 +922,7 @@ WHERE type = @type
                         $migrateV2ToV3Sql
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
+                        $createNFComSchemaV6Sql
                     )
                 }
 
@@ -763,6 +937,7 @@ WHERE type = @type
                         $migrateV2ToV3Sql
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
+                        $createNFComSchemaV6Sql
                     )
                 }
 
@@ -776,6 +951,7 @@ WHERE type = @type
                     @(
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
+                        $createNFComSchemaV6Sql
                     )
                 }
 
@@ -787,15 +963,27 @@ WHERE type = @type
                 4 {
                     @(
                         $createDeliverySchemaV5Sql
+                        $createNFComSchemaV6Sql
                     )
                 }
 
                 # =====================================================================
                 # Version 5
                 #
-                # Current schema. No migration required.
+                # Add normalized NFCom fiscal persistence schema.
                 # =====================================================================
                 5 {
+                    @(
+                        $createNFComSchemaV6Sql
+                    )
+                }
+
+                # =====================================================================
+                # Version 6
+                #
+                # Current schema. No migration required.
+                # =====================================================================
+                6 {
                     @()
                 }
 
@@ -815,8 +1003,8 @@ WHERE type = @type
                 $null = $command.ExecuteNonQuery()
             }
 
-            if ($currentVersion -ne 5) {
-                $command.CommandText = 'PRAGMA user_version = 5;'
+            if ($currentVersion -ne 6) {
+                $command.CommandText = 'PRAGMA user_version = 6;'
                 $null = $command.ExecuteNonQuery()
             }
 
