@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-Processes one indexed NF-e or NFC-e document.
+Processes one indexed NF-e, NFC-e or NFCom document.
 
 .DESCRIPTION
 Coordinates fiscal processing for one dfe_document entry.
@@ -11,17 +11,17 @@ The function:
   2. Moves the persistent state to Processing.
   3. Verifies that the source file SHA-256 still matches the indexed SHA-256.
   4. Loads the XML securely through Import-DFeXml.
-  5. Extracts the normalized NF-e/NFC-e fiscal projection.
+  5. Extracts the normalized fiscal projection with the parser for the model.
   6. Verifies that the extracted access key and model match the indexed entry.
   7. Recomputes the source SHA-256 to detect changes during processing.
-  8. Persists the fiscal projection through Save-DFeNFeFiscalData.
+  8. Persists the fiscal projection through the store for the model.
   9. Moves the persistent state to Processed.
 
 If any failure occurs after the Processing state has been acquired, the
 function attempts to move the document to Failed while preserving the
 original processing error.
 
-Only NF-e (55) and NFC-e (65) are supported by this processing workflow.
+Only NF-e (55), NFC-e (65) and NFCom (62) are supported.
 Unsupported models are rejected before any processing-state transition.
 
 This function processes exactly one document. Selection, batching, retry
@@ -48,7 +48,9 @@ Private dependencies:
   Get-FileSha256
   Import-DFeXml
   Get-DFeNFeFiscalData
+  Get-DFeNFComFiscalData
   Save-DFeNFeFiscalData
+  Save-DFeNFComFiscalData
   Set-DFeDocumentProcessingState
 #>
 function Invoke-DFeDocumentProcessing {
@@ -67,9 +69,7 @@ function Invoke-DFeDocumentProcessing {
 
     process {
         # Validate the entry contract before changing persistent state.
-        foreach ($propertyName in @(
-                'chave_acesso', 'modelo', 'file_path', 'sha256')
-        ) {
+        foreach ($propertyName in @('chave_acesso', 'modelo', 'file_path', 'sha256')) {
             if ($null -eq $Entry.PSObject.Properties[$propertyName]) {
                 $PSCmdlet.ThrowTerminatingError(
                     [System.Management.Automation.ErrorRecord]::new(
@@ -118,12 +118,12 @@ function Invoke-DFeDocumentProcessing {
             )
         }
 
-        if ($modelo -notin @(55, 65)) {
+        if ($modelo -notin @(55, 62, 65)) {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.NotSupportedException]::new(
                         "Fiscal model '$modelo' is not supported by " +
-                        'the NF-e/NFC-e processing workflow.'
+                        'the fiscal processing workflow.'
                     ),
                     'UnsupportedDocumentProcessingModel',
                     [System.Management.Automation.ErrorCategory]::NotImplemented,
@@ -192,7 +192,11 @@ function Invoke-DFeDocumentProcessing {
 
             $xml = Import-DFeXml -Path $filePath
 
-            $fiscalData = Get-DFeNFeFiscalData -Xml $xml
+            $fiscalData = if ($modelo -eq [ModeloDFe]::NFCom) {
+                Get-DFeNFComFiscalData -Xml $xml
+            } else {
+                Get-DFeNFeFiscalData -Xml $xml
+            }
 
             # The indexed document identity remains authoritative for deciding
             # which record is being processed. A path pointing to another valid
@@ -246,7 +250,11 @@ function Invoke-DFeDocumentProcessing {
                 SourceSha256 = $sourceHashAfter
             }
 
-            Save-DFeNFeFiscalData @saveParams
+            if ($modelo -eq [ModeloDFe]::NFCom) {
+                Save-DFeNFComFiscalData @saveParams
+            } else {
+                Save-DFeNFeFiscalData @saveParams
+            }
 
             $stateParams = @{
                 Cnpj        = $Cnpj
