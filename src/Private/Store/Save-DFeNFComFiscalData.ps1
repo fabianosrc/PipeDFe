@@ -123,8 +123,8 @@ function Save-DFeNFComFiscalData {
 
     foreach ($required in @('Identificacao', 'Emitente', 'Itens')) {
         if ($null -eq $FiscalData.PSObject.Properties[$required] -or
-            $null -eq $FiscalData.$required) {
-
+            $null -eq $FiscalData.$required)
+        {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
@@ -141,9 +141,7 @@ function Save-DFeNFComFiscalData {
     $itemNumbers = [System.Collections.Generic.HashSet[int]]::new()
 
     foreach ($item in $FiscalData.Itens) {
-        if ($null -eq $item -or $null -eq
-            $item.Produto -or $null -eq $item.Tributos)
-        {
+        if ($null -eq $item -or $null -eq $item.Produto -or $null -eq $item.Tributos) {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
@@ -333,7 +331,7 @@ WHERE chave_acesso = @key;
             schema_version             = & $readValue $FiscalData 'SchemaVersion'
             source_sha256              = $normalizedHash
             extracted_at               = $extractedAtUtc
-            modelo                     = & $readValue $FiscalData 'Modelo'
+            modelo                     = [int]$FiscalData.Modelo
             uf_emissao                 = & $readValue $FiscalData 'Identificacao.CUF'
             ambiente                   = & $readValue $FiscalData 'Identificacao.Ambiente'
             serie                      = & $readValue $FiscalData 'Identificacao.Serie'
