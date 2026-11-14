@@ -9,7 +9,7 @@ Orchestrates the complete DFe processing pipeline for one company:
   2. Repairs abandoned Processing states via Repair-DFeDocumentProcessing.
   3. Scans XmlPath and indexes new XML files via Invoke-DFeXmlScan.
   4. Queries indexed documents for the requested period.
-  5. Processes indexed NF-e/NFC-e documents through Invoke-DFeDocumentProcessing.
+  5. Processes indexed NF-e, NFC-e and NFCom through Invoke-DFeDocumentProcessing.
   6. Blocks archive generation and delivery while supported fiscal documents
      remain in Failed or Processing state.
   7. Detects sequence gaps via Get-DFeSequenceGap.
@@ -19,11 +19,11 @@ Orchestrates the complete DFe processing pipeline for one company:
  11. Orchestrates the persistent delivery lifecycle via Invoke-DFeDelivery
      when recipients are configured and SMTP is available.
 
-Only NF-e (55) and NFC-e (65) currently participate in the normalized fiscal
+NF-e (55), NFC-e (65) and NFCom (62) participate in the normalized fiscal
 processing workflow. Other indexed document models continue through the
 existing gap/archive flow without entering that state machine.
 
-Document-processing failures are isolated so that one failing NF-e/NFC-e does
+Document-processing failures are isolated so that one failing document does
 not prevent the remaining eligible documents from being attempted. However,
 archive generation and delivery are interrupted if any supported document in
 the requested period has unresolved fiscal processing.
@@ -194,10 +194,10 @@ function Invoke-PipeDFeCompany {
         # -----------------------------------------------------------------
         # Fiscal processing
         #
-        # Only NF-e/NFC-e currently have normalized fiscal processing.
+        # Only NF-e, NFC-e and NFCom have normalized fiscal processing.
         # -----------------------------------------------------------------
         $supportedEntries = @(
-            $entries | Where-Object { [int]$_.modelo -in @(55, 65) }
+            $entries | Where-Object { [int]$_.modelo -in @(55, 62, 65) }
         )
 
         $blockedEntries = @(
@@ -265,7 +265,7 @@ function Invoke-PipeDFeCompany {
 
         if ($unresolvedCount -gt 0) {
             throw [System.InvalidOperationException]::new(
-                "$unresolvedCount documento(s) NF-e/NFC-e possuem " +
+                "$unresolvedCount documento(s) possuem " +
                 'processamento fiscal não concluído. ' +
                 'A geração de arquivos e a entrega foram interrompidas.'
             )
