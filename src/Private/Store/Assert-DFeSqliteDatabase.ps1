@@ -44,7 +44,7 @@ function Assert-DFeSqliteDatabase {
         )
     }
 
-    $expectedVersion = if ($Scope -eq 'Index') { 6 } else { 1 }
+    $expectedVersion = if ($Scope -eq 'Index') { 7 } else { 1 }
 
     $requiredTables = if ($Scope -eq 'Index') {
         @(
@@ -60,6 +60,7 @@ function Assert-DFeSqliteDatabase {
             'dfe_nfcom_item'
             'dfe_nfcom_item_ibscbs'
             'dfe_nfcom_total'
+            'dfe_nfse'
         )
     } else {
         @(
