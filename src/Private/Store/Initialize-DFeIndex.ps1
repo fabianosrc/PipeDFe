@@ -55,7 +55,7 @@ Schema:
 
 Schema evolution is tracked through SQLite PRAGMA user_version.
 
-Current schema version: 6.
+Current schema version: 7.
 
 .PARAMETER Cnpj
 14-digit normalized CNPJ identifying the company index.
@@ -765,6 +765,75 @@ CREATE TABLE IF NOT EXISTS dfe_nfcom_total (
 );
 '@
 
+            $createNFSeSchemaV7Sql = @'
+CREATE TABLE IF NOT EXISTS dfe_nfse (
+    chave_acesso TEXT NOT NULL PRIMARY KEY
+        CHECK (length(chave_acesso) = 50 AND chave_acesso NOT GLOB '*[^0-9]*'),
+    numero TEXT NOT NULL
+        CHECK (length(numero) BETWEEN 1 AND 13 AND numero NOT GLOB '*[^0-9]*' AND substr(numero, 1, 1) <> '0'),
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    versao_leiaute TEXT NOT NULL CHECK (versao_leiaute IN ('1.00', '1.01')),
+    file_path TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL
+        CHECK (length(source_sha256) = 64 AND source_sha256 NOT GLOB '*[^0-9a-f]*'),
+    extraido_em TEXT NOT NULL,
+    gerado_em TEXT NOT NULL,
+    dps_emitida_em TEXT NOT NULL,
+    competencia TEXT NOT NULL,
+    status TEXT,
+    municipio_incidencia TEXT,
+    dps_id TEXT,
+    dps_numero TEXT,
+    dps_serie TEXT,
+    dps_ambiente TEXT,
+    dps_municipio_emissao TEXT,
+    emitente_cnpj TEXT,
+    emitente_cpf TEXT,
+    emitente_nif TEXT,
+    emitente_codigo_ausencia_nif TEXT,
+    emitente_im TEXT,
+    emitente_nome TEXT,
+    prestador_cnpj TEXT,
+    prestador_cpf TEXT,
+    prestador_nif TEXT,
+    prestador_codigo_ausencia_nif TEXT,
+    prestador_im TEXT,
+    prestador_nome TEXT,
+    tomador_cnpj TEXT,
+    tomador_cpf TEXT,
+    tomador_nif TEXT,
+    tomador_codigo_ausencia_nif TEXT,
+    tomador_im TEXT,
+    tomador_nome TEXT,
+    intermediario_cnpj TEXT,
+    intermediario_cpf TEXT,
+    intermediario_nif TEXT,
+    intermediario_codigo_ausencia_nif TEXT,
+    intermediario_im TEXT,
+    intermediario_nome TEXT,
+    servico_codigo_tributacao_nacional TEXT,
+    servico_codigo_tributacao_municipal TEXT,
+    servico_codigo_nbs TEXT,
+    servico_descricao TEXT,
+    servico_municipio_prestacao TEXT,
+    servico_pais_prestacao TEXT,
+    issqn_tributacao TEXT,
+    issqn_tipo_retencao TEXT,
+    issqn_base_calculo TEXT,
+    issqn_aliquota TEXT,
+    valor_servico TEXT NOT NULL,
+    valor_liquido TEXT NOT NULL,
+    valor_issqn TEXT,
+    valor_retencoes TEXT,
+    valor_total_nf TEXT,
+    valor_ibs TEXT,
+    valor_cbs TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_dfe_nfse_gerado_em
+    ON dfe_nfse (gerado_em, chave_acesso);
+'@
+
             # -------------------------------------------------------------------------
             # Schema object inventory for v4.
             #
@@ -908,6 +977,7 @@ WHERE type = @type
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
                         $createNFComSchemaV6Sql
+                        $createNFSeSchemaV7Sql
                     )
                 }
 
@@ -923,6 +993,7 @@ WHERE type = @type
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
                         $createNFComSchemaV6Sql
+                        $createNFSeSchemaV7Sql
                     )
                 }
 
@@ -938,6 +1009,7 @@ WHERE type = @type
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
                         $createNFComSchemaV6Sql
+                        $createNFSeSchemaV7Sql
                     )
                 }
 
@@ -952,6 +1024,7 @@ WHERE type = @type
                         $createFiscalSchemaV4Sql
                         $createDeliverySchemaV5Sql
                         $createNFComSchemaV6Sql
+                        $createNFSeSchemaV7Sql
                     )
                 }
 
@@ -964,6 +1037,7 @@ WHERE type = @type
                     @(
                         $createDeliverySchemaV5Sql
                         $createNFComSchemaV6Sql
+                        $createNFSeSchemaV7Sql
                     )
                 }
 
@@ -975,15 +1049,25 @@ WHERE type = @type
                 5 {
                     @(
                         $createNFComSchemaV6Sql
+                        $createNFSeSchemaV7Sql
                     )
                 }
 
                 # =====================================================================
                 # Version 6
                 #
-                # Current schema. No migration required.
+                # Add the NFS-e Nacional fiscal persistence schema.
                 # =====================================================================
                 6 {
+                    @($createNFSeSchemaV7Sql)
+                }
+
+                # =====================================================================
+                # Version 7
+                #
+                # Current schema. No migration required.
+                # =====================================================================
+                7 {
                     @()
                 }
 
@@ -1003,8 +1087,8 @@ WHERE type = @type
                 $null = $command.ExecuteNonQuery()
             }
 
-            if ($currentVersion -ne 6) {
-                $command.CommandText = 'PRAGMA user_version = 6;'
+            if ($currentVersion -ne 7) {
+                $command.CommandText = 'PRAGMA user_version = 7;'
                 $null = $command.ExecuteNonQuery()
             }
 
