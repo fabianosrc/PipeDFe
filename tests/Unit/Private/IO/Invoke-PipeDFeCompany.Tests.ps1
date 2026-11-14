@@ -20,10 +20,10 @@ Coverage includes:
   - Queries documents for the requested period.
   - Processes only Indexed NF-e and NFC-e documents.
   - Does not reprocess Processed NF-e and NFC-e documents.
-  - Failed or Processing NF-e and NFC-e documents block archive and delivery.
+  - Failed or Processing NF-e, NFC-e and NFCom documents block archive and delivery.
   - A processing failure does not prevent the remaining eligible documents
     from being attempted.
-  - Unsupported document models do not enter the NF-e/NFC-e processing
+  - Unsupported document models do not enter the fiscal processing
     workflow.
   - Returns Status = 'Aviso' when no documents are found in the period.
   - Detects sequence gaps and creates archives when delivery is allowed.
@@ -68,33 +68,33 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
 
             $Script:Cnpj = '12345678000199'
 
-            $Script:Company = [pscustomobject]@{
+            $Script:Company = [PSCustomObject]@{
                 Cnpj         = $Script:Cnpj
                 RazaoSocial  = 'EMPRESA TESTE LTDA'
                 NomeFantasia = [string]::Empty
                 XmlPath      = 'C:\xml'
                 OutputPath   = 'C:\output'
-                Email        = [pscustomobject]@{
+                Email        = [PSCustomObject]@{
                     Para = @('dest@exemplo.com.br')
                     Cc   = @()
                     Cco  = @()
                 }
             }
 
-            $Script:CompanyWithoutRecipients = [pscustomobject]@{
+            $Script:CompanyWithoutRecipients = [PSCustomObject]@{
                 Cnpj         = $Script:Cnpj
                 RazaoSocial  = 'EMPRESA TESTE LTDA'
                 NomeFantasia = [string]::Empty
                 XmlPath      = 'C:\xml'
                 OutputPath   = 'C:\output'
-                Email        = [pscustomobject]@{
+                Email        = [PSCustomObject]@{
                     Para = @()
                     Cc   = @()
                     Cco  = @()
                 }
             }
 
-            $Script:DateRange = [pscustomobject]@{
+            $Script:DateRange = [PSCustomObject]@{
                 Start = [System.DateTimeOffset]::new(
                     2026, 8, 1, 0, 0, 0, [System.TimeSpan]::Zero
                 )
@@ -103,7 +103,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 )
             }
 
-            $Script:Entry = [pscustomobject]@{
+            $Script:Entry = [PSCustomObject]@{
                 chave_acesso          = '35260112345678000199550010000000011234567890'
                 modelo                = 55
                 dh_emi                = '2026-08-15T10:00:00+00:00'
@@ -119,7 +119,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 processing_error      = $null
             }
 
-            $Script:SecondEntry = [pscustomobject]@{
+            $Script:SecondEntry = [PSCustomObject]@{
                 chave_acesso          = '35260112345678000199550010000000021234567891'
                 modelo                = 65
                 dh_emi                = '2026-08-16T10:00:00+00:00'
@@ -135,14 +135,14 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 processing_error      = $null
             }
 
-            $Script:ArchiveInfo = [pscustomobject]@{
+            $Script:ArchiveInfo = [PSCustomObject]@{
                 TipoDFe  = 'NFe'
                 FileName = 'NFe_12345678000199_EMPRESA_TESTE_202608.zip'
                 TempPath = 'C:\temp\NFe_12345678000199_EMPRESA_TESTE_202608.zip'
                 DestPath = 'C:\output\NFe_12345678000199_EMPRESA_TESTE_202608.zip'
             }
 
-            $Script:Archive = [pscustomobject]@{
+            $Script:Archive = [PSCustomObject]@{
                 TipoDFe  = 'NFe'
                 FileName = 'NFe_12345678000199_EMPRESA_TESTE_202608.zip'
                 FileHash = 'deadbeef'
@@ -150,26 +150,26 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 DestPath = 'C:\output\NFe_12345678000199_EMPRESA_TESTE_202608.zip'
             }
 
-            $Script:Smtp = [pscustomobject]@{
+            $Script:Smtp = [PSCustomObject]@{
                 Host = 'smtp.exemplo.com.br'
                 Port = 587
             }
 
-            $Script:NotificationSuccess = [pscustomobject]@{
+            $Script:NotificationSuccess = [PSCustomObject]@{
                 Success      = $true
                 EmailsSent   = @('dest@exemplo.com.br')
                 ErrorMessage = $null
                 FailedAt     = $null
             }
 
-            $Script:NotificationFailure = [pscustomobject]@{
+            $Script:NotificationFailure = [PSCustomObject]@{
                 Success      = $false
                 EmailsSent   = @()
                 ErrorMessage = 'Connection refused.'
                 FailedAt     = 'Send'
             }
 
-            $Script:RepairEmpty = [pscustomobject]@{
+            $Script:RepairEmpty = [PSCustomObject]@{
                 ProcessingFound     = 0
                 Active              = 0
                 Recovered           = 0
@@ -209,7 +209,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                     $Modelo = [int]$Entry.modelo
                 }
 
-                [pscustomobject]@{
+                [PSCustomObject]@{
                     chave_acesso          = $Entry.chave_acesso
                     modelo                = [int]$Modelo
                     dh_emi                = $Entry.dh_emi
@@ -254,7 +254,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             }
 
             Mock -CommandName Invoke-DFeXmlScan -MockWith {
-                return [pscustomobject]@{
+                return [PSCustomObject]@{
                     FilesFound   = 3
                     FilesIndexed = 2
                     FilesSkipped = 1
@@ -543,7 +543,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Mock -CommandName Invoke-DFeXmlScan -MockWith {
                     $Script:CallOrder.Add('Scan')
 
-                    return [pscustomobject]@{
+                    return [PSCustomObject]@{
                         FilesFound   = 3
                         FilesIndexed = 2
                         FilesSkipped = 1
@@ -567,7 +567,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             }
 
             It 'Does not add repair activity to company warnings' {
-                $repairResult = [pscustomobject]@{
+                $repairResult = [PSCustomObject]@{
                     ProcessingFound     = 2
                     Active              = 1
                     Recovered           = 1
@@ -586,7 +586,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             }
 
             It 'Blocks delivery when the period query sees a repaired document as Failed' {
-                $repairResult = [pscustomobject]@{
+                $repairResult = [PSCustomObject]@{
                     ProcessingFound     = 1
                     Active              = 0
                     Recovered           = 1
@@ -672,10 +672,45 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
         #region Fiscal processing
         Context 'Fiscal processing selection' {
 
-            It 'Does not process a Processed NF-e document' {
+            It 'Processes an Indexed NFCom before starting archive generation' {
+                $Script:NFComEntry = Copy-TestEntry -Entry $Script:Entry -Modelo 62
+                $Script:NFComEntry.chave_acesso = '35260812345678000199620010000000011234567890'
+                $Script:NFComProcessed = $false
+                $Script:NFComProcessedAtArchive = $false
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $Script:NFComEntry
+                }
+
+                Mock -CommandName Invoke-DFeDocumentProcessing -MockWith {
+                    $Script:NFComProcessed = $true
+                } -ParameterFilter {
+                    $Entry.modelo -eq 62 -and
+                    $Entry.chave_acesso -eq $Script:NFComEntry.chave_acesso
+                }
+
+                Mock -CommandName New-DFeArchive -MockWith {
+                    $Script:NFComProcessedAtArchive = $Script:NFComProcessed
+                    return $Script:Archive
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'OK'
+                $Script:NFComProcessedAtArchive | Should -BeTrue
+            }
+
+            It 'Does not process a Processed document of model <Model>' -ForEach @(
+                @{ Model = 55 }
+                @{ Model = 62 }
+                @{ Model = 65 }
+            ) {
+                param ($Model)
+
                 $processedEntryParams = @{
                     Entry            = $Script:Entry
                     ProcessingStatus = 'Processed'
+                    Modelo           = $Model
                 }
 
                 $processedEntry = Copy-TestEntry @processedEntryParams
@@ -727,10 +762,17 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Should -Invoke @shouldParams
             }
 
-            It 'Blocks archive and notification when a supported document is Failed' {
+            It 'Blocks archive and notification when model <Model> is Failed' -ForEach @(
+                @{ Model = 55 }
+                @{ Model = 62 }
+                @{ Model = 65 }
+            ) {
+                param ($Model)
+
                 $failedEntryParams = @{
                     Entry            = $Script:Entry
                     ProcessingStatus = 'Failed'
+                    Modelo           = $Model
                     ProcessingError  = 'Invalid XML.'
                 }
 
@@ -766,10 +808,17 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 Should -Invoke @notificationShouldParams
             }
 
-            It 'Blocks archive and notification when a supported document is Processing' {
+            It 'Blocks archive and notification when model <Model> is Processing' -ForEach @(
+                @{ Model = 55 }
+                @{ Model = 62 }
+                @{ Model = 65 }
+            ) {
+                param ($Model)
+
                 $processingEntryParams = @{
                     Entry            = $Script:Entry
                     ProcessingStatus = 'Processing'
+                    Modelo           = $Model
                 }
 
                 $processingEntry = Copy-TestEntry @processingEntryParams
