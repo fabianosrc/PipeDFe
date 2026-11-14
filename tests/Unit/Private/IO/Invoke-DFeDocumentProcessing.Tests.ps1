@@ -5,14 +5,14 @@
 Unit tests for Invoke-DFeDocumentProcessing.
 
 .DESCRIPTION
-Verifies orchestration of one indexed NF-e/NFC-e document using mocked
+Verifies orchestration of one indexed NF-e, NFC-e or NFCom document using mocked
 dependencies.
 
 Coverage includes:
 
 - Parameter contract.
 - Entry contract validation.
-- Only NF-e and NFC-e models are accepted.
+- Only NF-e, NFC-e and NFCom models are accepted.
 - Invalid entries are rejected before persistent state changes.
 - Processing state is acquired before source access.
 - Source SHA-256 must match the indexed SHA-256.
@@ -32,6 +32,12 @@ Coverage includes:
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    '',
+    Justification = 'Required by Set-DFeDocumentProcessingState'
+)]
+
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
     'PSUseShouldProcessForStateChangingFunctions',
     '',
     Justification = 'Test helper functions do not require ShouldProcess.'
@@ -39,11 +45,11 @@ Coverage includes:
 
 param ()
 
-# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-# because that's when Context/It are executed to register the test tree. If the
-# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-# BeforeEach ever runs.
 BeforeDiscovery {
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+    # because that's when Context/It are executed to register the test tree. If the
+    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+    # BeforeEach ever runs.
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
     $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
@@ -136,11 +142,6 @@ Describe 'Invoke-DFeDocumentProcessing' -Tag 'Unit' {
                     [string]$Status,
                     [string]$ErrorMessage
                 )
-
-                $null = $Cnpj
-                $null = $ChaveAcesso
-                $null = $Status
-                $null = $ErrorMessage
             }
 
             Mock -CommandName Get-FileSha256 -MockWith {
@@ -488,6 +489,145 @@ Describe 'Invoke-DFeDocumentProcessing' -Tag 'Unit' {
         }
         #endregion
 
+        #region NFCom processing
+        Context 'NFCom processing' {
+
+            BeforeEach {
+                $key = '35261112345678000199620010000000011234567890'
+                $Script:Entry = New-TestEntry -Modelo 62 -ChaveAcesso $key
+                $Script:FiscalData = New-TestFiscalData -Modelo 62 -ChaveAcesso $key
+                $Script:Xml.LoadXml('<NFCom />')
+
+                Mock -CommandName Get-DFeNFComFiscalData -MockWith {
+                    return $Script:FiscalData
+                }
+
+                Mock -CommandName Save-DFeNFComFiscalData
+            }
+
+            It 'Uses the NFCom parser and store before marking the entry Processed' {
+                Mock -CommandName Save-DFeNFComFiscalData -MockWith {
+                    $Script:NFComSaved = $true
+                }
+
+                $Script:NFComSaved = $false
+                $Script:NFComSavedAtProcessed = $false
+
+                Mock -CommandName Set-DFeDocumentProcessingState -MockWith {
+                    if ($Status -eq 'Processed') {
+                        $Script:NFComSavedAtProcessed = $Script:NFComSaved
+                    }
+                }
+
+                $invokeParams = @{
+                    Cnpj        = $Script:Cnpj
+                    Entry       = $Script:Entry
+                    ErrorAction = 'Stop'
+                }
+
+                Invoke-DFeDocumentProcessing @invokeParams
+
+                $parseShouldParams = @{
+                    CommandName     = 'Get-DFeNFComFiscalData'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = { [object]::ReferenceEquals($Xml, $Script:Xml) }
+                }
+
+                Should -Invoke @parseShouldParams
+
+                $saveShouldParams = @{
+                    CommandName     = 'Save-DFeNFComFiscalData'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj -and
+                        [object]::ReferenceEquals($FiscalData, $Script:FiscalData) -and
+                        $SourceSha256 -eq $Script:SourceHash
+                    }
+                }
+
+                Should -Invoke @saveShouldParams
+
+                foreach ($commandName in @('Get-DFeNFeFiscalData', 'Save-DFeNFeFiscalData')) {
+                    $shouldParams = @{
+                        CommandName = $commandName
+                        ModuleName  = 'PipeDFe'
+                        Scope       = 'It'
+                        Exactly     = $true
+                        Times       = 0
+                    }
+
+                    Should -Invoke @shouldParams
+                }
+
+                $Script:NFComSavedAtProcessed | Should -BeTrue
+            }
+
+            It 'Does not persist NFCom when its access key differs from the indexed entry' {
+                $Script:FiscalData.ChaveAcesso = '35261112345678000199620010000000021234567891'
+
+                $invokeParams = @{
+                    Cnpj        = $Script:Cnpj
+                    Entry       = $Script:Entry
+                    ErrorAction = 'Stop'
+                }
+
+                { Invoke-DFeDocumentProcessing @invokeParams } |
+                    Should -Throw -ErrorId 'DocumentSourceAccessKeyMismatch*'
+
+                $shouldParams = @{
+                    CommandName = 'Save-DFeNFComFiscalData'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Preserves the NFCom persistence error and marks the indexed entry Failed' {
+                Mock -CommandName Save-DFeNFComFiscalData -MockWith {
+                    throw 'NFCom persistence failed.'
+                }
+
+                $invokeParams = @{
+                    Cnpj        = $Script:Cnpj
+                    Entry       = $Script:Entry
+                    ErrorAction = 'Stop'
+                }
+
+                { Invoke-DFeDocumentProcessing @invokeParams } |
+                    Should -Throw -ExpectedMessage 'NFCom persistence failed.'
+
+                $shouldParams = @{
+                    CommandName     = 'Set-DFeDocumentProcessingState'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Status -eq 'Failed' -and
+                        $ChaveAcesso -eq $Script:Entry.chave_acesso -and
+                        $ErrorMessage -like '*NFCom persistence failed.*'
+                    }
+                }
+
+                Should -Invoke @shouldParams
+
+                $shouldParams.Times = 0
+                $shouldParams.ParameterFilter = { $Status -eq 'Processed' }
+
+                Should -Invoke @shouldParams
+            }
+        }
+        #endregion
+
         #region Successful processing
         Context 'Successful processing' {
 
@@ -683,10 +823,6 @@ Describe 'Invoke-DFeDocumentProcessing' -Tag 'Unit' {
                         [string]$Status,
                         [string]$ErrorMessage
                     )
-
-                    $null = $Cnpj
-                    $null = $ChaveAcesso
-                    $null = $ErrorMessage
 
                     if ($Status -eq 'Processing') {
                         throw [System.InvalidOperationException]::new(
@@ -1274,10 +1410,6 @@ Describe 'Invoke-DFeDocumentProcessing' -Tag 'Unit' {
                         [string]$ErrorMessage
                     )
 
-                    $null = $Cnpj
-                    $null = $ChaveAcesso
-                    $null = $ErrorMessage
-
                     if ($Status -eq 'Processed') {
                         $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                             [System.InvalidOperationException]::new(
@@ -1366,10 +1498,6 @@ Describe 'Invoke-DFeDocumentProcessing' -Tag 'Unit' {
                         [string]$Status,
                         [string]$ErrorMessage
                     )
-
-                    $null = $Cnpj
-                    $null = $ChaveAcesso
-                    $null = $ErrorMessage
 
                     if ($Status -eq 'Failed') {
                         throw [System.InvalidOperationException]::new(
