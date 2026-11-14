@@ -157,7 +157,38 @@ INSERT INTO dfe_document (
             function New-NFComProjection {
                 [CmdletBinding()]
                 [OutputType([pscustomobject])]
-                param ()
+                param (
+                    [Parameter()]
+                    [switch]$WithIBSCBS,
+
+                    [Parameter()]
+                    [decimal]$VNF = [decimal]'222.76'
+                )
+
+                $ibscbs = $null
+
+                if ($WithIBSCBS) {
+                    $ibscbs = [PSCustomObject]@{
+                        CST        = '000'
+                        CClassTrib = '000001'
+                        IndDoacao  = $null
+                        Valores    = [PSCustomObject]@{
+                            VBC           = [decimal]'222.76'
+                            VIBS          = [decimal]'0.22'
+                            IBSUF         = [PSCustomObject]@{
+                                PIBSUF = [decimal]'0.10'
+                                VIBSUF = [decimal]'0.22'
+                            }
+                            IBSMun        = $null
+                            CBS           = [PSCustomObject]@{
+                                PCBS = [decimal]'0.90'
+                                VCBS = [decimal]'2.00'
+                            }
+                            TribRegular   = $null
+                            TribCompraGov = $null
+                        }
+                    }
+                }
 
                 $item = [PSCustomObject]@{
                     Numero   = '1'
@@ -176,14 +207,14 @@ INSERT INTO dfe_document (
                     Tributos = [PSCustomObject]@{
                         IndSemCST = $null
                         ICMS      = $null
-                        IBSCBS    = $null
+                        IBSCBS    = $ibscbs
                     }
                 }
 
                 [PSCustomObject]@{
                     PSTypeName    = 'PipeDFe.Fiscal.NFComDocument'
                     SchemaVersion = 1
-                    Modelo        = 62
+                    Modelo        = [ModeloDFe]::NFCom
                     ChaveAcesso   = $Script:Key
                     Identificacao = [PSCustomObject]@{
                         CUF      = '35'
@@ -204,7 +235,7 @@ INSERT INTO dfe_document (
                     Protocolo    = $null
                     Totais       = [PSCustomObject]@{
                         VProd     = [decimal]'222.76'
-                        VNF       = [decimal]'222.76'
+                        VNF       = $VNF
                         IBSCBSTot = $null
                     }
                     Itens        = @($item)
@@ -283,29 +314,7 @@ INSERT INTO dfe_document (
         }
 
         It 'Persists IBS/CBS values when present and removes them on replacement' {
-            $data = New-NFComProjection
-
-            $data.Itens[0].Tributos.IBSCBS = [PSCustomObject]@{
-                CST               = '000'
-                CClassTrib        = '000001'
-                IndDoacao         = $null
-                Valores           = [PSCustomObject]@{
-                    VBC           = [decimal]'222.76'
-                    VIBS          = [decimal]'0.22'
-                    IBSUF         = [PSCustomObject]@{
-                        PIBSUF = [decimal]'0.10'
-                        VIBSUF = [decimal]'0.22'
-                    }
-                    IBSMun        = $null
-                    CBS           = [PSCustomObject]@{
-                        PCBS = [decimal]'0.90'
-                        VCBS = [decimal]'2.00'
-                    }
-                    TribRegular   = $null
-                    TribCompraGov = $null
-                }
-            }
-
+            $data   = New-NFComProjection -WithIBSCBS
             $params = @{
                 Cnpj         = $Script:Cnpj
                 FiscalData   = $data
@@ -348,9 +357,7 @@ INSERT INTO dfe_document (
         }
 
         It 'Rejects a source SHA-256 mismatch without changing persisted data' {
-            $data = New-NFComProjection
-            $data.Totais.VNF = [decimal]'9.99'
-
+            $data   = New-NFComProjection -VNF ([decimal]'9.99')
             $params = @{
                 Cnpj         = $Script:Cnpj
                 FiscalData   = $data
@@ -368,9 +375,7 @@ INSERT INTO dfe_document (
         }
 
         It 'Rolls back all changes when a mid-write SQLite error occurs' {
-            $data = New-NFComProjection
-            $data.Totais.VNF = [decimal]'9.99'
-
+            $data   = New-NFComProjection -VNF ([decimal]'9.99')
             $params = @{
                 Cnpj         = $Script:Cnpj
                 FiscalData   = $data
