@@ -7,7 +7,8 @@ Orchestrates the complete DFe processing pipeline for one company:
 
   1. Initializes the SQLite index via Initialize-DFeIndex.
   2. Repairs abandoned Processing states via Repair-DFeDocumentProcessing.
-  3. Scans XmlPath and indexes new XML files via Invoke-DFeXmlScan.
+  3. Scans XmlPath via Invoke-DFeXmlScan and imports national NFS-e documents
+     from XmlPathNfse, when configured, via Invoke-DFeNFSeXmlScan.
   4. Queries indexed documents for the requested period.
   5. Processes indexed NF-e, NFC-e and NFCom through Invoke-DFeDocumentProcessing.
   6. Blocks archive generation and delivery while supported fiscal documents
@@ -22,6 +23,8 @@ Orchestrates the complete DFe processing pipeline for one company:
 NF-e (55), NFC-e (65) and NFCom (62) participate in the normalized fiscal
 processing workflow. Other indexed document models continue through the
 existing gap/archive flow without entering that state machine.
+National NFS-e import is reported separately in NFSeScan. It does not yet
+contribute to period document counts, gaps, ZIP archives or delivery.
 
 Document-processing failures are isolated so that one failing document does
 not prevent the remaining eligible documents from being attempted. However,
@@ -65,12 +68,14 @@ Properties:
   Avisos          [string[]]
   Erro            [string]
   Scan            [pscustomobject]
+  NFSeScan        [pscustomobject] - National NFS-e import counters, when configured.
 
 .NOTES
 Private dependencies:
   Initialize-DFeIndex
   Repair-DFeDocumentProcessing
   Invoke-DFeXmlScan
+  Invoke-DFeNFSeXmlScan
   Get-DFeDocumentEntry
   Invoke-DFeDocumentProcessing
   Get-DFeInutilizacaoEntry
@@ -102,6 +107,7 @@ function Invoke-PipeDFeCompany {
     $arquivos        = @()
     $emailEnviado    = $false
     $scanResult      = $null
+    $nfseScanResult  = $null
 
     $periodoDisplay = (
         "$($DateRange.Start.ToString('dd/MM/yyyy')) a " +
@@ -139,6 +145,17 @@ function Invoke-PipeDFeCompany {
 
         $scanResult = Invoke-DFeXmlScan @scanParams
 
+        $nfsePath = $Company.PSObject.Properties['XmlPathNfse']
+
+        if ($null -ne $nfsePath -and -not [string]::IsNullOrWhiteSpace($nfsePath.Value)) {
+            $nfseScanParams = @{
+                Cnpj    = $cnpj
+                XmlPath = $nfsePath.Value
+            }
+
+            $nfseScanResult = Invoke-DFeNFSeXmlScan @nfseScanParams
+        }
+
         $entryParams = @{
             Cnpj      = $cnpj
             StartDate = $DateRange.Start.ToString('o')
@@ -159,6 +176,13 @@ function Invoke-PipeDFeCompany {
                 'Verifique o XmlPath ou ajuste o período.'
             )
 
+            if ($null -ne $nfseScanResult -and $nfseScanResult.FilesImported -gt 0) {
+                $aviso = (
+                    'NFS-e Nacional importada para o SQLite. ' +
+                    'Não há documentos do fluxo de ZIP no período informado.'
+                )
+            }
+
             $avisos.Add($aviso)
 
             Write-Warning -Message "[$cnpj] $aviso"
@@ -178,6 +202,7 @@ function Invoke-PipeDFeCompany {
                 EmailEnviado    = $emailEnviado
                 Avisos          = $avisos.ToArray()
                 Erro            = $null
+                NFSeScan        = $nfseScanResult
                 Scan            = if ($null -eq $scanResult) {
                     $null
                 } else {
@@ -403,6 +428,7 @@ function Invoke-PipeDFeCompany {
             EmailEnviado    = $emailEnviado
             Avisos          = $avisos.ToArray()
             Erro            = $null
+            NFSeScan        = $nfseScanResult
             Scan            = if ($null -eq $scanResult) {
                 $null
             } else {
@@ -431,6 +457,7 @@ function Invoke-PipeDFeCompany {
             EmailEnviado    = $false
             Avisos          = $avisos.ToArray()
             Erro            = $errorMessage
+            NFSeScan        = $nfseScanResult
             Scan            = $scanResult
         }
     }
