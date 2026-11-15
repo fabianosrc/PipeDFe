@@ -1,5 +1,4 @@
-﻿
-#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
+﻿#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
 <#
 .SYNOPSIS
@@ -74,7 +73,7 @@ Describe 'Restore-DFeSqliteDatabase' -Tag 'Integration' {
             New-Item -ItemType Directory -Path $Script:BackupDirectory -Force |
                 Out-Null
 
-            $Script:SourceCnpj = '12345678000199'
+            $Script:SourceCnpj      = '12345678000199'
             $Script:IndexTargetCnpj = '22345678000199'
             $Script:AuditTargetCnpj = '32345678000199'
 
@@ -239,7 +238,7 @@ INSERT INTO audit_execution (
                 $result.PSTypeNames    | Should -Contain 'PipeDFe.SqliteRestore'
                 $result.Scope          | Should -Be 'Index'
                 $result.IntegrityCheck | Should -Be 'ok'
-                $result.SchemaVersion  | Should -Be 6
+                $result.SchemaVersion  | Should -Be 7
                 $result.SizeBytes      | Should -BeGreaterThan 0
 
                 $target = Get-StorePath -Scope Index -Cnpj $Script:IndexTargetCnpj
@@ -252,7 +251,48 @@ INSERT INTO audit_execution (
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                [int](Get-TestScalar @queryParams) | Should -Be 6
+                [int](Get-TestScalar @queryParams) | Should -Be 7
+            }
+
+            It 'Restores a v6 index backup and allows initialization to migrate it' {
+                $sourceCnpj = '92345678000199'
+                $targetCnpj = '92345678000188'
+                $source = Initialize-DFeIndex -Cnpj $sourceCnpj
+                $connection = Open-SqliteConnection -Path $source
+
+                try {
+                    $command = $connection.CreateCommand()
+                    try {
+                        $command.CommandText = 'DROP TABLE dfe_nfse; PRAGMA user_version = 6;'
+                        $null = $command.ExecuteNonQuery()
+                    } finally {
+                        $command.Dispose()
+                    }
+                } finally {
+                    $connection.Dispose()
+                }
+
+                $backupPath = New-TestBackupPath -Name 'index-v6'
+                $backupParams = @{
+                    Cnpj            = $sourceCnpj
+                    Scope           = 'Index'
+                    DestinationPath = $backupPath
+                }
+
+                Backup-DFeSqliteDatabase @backupParams | Out-Null
+
+                $restoreParams = @{
+                    Cnpj       = $targetCnpj
+                    Scope      = 'Index'
+                    BackupPath = $backupPath
+                }
+
+                $result = Restore-DFeSqliteDatabase @restoreParams
+                $result.SchemaVersion | Should -Be 6
+
+                $target = Initialize-DFeIndex -Cnpj $targetCnpj
+                $validation = Assert-DFeSqliteDatabase -Path $target -Scope Index
+                $validation.SchemaVersion | Should -Be 7
             }
 
             It 'Restores persisted audit records into a new database' {
@@ -303,7 +343,7 @@ WHERE execution_id = @execution_id;
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                [int](Get-TestScalar @queryParams) | Should -Be 6
+                [int](Get-TestScalar @queryParams) | Should -Be 7
             }
 
             It 'Rejects the destination database as its own source' {
