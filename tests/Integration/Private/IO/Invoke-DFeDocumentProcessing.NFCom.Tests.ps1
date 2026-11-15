@@ -23,7 +23,7 @@ Describe 'Invoke-DFeDocumentProcessing with NFCom' -Tag 'Integration' {
 
         BeforeAll {
 
-            $Script:OriginalDataRoot = $env:PIPEDFE_DATA_ROOT
+            $Script:OriginalDataRoot = $env:LOCALAPPDATA
 
             $testID = [guid]::NewGuid().ToString('N')
 
@@ -35,7 +35,7 @@ Describe 'Invoke-DFeDocumentProcessing with NFCom' -Tag 'Integration' {
             $Script:XmlDir = Join-Path -Path $Script:TempRoot -ChildPath 'xml'
             New-Item -Path $Script:XmlDir -ItemType Directory -Force | Out-Null
 
-            $env:PIPEDFE_DATA_ROOT = Join-Path -Path $Script:TempRoot -ChildPath 'data'
+            $env:LOCALAPPDATA = Join-Path -Path $Script:TempRoot -ChildPath 'data'
 
             $Script:Cnpj = '12345678000199'
             $Script:Key  = '35261112345678000199620010000000011234567890'
@@ -100,7 +100,7 @@ Describe 'Invoke-DFeDocumentProcessing with NFCom' -Tag 'Integration' {
 
         AfterAll {
 
-            $env:PIPEDFE_DATA_ROOT = $Script:OriginalDataRoot
+            $env:LOCALAPPDATA = $Script:OriginalDataRoot
 
             $removeItemParams = @{
                 LiteralPath = $Script:TempRoot
