@@ -524,6 +524,84 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
         }
         #endregion
 
+        Context 'NFS-e Nacional import' {
+
+            It 'Imports from XmlPathNfse even without legacy documents in the period' {
+                $company = $Script:Company.PSObject.Copy()
+                $company | Add-Member -NotePropertyName XmlPathNfse -NotePropertyValue 'C:\nfse'
+
+                Mock -CommandName Get-DFeDocumentEntry
+                Mock -CommandName Invoke-DFeNFSeXmlScan -MockWith {
+                    [pscustomobject]@{
+                        FilesFound    = 1
+                        FilesImported = 1
+                        FilesIgnored  = 0
+                    }
+                }
+
+                $result = Invoke-TestCompany -Company $company
+
+                $result.NFSeScan.FilesImported | Should -Be 1
+                $result.TotalDocumentos | Should -Be 0
+
+                $shouldParams = @{
+                    CommandName     = 'Invoke-DFeNFSeXmlScan'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj -and $XmlPath -eq 'C:\nfse'
+                    }
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Reports a failed NFS-e import before archive generation' {
+                $company = $Script:Company.PSObject.Copy()
+                $company | Add-Member -NotePropertyName XmlPathNfse -NotePropertyValue 'C:\nfse'
+
+                Mock -CommandName Invoke-DFeNFSeXmlScan -MockWith {
+                    throw 'Unable to import NFS-e.'
+                }
+
+                $result = Invoke-TestCompany -Company $company
+
+                $result.Status | Should -Be 'Falha'
+                $result.Erro   | Should -Be 'Unable to import NFS-e.'
+
+                $shouldParams = @{
+                    CommandName = 'New-DFeArchive'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not invoke the NFS-e scanner when XmlPathNfse is absent' {
+                Mock -CommandName Invoke-DFeNFSeXmlScan
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'OK'
+                $result.NFSeScan | Should -BeNullOrEmpty
+
+                $shouldParams = @{
+                    CommandName = 'Invoke-DFeNFSeXmlScan'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+        }
+
         #region Processing state repair
         Context 'Processing state repair' {
 
