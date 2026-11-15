@@ -336,7 +336,7 @@ WHERE execution_id = @execution_id;
                 $result = Set-DFeSqliteDatabase @params
 
                 $result.Scope         | Should -Be 'Index'
-                $result.SchemaVersion | Should -Be 6
+                $result.SchemaVersion | Should -Be 7
 
                 $validationParams = @{
                     Path  = $target
