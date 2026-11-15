@@ -66,7 +66,7 @@ function Get-DFeNFSeFiscalData {
         $infNFSe = $root.SelectSingleNode('n:infNFSe', $nsm)
         $id      = if ($null -ne $infNFSe) { $infNFSe.GetAttribute('Id') }
 
-        if ($id -cnotmatch '\ANFS[0-9]{50}\z') {
+        if ($null -eq $infNFSe -or $id -cnotmatch '\ANFS[0-9]{50}\z') {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.FormatException]::new(
