@@ -53,6 +53,7 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             $Script:TestPeriodIndex = -1
 
+            # Redirect LOCALAPPDATA to an isolated temp directory.
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
 
             $testID = [guid]::NewGuid().ToString('N')
@@ -199,6 +200,7 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
         AfterAll {
 
+            # Always restore LOCALAPPDATA, even when tests fail.
             $env:LOCALAPPDATA = $Script:OriginalLocalAppData
 
             $removeItemParams = @{
