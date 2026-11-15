@@ -15,6 +15,10 @@ When -Coverage is used, prints a detailed report of uncovered commands
 grouped by file, including line numbers, so you know exactly what to
 test to reach 100% coverage. Compatible with Pester 5.x and 6.x.
 
+Temporarily clears PIPEDFE_DATA_ROOT during Pester discovery and execution so
+tests can use their isolated LOCALAPPDATA directories. Restores the caller's
+process value afterward.
+
 Exit codes:
     0 - all tests passed
     1 - one or more tests failed
@@ -103,7 +107,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 #region Helpers
-
 <#
 .SYNOPSIS
 Safely unwraps a Pester option value whether it is a plain [string]
@@ -171,11 +174,9 @@ function Get-MissedCommand {
 
     return @()
 }
-
 #endregion
 
 #region Resolve paths
-
 $root             = Resolve-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '..')
 $srcPath          = Join-Path -Path $root -ChildPath 'src'
 $outputPath       = Join-Path -Path $root -ChildPath 'output'
@@ -197,11 +198,9 @@ foreach ($dir in $resultsDir, $coverageDir) {
         New-Item -ItemType Directory -Path $dir | Out-Null
     }
 }
-
 #endregion
 
 #region Banner
-
 $requiredVersion = $env:PIPEDFE_PESTER_VERSION
 
 $importParams = @{
@@ -225,11 +224,9 @@ Write-Host '━━━━━━━━━━━━━━━━━━━━━━�
 Write-Host "  PipeDFe - Test Runner  (Pester $pesterVersion)" -ForegroundColor Cyan
 Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
 Write-Host ''
-
 #endregion
 
 #region Pester configuration
-
 $config = New-PesterConfiguration
 
 $config.Run.Path                = $resolvedTestPath
@@ -261,19 +258,22 @@ if ($Coverage) {
     $config.CodeCoverage.OutputFormat          = 'JaCoCo'
     $config.CodeCoverage.CoveragePercentTarget = $CoverageTarget
 }
-
 #endregion
 
 #region Run
+$previousDataRoot = $env:PIPEDFE_DATA_ROOT
 
-$result = Invoke-Pester -Configuration $config
-
+try {
+    $env:PIPEDFE_DATA_ROOT = $null
+    $result = Invoke-Pester -Configuration $config
+} finally {
+    $env:PIPEDFE_DATA_ROOT = $previousDataRoot
+}
 #endregion
 
 $coveragePercent = $null
 
 #region Coverage report
-
 if ($Coverage -and $null -ne $result.CodeCoverage) {
     $cc = $result.CodeCoverage
 
@@ -397,11 +397,9 @@ if ($Coverage -and $null -ne $result.CodeCoverage) {
     Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
     Write-Host ''
 }
-
 #endregion
 
 #region Test results summary
-
 Write-Host ''
 Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
 Write-Host '  Test Results' -ForegroundColor Cyan
@@ -417,11 +415,9 @@ Write-Host ''
 Write-Host "  Results  : $(Get-StringValue $config.TestResult.OutputPath)" -ForegroundColor Gray
 Write-Host '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' -ForegroundColor DarkGray
 Write-Host ''
-
 #endregion
 
 #region GitHub Actions summary
-
 if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
     $coverageSummary = 'Not requested'
 
@@ -462,11 +458,9 @@ if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
         Write-Warning "Unable to write GitHub Actions summary: $($_.Exception.Message)"
     }
 }
-
 #endregion
 
 #region Exit code
-
 if ($PassThru) {
     return $result
 }
@@ -497,5 +491,4 @@ if ($Coverage) {
 }
 
 exit 0
-
 #endregion
