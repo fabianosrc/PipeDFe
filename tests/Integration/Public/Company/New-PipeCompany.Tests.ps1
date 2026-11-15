@@ -42,6 +42,7 @@ Describe 'New-PipeCompany' {
             $testID = [guid]::NewGuid().ToString('N')
 
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
+            $Script:OriginalDataRoot     = $env:PIPEDFE_DATA_ROOT
 
             $Script:TempRootPath = [System.IO.Path]::Combine(
                 [System.IO.Path]::GetTempPath(),
@@ -57,7 +58,8 @@ Describe 'New-PipeCompany' {
 
             New-Item @newItemParams | Out-Null
 
-            $env:LOCALAPPDATA = $Script:TempRootPath
+            $env:LOCALAPPDATA      = $Script:TempRootPath
+            $env:PIPEDFE_DATA_ROOT = $null
 
             $Script:Cnpj    = '12345678000195'
             $Script:XmlPath = [System.IO.Path]::Combine($Script:TempRootPath, 'xml')
@@ -86,7 +88,9 @@ Describe 'New-PipeCompany' {
 
         AfterAll {
 
-            $env:LOCALAPPDATA = $Script:OriginalLocalAppData
+            $env:LOCALAPPDATA      = $Script:OriginalLocalAppData
+            $env:PIPEDFE_DATA_ROOT = $Script:OriginalDataRoot
+
             $removeItemParams = @{
                 LiteralPath = $Script:TempRootPath
                 Recurse     = $true

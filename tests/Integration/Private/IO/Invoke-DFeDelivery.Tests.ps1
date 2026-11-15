@@ -53,8 +53,9 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             $Script:TestPeriodIndex = -1
 
-            # Redirect LOCALAPPDATA to an isolated temp directory.
+            # Save both values before redirecting the test store.
             $Script:OriginalLocalAppData = $env:LOCALAPPDATA
+            $Script:OriginalDataRoot     = $env:PIPEDFE_DATA_ROOT
 
             $testID = [guid]::NewGuid().ToString('N')
 
@@ -65,7 +66,8 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             New-Item -ItemType Directory -Path $Script:TempRoot -Force | Out-Null
 
-            $env:LOCALAPPDATA = $Script:TempRoot
+            $env:LOCALAPPDATA      = $Script:TempRoot
+            $env:PIPEDFE_DATA_ROOT = $null
 
             $Script:TestCnpj = '12345678000199'
 
@@ -200,8 +202,9 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
         AfterAll {
 
-            # Always restore LOCALAPPDATA, even when tests fail.
-            $env:LOCALAPPDATA = $Script:OriginalLocalAppData
+            # Always restore PIPEDFE_DATA_ROOT, even when tests fail.
+            $env:LOCALAPPDATA      = $Script:OriginalLocalAppData
+            $env:PIPEDFE_DATA_ROOT = $Script:OriginalDataRoot
 
             $removeItemParams = @{
                 LiteralPath = $Script:TempRoot
