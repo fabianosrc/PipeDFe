@@ -1,5 +1,4 @@
-﻿
-<#
+﻿<#
 .SYNOPSIS
 Restores a validated SQLite backup to a database that does not exist.
 
@@ -13,6 +12,8 @@ are verified before the temporary database is published.
 Existing destination databases are never replaced. Replacing an active
 database requires a separate maintenance workflow.
 
+Index backups at v6 or v7 can be restored. A restored v6 index is
+migrated by Initialize-DFeIndex on its next normal use.
 The function does not initialize a new database schema and does not
 modify the source backup.
 
@@ -89,7 +90,7 @@ function Restore-DFeSqliteDatabase {
 
     $targetDirectory = [System.IO.Path]::GetDirectoryName($targetPath)
 
-    $expectedVersion = if ($Scope -eq 'Index') { 6 } else { 1 }
+    $acceptedVersions = if ($Scope -eq 'Index') { @(6, 7) } else { @(1) }
 
     $requiredTables = if ($Scope -eq 'Index') {
         @(
@@ -186,11 +187,15 @@ function Restore-DFeSqliteDatabase {
         $command.CommandText = 'PRAGMA user_version;'
         $actualVersion = [int]$command.ExecuteScalar()
 
-        if ($actualVersion -ne $expectedVersion) {
+        if ($actualVersion -notin $acceptedVersions) {
             throw [System.IO.InvalidDataException]::new(
                 "Unexpected $Scope schema version '$actualVersion'. " +
-                "Expected '$expectedVersion'."
+                "Expected one of: $($acceptedVersions -join ', ')."
             )
+        }
+
+        if ($Scope -eq 'Index' -and $actualVersion -eq 7) {
+            $requiredTables += 'dfe_nfse'
         }
 
         $command.CommandText = @'
