@@ -121,7 +121,7 @@ Describe 'Save-DFeNFSeFiscalData' -Tag 'Integration' {
 
         AfterAll {
 
-            $env:PIPEDFE_DATA_ROOT = $Script:PreviousDataRoot
+            $env:LOCALAPPDATA = $Script:PreviousDataRoot
         }
 
         #region Schema migration
