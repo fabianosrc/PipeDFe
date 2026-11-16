@@ -338,6 +338,11 @@ function Add-ZipEntry {
     )
 
     $zipEntry = $Archive.CreateEntry($ZipEntryPath, $CompressionLevel)
+    # ZIP timestamps are part of the hash used for persistent delivery identity.
+
+    $zipEntry.LastWriteTime = [System.DateTimeOffset]::new(
+        1980, 1, 1, 0, 0, 0, [System.TimeSpan]::Zero
+    )
 
     $entryStream  = $null
     $sourceStream = $null
