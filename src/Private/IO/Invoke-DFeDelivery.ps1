@@ -8,9 +8,9 @@ Owns the full delivery lifecycle:
   1. Creates or retrieves the delivery record via New-DFeDelivery.
   2. Returns immediately when the delivery is already Delivered.
   3. Blocks and returns immediately when the delivery is Indeterminate.
-  4. Recovers a Sending record found during startup — the global execution
+  4. Recovers a Sending record found during startup - the global execution
      mutex held by Invoke-PipeDFe guarantees that Sending here belongs to
-     an interrupted execution, not a concurrent one — and transitions it
+     an interrupted execution, not a concurrent one - and transitions it
      to Indeterminate to block automatic retry.
   5. Transitions Prepared or Failed to Sending.
   6. Delegates rendering and SMTP delivery to Send-DFeNotification.
@@ -44,6 +44,9 @@ FileName, FileHash, and DestPath.
 .PARAMETER Entries
 DFe document index entries for the period. Passed to Send-DFeNotification
 to build the fiscal document summary in the email body.
+
+.PARAMETER NFSeCount
+Number of national NFS-e documents in the period, for the email summary.
 
 .OUTPUTS
 System.Management.Automation.PSCustomObject
@@ -87,7 +90,11 @@ function Invoke-DFeDelivery {
 
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
-        [pscustomobject[]]$Entries
+        [pscustomobject[]]$Entries,
+
+        [Parameter()]
+        [ValidateRange(0, [int]::MaxValue)]
+        [int]$NFSeCount = 0
     )
 
     $cnpj = [string]$Company.Cnpj
@@ -274,13 +281,17 @@ function Invoke-DFeDelivery {
         ZipFileDestination = @($Archives | Select-Object -ExpandProperty DestPath)
     }
 
+    if ($NFSeCount -gt 0) {
+        $notificationParams.NFSeCount = $NFSeCount
+    }
+
     $notificationResult = $null
 
     try {
         $notificationResult = Send-DFeNotification @notificationParams
     } catch {
         # An unexpected exception from Send-DFeNotification is treated
-        # conservatively as Indeterminate — the SMTP outcome is unknown.
+        # conservatively as Indeterminate - the SMTP outcome is unknown.
         $notificationResult = [PSCustomObject]@{
             Success       = $false
             EmailsSent    = @()
@@ -305,16 +316,13 @@ function Invoke-DFeDelivery {
             Set-DFeDeliveryState @deliveredParams | Out-Null
         } catch {
             # SMTP confirmed the send but Delivered could not be persisted.
-            # Return failure to prevent silent data loss — the caller will
+            # Return failure to prevent silent data loss - the caller will
             # surface this as a warning and the delivery remains in Sending,
             # which will be recovered as Indeterminate on the next execution.
             return [PSCustomObject]@{
                 Success        = $false
                 EmailsSent     = @()
-                ErrorMessage   = (
-                    'SMTP confirmed the send, but Delivered state could not ' +
-                    'be persisted: ' + $_.Exception.Message
-                )
+                ErrorMessage   = 'SMTP confirmed the send, but Delivered state could not be persisted: {0}' -f $_.Exception.Message
                 FailedAt       = 'Persistence'
                 DeliveryId     = $delivery.DeliveryId
                 DeliveryStatus = 'Sending'
@@ -347,8 +355,7 @@ function Invoke-DFeDelivery {
 
     $targetStatus = if ($sendAttempted) { 'Indeterminate' } else { 'Failed' }
 
-    $mailError = if (
-        $null -ne $notificationResult -and
+    $mailError = if ($null -ne $notificationResult -and
         -not [string]::IsNullOrWhiteSpace($notificationResult.ErrorMessage)
     ) {
         $notificationResult.ErrorMessage
@@ -371,7 +378,7 @@ function Invoke-DFeDelivery {
         return [PSCustomObject]@{
             Success        = $false
             EmailsSent     = @()
-            ErrorMessage   = $mailError + ' State persistence failed: ' + $_.Exception.Message
+            ErrorMessage = '{0} State persistence failed: {1}' -f $mailError, $_.Exception.Message
             FailedAt       = 'Persistence'
             DeliveryId     = $delivery.DeliveryId
             DeliveryStatus = 'Sending'
