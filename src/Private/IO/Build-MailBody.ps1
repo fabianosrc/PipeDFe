@@ -40,6 +40,7 @@ A PSCustomObject containing:
         Tipo
         Quantidade
 
+    CertificadoAviso [string] (optional certificate validity notice)
 .OUTPUTS
 System.String
 
@@ -149,6 +150,16 @@ function Build-MailBody {
     )
     #endregion
 
+    #region Certificate alert
+    $certificateNoticeProperty = $Context.PSObject.Properties['CertificadoAviso']
+
+    $certificateNotice = if ($null -ne $certificateNoticeProperty) {
+        [string]$certificateNoticeProperty.Value
+    } else {
+        [string]::Empty
+    }
+    #endregion
+
     #region Conditional blocks
     $conditionalBlocks = @(
         @{
@@ -166,6 +177,10 @@ function Build-MailBody {
         @{
             Name    = 'TemArquivosManuais'
             Include = $false
+        },
+        @{
+            Name    = 'TemCertificadoAviso'
+            Include = -not [string]::IsNullOrWhiteSpace($certificateNotice)
         }
     )
 
@@ -242,6 +257,7 @@ function Build-MailBody {
         RazaoSocial       = [System.Net.WebUtility]::HtmlEncode([string]$empresa.RazaoSocial)
         CnpjFormatado     = [System.Net.WebUtility]::HtmlEncode([string]$cnpjFormatado)
         InscricaoEstadual = [System.Net.WebUtility]::HtmlEncode($ieValue)
+        CertificadoAviso  = [System.Net.WebUtility]::HtmlEncode($certificateNotice)
         PeriodoDisplay    = [System.Net.WebUtility]::HtmlEncode([string]$Context.PeriodoDisplay)
         PeriodoTitulo     = [System.Net.WebUtility]::HtmlEncode([string]$Context.PeriodoDisplay)
         DataEmissao       = [System.Net.WebUtility]::HtmlEncode([string]$Context.DataEmissao)
