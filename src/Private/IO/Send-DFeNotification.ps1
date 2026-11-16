@@ -180,6 +180,7 @@ function Send-DFeNotification {
             ReplyTo           = Resolve-SmtpReplyTo -Smtp $Smtp
             NotasNaoLancadas  = $Gaps
             ResumoDocumentos  = $resumoDocumentos
+            CertificadoAviso  = Get-DFeCertificateNotice -Company $Company
         }
 
         $body = Build-MailBody -Context $context
