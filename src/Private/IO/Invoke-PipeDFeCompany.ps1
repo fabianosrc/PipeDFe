@@ -9,13 +9,13 @@ Orchestrates the complete DFe processing pipeline for one company:
   2. Repairs abandoned Processing states via Repair-DFeDocumentProcessing.
   3. Scans XmlPath via Invoke-DFeXmlScan and imports national NFS-e documents
      from XmlPathNfse, when configured, via Invoke-DFeNFSeXmlScan.
-  4. Queries indexed documents for the requested period.
+  4. Queries indexed DFe documents and NFS-e entries for the requested period.
   5. Processes indexed NF-e, NFC-e and NFCom through Invoke-DFeDocumentProcessing.
   6. Blocks archive generation and delivery while supported fiscal documents
      remain in Failed or Processing state.
   7. Detects sequence gaps via Get-DFeSequenceGap.
   8. Resolves ZIP archive metadata per document type via Resolve-DFeArchiveInfo.
-  9. Creates ZIP archives via New-DFeArchive.
+  9. Creates ZIP archives via New-DFeArchive and New-DFeNFSeArchive.
  10. Resolves SMTP configuration via Resolve-DFeSmtp.
  11. Orchestrates the persistent delivery lifecycle via Invoke-DFeDelivery
      when recipients are configured and SMTP is available.
@@ -23,8 +23,8 @@ Orchestrates the complete DFe processing pipeline for one company:
 NF-e (55), NFC-e (65) and NFCom (62) participate in the normalized fiscal
 processing workflow. Other indexed document models continue through the
 existing gap/archive flow without entering that state machine.
-National NFS-e import is reported separately in NFSeScan. It does not yet
-contribute to period document counts, gaps, ZIP archives or delivery.
+National NFS-e documents contribute to period document counts, ZIP archives
+and delivery alongside the other document models.
 
 Document-processing failures are isolated so that one failing document does
 not prevent the remaining eligible documents from being attempted. However,
@@ -77,11 +77,13 @@ Private dependencies:
   Invoke-DFeXmlScan
   Invoke-DFeNFSeXmlScan
   Get-DFeDocumentEntry
+  Get-DFeNFSeEntry
   Invoke-DFeDocumentProcessing
   Get-DFeInutilizacaoEntry
   Get-DFeSequenceGap
   Resolve-DFeArchiveInfo
   New-DFeArchive
+  New-DFeNFSeArchive
   Resolve-DFeSmtp
   Invoke-DFeDelivery
 #>
@@ -163,25 +165,23 @@ function Invoke-PipeDFeCompany {
         }
 
         $entries = @(Get-DFeDocumentEntry @entryParams)
+        $nfseEntries = @()
 
-        $totalDocumentos = $entries.Count
+        if ($null -ne $nfseScanResult) {
+            $nfseEntries = @(Get-DFeNFSeEntry @entryParams)
+        }
+
+        $totalDocumentos = $entries.Count + $nfseEntries.Count
 
         Write-Verbose -Message (
             "[$cnpj] $totalDocumentos documento(s) encontrado(s) no período."
         )
 
-        if ($entries.Count -eq 0) {
+        if ($totalDocumentos -eq 0) {
             $aviso = (
                 "Nenhum documento encontrado no período de $periodoDisplay. " +
-                'Verifique o XmlPath ou ajuste o período.'
+                'Verifique as pastas de XML ou ajuste o período.'
             )
-
-            if ($null -ne $nfseScanResult -and $nfseScanResult.FilesImported -gt 0) {
-                $aviso = (
-                    'NFS-e Nacional importada para o SQLite. ' +
-                    'Não há documentos do fluxo de ZIP no período informado.'
-                )
-            }
 
             $avisos.Add($aviso)
 
@@ -191,7 +191,7 @@ function Invoke-PipeDFeCompany {
 
             Write-Verbose -Message "[$cnpj] Concluído com status '$status'."
 
-            return [pscustomobject]@{
+            return [PSCustomObject]@{
                 PSTypeName      = 'PipeDFe.ResultadoEmpresa'
                 Cnpj            = $cnpj
                 RazaoSocial     = $Company.RazaoSocial
@@ -206,7 +206,7 @@ function Invoke-PipeDFeCompany {
                 Scan            = if ($null -eq $scanResult) {
                     $null
                 } else {
-                    [pscustomobject]@{
+                    [PSCustomObject]@{
                         FilesFound   = $scanResult.FilesFound
                         FilesIndexed = $scanResult.FilesIndexed
                         FilesSkipped = $scanResult.FilesSkipped
@@ -299,48 +299,65 @@ function Invoke-PipeDFeCompany {
         # -----------------------------------------------------------------
         # Existing sequence/archive/delivery flow.
         # -----------------------------------------------------------------
-        $inutilizacoes = @(Get-DFeInutilizacaoEntry -Cnpj $cnpj)
+        $archives = @()
 
-        $gapEntries = @(
-            Get-DFeSequenceGap -Entries $entries -CoveredRanges $inutilizacoes
-        )
+        if ($entries.Count -gt 0) {
+            $inutilizacoes = @(Get-DFeInutilizacaoEntry -Cnpj $cnpj)
 
-        $gaps = $gapEntries.Count
-
-        if ($gaps -gt 0) {
-            Write-Verbose -Message (
-                "[$cnpj] $gaps gap(s) de sequência detectado(s)."
-            )
-        }
-
-        $tipoDFeList = @(
-            $entries |
-                Select-Object -ExpandProperty modelo -Unique |
-                ForEach-Object { ([ModeloDFe]$_).ToString() }
-        )
-
-        $archiveInfos = @(
-            foreach ($tipoDFe in $tipoDFeList) {
-                $archiveInfoParams = @{
-                    TipoDFe   = $tipoDFe
-                    Cnpj      = $cnpj
-                    Company   = $Company
-                    DateRange = $DateRange
-                }
-
-                Resolve-DFeArchiveInfo @archiveInfoParams
+            $gapParams = @{
+                Entries       = $entries
+                CoveredRanges = $inutilizacoes
             }
-        )
 
-        $archiveParams = @{
-            Cnpj         = $cnpj
-            Company      = $Company
-            Entries      = $entries
-            ArchiveInfos = $archiveInfos
-            DateRange    = $DateRange
+            $gapEntries = @(Get-DFeSequenceGap @gapParams)
+            $gaps = $gapEntries.Count
+
+            if ($gaps -gt 0) {
+                Write-Verbose -Message (
+                    "[$cnpj] $gaps gap(s) de sequência detectado(s)."
+                )
+            }
+
+            $tipoDFeList = @(
+                $entries |
+                    Select-Object -ExpandProperty modelo -Unique |
+                    ForEach-Object { ([ModeloDFe]$_).ToString() }
+            )
+
+            $archiveInfos = @(
+                foreach ($tipoDFe in $tipoDFeList) {
+                    $archiveInfoParams = @{
+                        TipoDFe   = $tipoDFe
+                        Cnpj      = $cnpj
+                        Company   = $Company
+                        DateRange = $DateRange
+                    }
+
+                    Resolve-DFeArchiveInfo @archiveInfoParams
+                }
+            )
+
+            $archiveParams = @{
+                Cnpj         = $cnpj
+                Company      = $Company
+                Entries      = $entries
+                ArchiveInfos = $archiveInfos
+                DateRange    = $DateRange
+            }
+
+            $archives = @(New-DFeArchive @archiveParams)
         }
 
-        $archives = @(New-DFeArchive @archiveParams)
+        if ($nfseEntries.Count -gt 0) {
+            $nfseArchiveParams = @{
+                Cnpj      = $cnpj
+                Company   = $Company
+                Entries   = $nfseEntries
+                DateRange = $DateRange
+            }
+
+            $archives += @(New-DFeNFSeArchive @nfseArchiveParams)
+        }
 
         $arquivos = @($archives | Select-Object -ExpandProperty FileName)
 
@@ -375,6 +392,10 @@ function Invoke-PipeDFeCompany {
                 Gaps      = $gapEntries
                 Archives  = $archives
                 Entries   = $entries
+            }
+
+            if ($nfseEntries.Count -gt 0) {
+                $notificationParams.NFSeCount = $nfseEntries.Count
             }
 
             $notificationResult = Invoke-DFeDelivery @notificationParams
@@ -417,7 +438,7 @@ function Invoke-PipeDFeCompany {
 
         Write-Verbose -Message "[$cnpj] Concluído com status '$status'."
 
-        [pscustomobject]@{
+        [PSCustomObject]@{
             PSTypeName      = 'PipeDFe.ResultadoEmpresa'
             Cnpj            = $cnpj
             RazaoSocial     = $Company.RazaoSocial
@@ -432,7 +453,7 @@ function Invoke-PipeDFeCompany {
             Scan            = if ($null -eq $scanResult) {
                 $null
             } else {
-                [pscustomobject]@{
+                [PSCustomObject]@{
                     FilesFound   = $scanResult.FilesFound
                     FilesIndexed = $scanResult.FilesIndexed
                     FilesSkipped = $scanResult.FilesSkipped
@@ -446,7 +467,7 @@ function Invoke-PipeDFeCompany {
 
         Write-Warning -Message "[$cnpj] Falha no processamento - $errorMessage"
 
-        [pscustomobject]@{
+        [PSCustomObject]@{
             PSTypeName      = 'PipeDFe.ResultadoEmpresa'
             Cnpj            = $cnpj
             RazaoSocial     = $Company.RazaoSocial
