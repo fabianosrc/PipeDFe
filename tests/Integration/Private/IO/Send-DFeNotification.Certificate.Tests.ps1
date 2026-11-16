@@ -86,25 +86,25 @@ Describe 'Certificate validity in monthly DFe notifications' -Tag 'Integration' 
             Mock -CommandName Send-Mail -MockWith {
                 param (
                     [Parameter()]
-                    $Body,
+                    [pscustomobject]$SmtpConfig,
 
                     [Parameter()]
-                    $Attachments,
+                    [pscustomobject[]]$To,
 
                     [Parameter()]
-                    $To,
+                    [pscustomobject[]]$Cc,
 
                     [Parameter()]
-                    $Cc,
+                    [pscustomobject[]]$Bcc,
 
                     [Parameter()]
-                    $Bcc,
+                    [string]$Subject,
 
                     [Parameter()]
-                    $Subject,
+                    [string]$Body,
 
                     [Parameter()]
-                    $Smtp
+                    [string[]]$Attachments = @()
                 )
 
                 $Script:NoticeMailBody = [System.Net.WebUtility]::HtmlDecode($Body)
