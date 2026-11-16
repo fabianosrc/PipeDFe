@@ -46,6 +46,10 @@ chave_acesso. An empty collection produces an empty summary table.
 .PARAMETER ZipFileDestination
 Full paths to the destination ZIP files used as email attachments.
 
+.PARAMETER NFSeCount
+Number of NFS-e documents processed for the period. When non-zero,
+an NFS-e row is appended to the fiscal document summary in the email body.
+
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
@@ -88,7 +92,11 @@ function Send-DFeNotification {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string[]]$ZipFileDestination
+        [string[]]$ZipFileDestination,
+
+        [Parameter()]
+        [ValidateRange(0, [int]::MaxValue)]
+        [int]$NFSeCount = 0
     )
 
     # Fail fast: validate primary recipients before any rendering or I/O.
@@ -152,10 +160,18 @@ function Send-DFeNotification {
                             Tipo       = $modelName
                             Quantidade = $_.Count
                         }
-                    } |
-                    Sort-Object -Property Tipo
+                    }
             )
         }
+
+        if ($NFSeCount -gt 0) {
+            $resumoDocumentos += [PSCustomObject]@{
+                Tipo       = 'NFSe'
+                Quantidade = $NFSeCount
+            }
+        }
+
+        $resumoDocumentos = @($resumoDocumentos | Sort-Object -Property Tipo)
 
         $context = [PSCustomObject]@{
             Empresa           = $Company
