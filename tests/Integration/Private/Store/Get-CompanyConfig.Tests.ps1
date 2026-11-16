@@ -327,9 +327,9 @@ Describe 'Get-CompanyConfig' -Tag 'Integration' {
             It 'Email.Para contains the stored recipients' {
                 $result = Get-CompanyConfig -Cnpj $Script:Cnpj
 
-                $result.Email.Para             | Should -HaveCount 1
-                $result.Email.Para[0].Email    | Should -Be 'contador@example.com'
-                $result.Email.Para[0].Nome     | Should -Be 'Contador'
+                $result.Email.Para          | Should -HaveCount 1
+                $result.Email.Para[0].Email | Should -Be 'contador@example.com'
+                $result.Email.Para[0].Nome  | Should -Be 'Contador'
             }
 
             It 'Email.Cc is always an array' {
