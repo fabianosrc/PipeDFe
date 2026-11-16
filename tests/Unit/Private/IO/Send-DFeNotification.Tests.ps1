@@ -440,7 +440,7 @@ Describe 'Send-DFeNotification' -Tag 'Unit' {
 
                 Mock -CommandName Build-MailBody -MockWith {
                     param (
-                        [string]$Context
+                        [pscustomobject]$Context
                     )
 
                     $Context.NotasNaoLancadas | Should -HaveCount 1
