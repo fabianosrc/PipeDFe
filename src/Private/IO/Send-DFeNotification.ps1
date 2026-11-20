@@ -50,6 +50,9 @@ Full paths to the destination ZIP files used as email attachments.
 Number of NFS-e documents processed for the period. When non-zero,
 an NFS-e row is appended to the fiscal document summary in the email body.
 
+.PARAMETER ReportFilePaths
+Full paths to optional standalone reports attached separately from the ZIPs.
+
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
@@ -96,7 +99,11 @@ function Send-DFeNotification {
 
         [Parameter()]
         [ValidateRange(0, [int]::MaxValue)]
-        [int]$NFSeCount = 0
+        [int]$NFSeCount = 0,
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [string[]]$ReportFilePaths = @()
     )
 
     # Fail fast: validate primary recipients before any rendering or I/O.
@@ -206,7 +213,7 @@ function Send-DFeNotification {
             Bcc         = $cco
             Subject     = $subject
             Body        = $body
-            Attachments = $ZipFileDestination
+            Attachments = @($ZipFileDestination) + @($ReportFilePaths)
         }
 
         $mailResult = Send-Mail @mailParams
