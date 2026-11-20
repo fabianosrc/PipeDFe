@@ -48,6 +48,13 @@ to build the fiscal document summary in the email body.
 .PARAMETER NFSeCount
 Number of national NFS-e documents in the period, for the email summary.
 
+.PARAMETER IncludeMonthlyReports
+Publishes and attaches standalone HTML and XLSX reports before entering
+Sending. Already delivered or blocked deliveries do not generate reports.
+
+.PARAMETER NFSeEntries
+National NFS-e entries selected for the monthly XLSX report.
+
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
@@ -61,6 +68,7 @@ System.Management.Automation.PSCustomObject
 .NOTES
 Private dependencies:
   New-DFeDelivery
+  New-DFePeriodReportFiles
   Set-DFeDeliveryState
   Send-DFeNotification
 #>
@@ -94,7 +102,14 @@ function Invoke-DFeDelivery {
 
         [Parameter()]
         [ValidateRange(0, [int]::MaxValue)]
-        [int]$NFSeCount = 0
+        [int]$NFSeCount = 0,
+
+        [Parameter()]
+        [switch]$IncludeMonthlyReports,
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [pscustomobject[]]$NFSeEntries = @()
     )
 
     $cnpj = [string]$Company.Cnpj
@@ -246,6 +261,32 @@ function Invoke-DFeDelivery {
     }
     #endregion
 
+    $reportPaths = @()
+
+    if ($IncludeMonthlyReports) {
+        try {
+            $reportParams = @{
+                Company     = $Company
+                DateRange   = $DateRange
+                Entries     = $Entries
+                NFSeEntries = $NFSeEntries
+                Gaps        = $Gaps
+                ErrorAction = 'Stop'
+            }
+
+            $reportPaths = @(New-DFeMonthlyReportFiles @reportParams)
+        } catch {
+            return [PSCustomObject]@{
+                Success        = $false
+                EmailsSent     = @()
+                ErrorMessage   = $_.Exception.Message
+                FailedAt       = 'Reports'
+                DeliveryId     = $delivery.DeliveryId
+                DeliveryStatus = $delivery.DeliveryStatus
+            }
+        }
+    }
+
     #region Transition to Sending
     $sendingState = $null
 
@@ -279,6 +320,7 @@ function Invoke-DFeDelivery {
         Gaps               = $Gaps
         Entries            = $Entries
         ZipFileDestination = @($Archives | Select-Object -ExpandProperty DestPath)
+        ReportFilePaths    = $reportPaths
     }
 
     if ($NFSeCount -gt 0) {
