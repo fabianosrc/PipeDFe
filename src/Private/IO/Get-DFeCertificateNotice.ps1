@@ -1,5 +1,4 @@
-﻿
-<#
+﻿<#
 .SYNOPSIS
 Returns the certificate validity notice for a monthly DFe email.
 
