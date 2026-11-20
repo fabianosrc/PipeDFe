@@ -386,12 +386,14 @@ function Invoke-PipeDFeCompany {
 
         if ($null -ne $smtp -and $para.Count -gt 0) {
             $notificationParams = @{
-                Company   = $Company
-                DateRange = $DateRange
-                Smtp      = $smtp
-                Gaps      = $gapEntries
-                Archives  = $archives
-                Entries   = $entries
+                Company               = $Company
+                DateRange             = $DateRange
+                Smtp                  = $smtp
+                Gaps                  = $gapEntries
+                Archives              = $archives
+                Entries               = $entries
+                IncludeMonthlyReports = $true
+                NFSeEntries           = $nfseEntries
             }
 
             if ($nfseEntries.Count -gt 0) {
