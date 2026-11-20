@@ -6,7 +6,7 @@ Returns a health summary of the PipeDFe installation.
 Checks the health of every active registered company, or a single company
 when -Cnpj is supplied. For each company the function verifies whether the
 SQLite index exists and whether its schema version matches the current
-expected version (2).
+schema version matches the version supported by the module.
 
 The function never throws. Any exception raised while inspecting a company
 is captured and reported as an issue on that company's health entry.
@@ -42,7 +42,7 @@ Each entry in Companies is typed PipeDFe.CompanyHealth:
   Status      [string]   - 'Healthy', 'Degraded', or 'Unhealthy'
   DbExists    [bool]     - Whether the index.db file exists
   DbVersion   [int]      - Schema version read from PRAGMA user_version; -1 on error
-  DbVersionOk [bool]     - Whether DbVersion matches the expected schema version (2)
+  DbVersionOk [bool]     - Whether DbVersion matches the module's current schema version
   Issues      [string[]] - List of issues found; empty when Status is Healthy
 
 .EXAMPLE
@@ -57,8 +57,6 @@ Private dependencies:
   Get-PipeCompany
   Get-StorePath
   Open-SqliteConnection
-
-Expected schema version: 2.
 #>
 function Get-PipeDFeHealth {
     [CmdletBinding()]
@@ -68,7 +66,7 @@ function Get-PipeDFeHealth {
         [string]$Cnpj
     )
 
-    $expectedSchemaVersion = 2
+    $expectedSchemaVersion = $Script:DFeIndexSchemaVersion
 
     # Resolve the list of companies to check.
     $companies = @()
@@ -95,10 +93,11 @@ function Get-PipeDFeHealth {
     }
 
     foreach ($company in $companies) {
-        $issues    = [System.Collections.Generic.List[string]]::new()
-        $dbExists  = $false
-        $dbVersion = -1
-        $dbVersionOk = $false
+        $issues           = [System.Collections.Generic.List[string]]::new()
+        $dbExists         = $false
+        $dbVersion        = -1
+        $dbVersionOk      = $false
+        $inspectionFailed = $false
 
         try {
             $dbPath   = Get-StorePath -Scope 'Index' -Cnpj $company.Cnpj
@@ -110,8 +109,8 @@ function Get-PipeDFeHealth {
                 $connection = $null
 
                 try {
-                    $connection  = Open-SqliteConnection -Path $dbPath
-                    $command     = $null
+                    $connection = Open-SqliteConnection -Path $dbPath
+                    $command    = $null
 
                     try {
                         $command             = $connection.CreateCommand()
@@ -137,21 +136,34 @@ function Get-PipeDFeHealth {
                 }
             }
         } catch {
+            $inspectionFailed = $true
             $issues.Add("Unexpected error: $($_.Exception.Message)")
         }
 
-        $companyStatus = if ($issues.Count -eq 0) {
-            'Healthy'
-        } elseif ($dbExists -and -not $dbVersionOk) {
+        $companyName = [string]$company.RazaoSocial
+
+        $nomeFantasiaProperty = $company.PSObject.Properties['NomeFantasia']
+
+        if ($null -ne $nomeFantasiaProperty) {
+            $nomeFantasia = [string]$nomeFantasiaProperty.Value
+
+            if (-not [string]::IsNullOrWhiteSpace($nomeFantasia)) {
+                $companyName = $nomeFantasia
+            }
+        }
+
+        $companyStatus = if ($inspectionFailed -or -not $dbExists) {
+            'Unhealthy'
+        } elseif (-not $dbVersionOk) {
             'Degraded'
         } else {
-            'Unhealthy'
+            'Healthy'
         }
 
         $companyResults += [PSCustomObject]@{
             PSTypeName   = 'PipeDFe.CompanyHealth'
             Cnpj         = $company.Cnpj
-            Name         = $company.Name
+            Name         = $companyName
             Status       = $companyStatus
             DbExists     = $dbExists
             DbVersion    = $dbVersion
