@@ -306,26 +306,6 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             }
 
             Mock -CommandName Invoke-DFeDelivery -MockWith {
-                param (
-                    [Parameter()]
-                    [pscustomobject]$Company,
-
-                    [Parameter()]
-                    [pscustomobject]$DateRange,
-
-                    [Parameter()]
-                    [pscustomobject]$Smtp,
-
-                    [Parameter()]
-                    [pscustomobject[]]$Gaps,
-
-                    [Parameter()]
-                    [pscustomobject[]]$Archives,
-
-                    [Parameter()]
-                    [pscustomobject[]]$Entries
-                )
-
                 return $Script:NotificationSuccess
             }
         }
@@ -1187,7 +1167,17 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                         [pscustomobject[]]$Archives,
 
                         [Parameter()]
-                        [pscustomobject[]]$Entries
+                        [pscustomobject[]]$Entries,
+
+                        [Parameter()]
+                        [int]$NFSeCount = 0,
+
+                        [Parameter()]
+                        [switch]$IncludeMonthlyReports,
+
+                        [Parameter()]
+                        [AllowEmptyCollection()]
+                        [pscustomobject[]]$NFSeEntries = @()
                     )
 
                     return $Script:NotificationFailure
