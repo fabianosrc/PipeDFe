@@ -30,11 +30,11 @@ Coverage includes:
 
 param ()
 
-# InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-# because that's when Context/It are executed to register the test tree. If the
-# module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-# BeforeEach ever runs.
 BeforeDiscovery {
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
+    # because that's when Context/It are executed to register the test tree. If the
+    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
+    # BeforeEach ever runs.
     $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
     $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
@@ -42,7 +42,7 @@ BeforeDiscovery {
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Get-PipeDFeHealth' {
+Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -56,21 +56,24 @@ Describe 'Get-PipeDFeHealth' {
             $Script:DbPathB = 'C:\PipeDFe\98765432000100\data\index.db'
 
             $Script:CompanyA = [PSCustomObject]@{
-                Cnpj     = '12345678000195'
-                Name     = 'Empresa A'
-                IsActive = $true
+                Cnpj         = '12345678000195'
+                RazaoSocial  = 'Empresa A LTDA'
+                NomeFantasia = 'Empresa A'
+                IsActive     = $true
             }
 
             $Script:CompanyB = [PSCustomObject]@{
-                Cnpj     = '98765432000100'
-                Name     = 'Empresa B'
-                IsActive = $true
+                Cnpj         = '98765432000100'
+                RazaoSocial  = 'Empresa B LTDA'
+                NomeFantasia = 'Empresa B'
+                IsActive     = $true
             }
 
             $Script:InactiveCompany = [PSCustomObject]@{
-                Cnpj     = '11111111000111'
-                Name     = 'Empresa Inativa'
-                IsActive = $false
+                Cnpj            = '11111111000111'
+                RazaoSocial     = 'Empresa Inativa LTDA'
+                NomeFantasia    = 'Empresa Inativa'
+                IsActive        = $false
             }
             #endregion
 
@@ -345,7 +348,6 @@ Describe 'Get-PipeDFeHealth' {
         #endregion
 
         #region All active companies
-
         Context 'All active companies when no CNPJ is supplied' {
 
             BeforeAll {
@@ -405,7 +407,7 @@ Describe 'Get-PipeDFeHealth' {
                     return @($Script:CompanyA)
                 }
 
-                New-MockHealthyDatabase -SchemaVersion 2
+                New-MockHealthyDatabase -SchemaVersion 7
 
                 $Script:Result = Get-PipeDFeHealth
 
@@ -421,7 +423,7 @@ Describe 'Get-PipeDFeHealth' {
             }
 
             It 'Sets DbVersion to 2' {
-                $Script:CompanyResult.DbVersion | Should -Be 2
+                $Script:CompanyResult.DbVersion | Should -Be 7
             }
 
             It 'Sets DbVersionOk to true' {
@@ -461,6 +463,11 @@ Describe 'Get-PipeDFeHealth' {
                 }
 
                 Should -Invoke @invokeParams
+            }
+
+            It 'Uses the trade name as the company display name' {
+                $Script:CompanyResult.Name |
+                    Should -BeExactly $Script:CompanyA.NomeFantasia
             }
         }
         #endregion
@@ -689,7 +696,7 @@ Describe 'Get-PipeDFeHealth' {
                     )
 
                     if ($Path -eq $Script:DbPathA) {
-                        return New-MockSqliteConnection -SchemaVersion 2
+                        return New-MockSqliteConnection -SchemaVersion 7
                     }
 
                     return New-MockSqliteConnection -SchemaVersion 1
@@ -721,7 +728,7 @@ Describe 'Get-PipeDFeHealth' {
                     return @($Script:CompanyA)
                 }
 
-                New-MockHealthyDatabase -SchemaVersion 2
+                New-MockHealthyDatabase -SchemaVersion 7
 
                 $Script:Result = Get-PipeDFeHealth
 
