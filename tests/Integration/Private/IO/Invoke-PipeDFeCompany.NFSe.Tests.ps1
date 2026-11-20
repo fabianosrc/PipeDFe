@@ -205,6 +205,47 @@ FROM dfe_delivery;
 
                 Should -Invoke Send-Mail -Exactly -Times 1 -Scope It -ModuleName PipeDFe
 
+                $reportRoot = Join-Path -Path $params.Company.OutputPath -ChildPath 'Relatorios'
+
+                $reportDirectories = @(
+                    Get-ChildItem -LiteralPath $reportRoot -Directory -Force
+                )
+
+                $reportDirectories | Should -HaveCount 1
+
+                $reportDirectory = $reportDirectories[0].FullName
+                $reportFiles = @(Get-ChildItem -LiteralPath $reportDirectory -File -Force)
+                $reportFiles | Should -HaveCount 2
+
+                $htmlPath = Join-Path -Path $reportDirectory -ChildPath 'Resumo-CFOP.html'
+                $xlsxPath = Join-Path -Path $reportDirectory -ChildPath 'Fechamento.xlsx'
+
+                $html = [System.IO.File]::ReadAllText($htmlPath)
+                $html | Should -Match '<h1>Resumo por CFOP</h1>'
+                $html | Should -Match 'Nenhum item de NF-e ou NFC-e'
+
+                $workbook = [System.IO.Compression.ZipFile]::OpenRead($xlsxPath)
+
+                try {
+                    $entry = $workbook.GetEntry('xl/worksheets/sheet6.xml')
+                    $entry | Should -Not -BeNullOrEmpty
+
+                    $stream = $entry.Open()
+
+                    try {
+                        $sheet = [System.Xml.XmlDocument]::new()
+                        $sheet.Load($stream)
+                    } finally {
+                        $stream.Dispose()
+                    }
+
+                    $numberCell = $sheet.SelectSingleNode("//*[local-name()='c' and @r='B6']")
+                    $numberCell | Should -Not -BeNullOrEmpty
+                    $numberCell.InnerText | Should -BeExactly '9876543210123'
+                } finally {
+                    $workbook.Dispose()
+                }
+
                 $sendAssertion = @{
                     CommandName     = 'Send-Mail'
                     ModuleName      = 'PipeDFe'
@@ -212,9 +253,15 @@ FROM dfe_delivery;
                     Times           = 1
                     Scope           = 'It'
                     ParameterFilter = {
-                        $Attachments.Count -eq 1 -and
-                        [System.IO.Path]::GetFileName($Attachments[0]) -eq
-                        'NFSe_12345678000199_EMPRESA_TESTE_202611.zip' -and
+                        $names = @($Attachments | ForEach-Object {
+                                [System.IO.Path]::GetFileName($_)
+                            }
+                        )
+
+                        $names.Count -eq 3 -and
+                        $names -contains 'NFSe_12345678000199_EMPRESA_TESTE_202611.zip' -and
+                        $names -contains 'Resumo-CFOP.html' -and
+                        $names -contains 'Fechamento.xlsx' -and
                         $Body -match '>NFSe</td>\s*<td[^>]*>1</td>'
                     }
                 }
@@ -264,7 +311,16 @@ FROM dfe_delivery;
                     Times           = 1
                     Scope           = 'It'
                     ParameterFilter = {
-                        $Attachments.Count -eq 2 -and
+                        $names = @($Attachments | ForEach-Object {
+                                [System.IO.Path]::GetFileName($_)
+                            }
+                        )
+
+                        $names.Count -eq 4 -and
+                        $names -contains 'MDFe_12345678000199_EMPRESA_TESTE_202611.zip' -and
+                        $names -contains 'NFSe_12345678000199_EMPRESA_TESTE_202611.zip' -and
+                        $names -contains 'Resumo-CFOP.html' -and
+                        $names -contains 'Fechamento.xlsx' -and
                         $Body -match '>MDFe</td>\s*<td[^>]*>1</td>' -and
                         $Body -match '>NFSe</td>\s*<td[^>]*>1</td>'
                     }
@@ -302,6 +358,11 @@ FROM dfe_delivery;
                     Should -BeExactly 'Indeterminate'
 
                 Should -Invoke Send-Mail -Exactly -Times 1 -Scope It -ModuleName PipeDFe
+
+                $reportRoot = Join-Path -Path $params.Company.OutputPath -ChildPath 'Relatorios'
+
+                @(Get-ChildItem -LiteralPath $reportRoot -Directory -Force) |
+                    Should -HaveCount 1
             }
         }
         #endregion
@@ -326,6 +387,34 @@ FROM dfe_delivery;
 
                 Test-Path -LiteralPath $params.Company.OutputPath | Should -BeFalse
 
+                Should -Invoke Send-Mail -Exactly -Times 0 -Scope It -ModuleName PipeDFe
+            }
+        }
+        #endregion
+
+        #region Monthly report
+        Context 'Monthly report preparation' {
+            It 'Does not send or publish a partial pair when XLSX generation fails' {
+                Mock -CommandName Export-DFeCfopReportXlsx -MockWith {
+                    throw [System.IO.IOException]::new('Workbook write failed.')
+                }
+
+                $params = $Script:ClosingParams
+                $result = Invoke-PipeDFeCompany @params
+
+                $result.Status       | Should -BeExactly 'Falha'
+                $result.EmailEnviado | Should -BeFalse
+                ($result.Avisos -join ' ') | Should -Match "'Reports'.*Workbook write failed"
+
+                Get-TestClosingDeliveryStatus -Cnpj $params.Company.Cnpj |
+                    Should -BeExactly 'Prepared'
+
+                $reportRoot = Join-Path -Path $params.Company.OutputPath -ChildPath 'Relatorios'
+
+                @(Get-ChildItem -LiteralPath $reportRoot -Force -Recurse -ErrorAction Stop) |
+                    Should -HaveCount 0
+
+                Should -Invoke Export-DFeCfopReportXlsx -Exactly -Times 1 -Scope It -ModuleName PipeDFe
                 Should -Invoke Send-Mail -Exactly -Times 0 -Scope It -ModuleName PipeDFe
             }
         }
