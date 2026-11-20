@@ -19,7 +19,7 @@ if (-not $Script:IsWindowsPlatform) {
 #region Module State
 $Script:NativeDllDirectoryInitialized = $false
 $Script:NativeDllDirectoryCookie      = [System.IntPtr]::Zero
-
+$Script:DFeIndexSchemaVersion         = 7
 $Script:JsonSchemaVersion             = 1
 $Script:SmtpSchemaVersion             = 1
 #endregion
