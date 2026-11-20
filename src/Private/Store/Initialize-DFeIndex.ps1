@@ -1063,11 +1063,9 @@ WHERE type = @type
                 }
 
                 # =====================================================================
-                # Version 7
-                #
                 # Current schema. No migration required.
                 # =====================================================================
-                7 {
+                { $_ -eq $Script:DFeIndexSchemaVersion } {
                     @()
                 }
 
@@ -1084,12 +1082,12 @@ WHERE type = @type
                 }
 
                 $command.CommandText = $sqlStep
-                $null = $command.ExecuteNonQuery()
+                $command.ExecuteNonQuery() | Out-Null
             }
 
-            if ($currentVersion -ne 7) {
-                $command.CommandText = 'PRAGMA user_version = 7;'
-                $null = $command.ExecuteNonQuery()
+            if ($currentVersion -ne $Script:DFeIndexSchemaVersion) {
+                $command.CommandText = "PRAGMA user_version = $Script:DFeIndexSchemaVersion;"
+                $command.ExecuteNonQuery() | Out-Null
             }
 
             $transaction.Commit()
