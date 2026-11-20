@@ -68,7 +68,7 @@ System.Management.Automation.PSCustomObject
 .NOTES
 Private dependencies:
   New-DFeDelivery
-  New-DFePeriodReportFiles
+  New-DFePeriodReport
   Set-DFeDeliveryState
   Send-DFeNotification
 #>
@@ -274,7 +274,7 @@ function Invoke-DFeDelivery {
                 ErrorAction = 'Stop'
             }
 
-            $reportPaths = @(New-DFeMonthlyReportFiles @reportParams)
+            $reportPaths = @(New-DFePeriodReport @reportParams)
         } catch {
             return [PSCustomObject]@{
                 Success        = $false
