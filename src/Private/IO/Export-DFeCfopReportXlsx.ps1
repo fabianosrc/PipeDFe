@@ -56,7 +56,7 @@ function Export-DFeCfopReportXlsx {
         [string]$LiteralPath,
 
         [Parameter(Mandatory)]
-        [ValidatePattern('\A\d{14}\z')]
+        [ValidatePattern('\A(?-i:[A-Z0-9]{14})\z')]
         [string]$Cnpj,
 
         [Parameter(Mandatory)]
