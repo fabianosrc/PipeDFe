@@ -14,8 +14,8 @@ This document describes the release checklist for PipeDFe. It is intended for ma
 
 - [ ] Confirm the intended release scope and close or explicitly defer outstanding blockers.
 - [ ] Confirm the working tree is clean and all intended changes are committed.
-- [ ] Check that `README.md`, help text, and public command documentation match the source code.
-- [ ] Confirm `FunctionsToExport` in `PipeDFe.psd1` includes the intended public commands, including `Get-PipeDFeHealth` if it is part of the release.
+- [ ] Check that `README.md`, `CHANGELOG.md`, `RELEASE.md` and localized MAML/about help match the source code.
+- [ ] Confirm `FunctionsToExport` in `PipeDFe.psd1` lists all ten public commands, including `Get-PipeDFeHealth`.
 - [ ] Confirm `ModuleVersion`, module metadata, and licensing information are accurate.
 - [ ] Confirm no test credentials, personal data, customer XMLs, database files, or other secrets are included in the release.
 - [ ] Confirm required managed and native SQLite dependencies are included for supported PowerShell editions and process architectures.
@@ -57,6 +57,57 @@ Invoke-Pester @integrationParams
 - [ ] Confirm SQLite assembly and native library loading for the supported architectures in the distribution.
 - [ ] Confirm module import and public command discovery work from a clean session.
 
+## 2.1 Build and validate the distributable package
+
+Run the build **without** `-Publish`. By default it runs lint and Pester with at least 80% coverage before preparing the module:
+
+```powershell
+.\tools\Invoke-Build.ps1
+```
+
+The build produces two directories containing the same module contents:
+
+```text
+output/
+├── PipeDFe/
+│   └── 0.1.0/                 # Versioned installation layout
+│       ├── PipeDFe.psd1
+│       ├── PipeDFe.psm1
+│       ├── pt-BR/
+│       ├── en-US/
+│       ├── src/
+│       └── lib/
+└── PSGallery/
+    └── PipeDFe/               # Publish-Module -Path layout
+        ├── PipeDFe.psd1
+        ├── PipeDFe.psm1
+        ├── pt-BR/
+        ├── en-US/
+        ├── src/
+        └── lib/
+```
+
+`0.1.0` above is illustrative and must be replaced with the current `ModuleVersion` in `PipeDFe.psd1`.
+
+The source-of-truth help files stay in `src/pt-BR` and `src/en-US` in the repository. The build copies them to the module root culture directories in each distributable layout. Both staged packages are checked using isolated PowerShell processes for each culture, including `Get-Help` MAML and `about_PipeDFe` loading.
+
+The verification command may also be run directly:
+
+```powershell
+.\tools\Test-BuildArtifact.ps1 -ModulePath '.\output\PipeDFe\0.1.0'
+.\tools\Test-BuildArtifact.ps1 -ModulePath '.\output\PSGallery\PipeDFe'
+```
+
+- [ ] The build integration test passes in an isolated artifact directory (`tests/Integration/Tools/Invoke-Build.Tests.ps1`).
+- [ ] Build completes without skipped lint or tests.
+- [ ] Staged manifest and public commands load from a clean PowerShell process.
+- [ ] Both `pt-BR` and `en-US` MAML synopses resolve through `Get-Help`.
+- [ ] Both localized `about_PipeDFe` topics resolve through `Get-Help`.
+- [ ] `output/PipeDFe/<version>` and `output/PSGallery/PipeDFe` contain all required DLLs and module resources.
+- [ ] Run the build and artifact verification on both Windows PowerShell 5.1 and PowerShell 7.
+
+The build produces a directory ready for import or packaging. It does **not** prove that the PowerShell Gallery has accepted the package. A real publication requires an approved release, gallery access and an API key. Do not set `-Publish` as part of CI or ordinary local builds.
+
 ## 3. Validate the fiscal workflow
 
 Use **synthetic or authorized test data** and a controlled email environment.
@@ -97,7 +148,7 @@ git push origin v1.0.0
 
 Replace `v1.0.0` with the actual version being released. Do **not** execute the example until the release is approved.
 
-Create a GitHub Release from that tag. Include a concise summary, relevant changelog entries, tested PowerShell versions, known limitations, and any necessary upgrade notes. Attach only verified distributable artifacts, if artifacts are provided.
+Create a GitHub Release from that tag. Include a concise summary, relevant changelog entries, tested PowerShell versions, known limitations, and any necessary upgrade notes. Attach only verified distributable artifacts, if artifacts are provided. For PowerShellGet, `Publish-Module -Path` must reference a directory named `PipeDFe`, such as `output/PSGallery/PipeDFe`, rather than the version-number directory.
 
 Publication to PowerShell Gallery is **not** implied by creating a GitHub Release; evaluate packaging, dependencies, and distribution requirements separately before publishing there.
 
