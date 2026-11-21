@@ -314,9 +314,10 @@ try {
         throw "Unexpected module name: '$($manifestInfo.Name)'."
     }
 
-    if ($manifestInfo.Version -ne [version]$(
-        Import-PowerShellDataFile -LiteralPath $manifestPath
-    ).ModuleVersion) {
+    $moduleData = Import-PowerShellDataFile -LiteralPath $manifestPath
+    $expectedVersion = [version]$moduleData.ModuleVersion
+
+    if ($manifestInfo.Version -ne $expectedVersion) {
         throw 'Manifest version validation failed.'
     }
 
@@ -479,10 +480,11 @@ try {
         throw "Localized about_PipeDFe topic was not loaded ($cultureName)."
     }
 
-    [Console]::Out.WriteLine(
-        'PASS: {0} / {1} commands / about_PipeDFe' -f
+    $message = 'PASS: {0} / {1} commands / about_PipeDFe' -f (
         $cultureName, $commands.Count
     )
+
+    [Console]::Out.WriteLine($message)
 
     exit 0
 } catch {

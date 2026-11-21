@@ -22,11 +22,11 @@ BeforeDiscovery {
     # because that's when Context/It are executed to register the test tree. If the
     # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
     # BeforeEach ever runs.
-    $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
+    $moduleRoot = (Get-Item -LiteralPath $PSScriptRoot).Parent.Parent.Parent.FullName
 
-    $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
+    $modulePath = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
 
-    Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
+    Import-Module -Name $modulePath -Force -Global -ErrorAction Stop
 }
 
 Describe 'PipeDFe module build' -Tag 'Integration' {
