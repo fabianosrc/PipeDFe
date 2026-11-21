@@ -1,0 +1,1288 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<helpItems
+    xmlns:command="http://schemas.microsoft.com/maml/dev/command/2004/10"
+    xmlns:maml="http://schemas.microsoft.com/maml/2004/10"
+    xmlns:dev="http://schemas.microsoft.com/maml/dev/2004/10" schema="maml">
+    <command:command>
+        <command:details>
+            <command:name>Get-PipeCompany</command:name>
+            <command:verb>Get</command:verb>
+            <command:noun>PipeCompany</command:noun>
+            <maml:description>
+                <maml:para>Retrieves registered companies, optionally filtering by CNPJ or active status.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Returns registered company configurations. When provided, IsActive filters the results.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Get-PipeCompany</maml:name>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>IsActive</maml:name>
+                    <command:parameterValue required="false">System.Boolean</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>IsActive</maml:name>
+                <maml:description>
+                    <maml:para>Filters companies by active or inactive status.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Boolean</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Boolean</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.Company</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Get-PipeCompany -IsActive $true</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>New-PipeCompany</command:name>
+            <command:verb>New</command:verb>
+            <command:noun>PipeCompany</command:noun>
+            <maml:description>
+                <maml:para>Registers a company for fiscal document processing.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Validates inputs, registers the company, and persists its configuration. XmlPath must exist; OutputPath is created when necessary. The module does not modify the source XML directory.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>New-PipeCompany</maml:name>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>RazaoSocial</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Uf</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Ambiente</maml:name>
+                    <command:parameterValue required="false">Ambiente</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>XmlPath</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>XmlPathNfse</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>XmlPathEntrada</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>NomeFantasia</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Ie</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>OutputPath</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>CertPath</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>CertPassword</maml:name>
+                    <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EmailPara</maml:name>
+                    <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EmailCc</maml:name>
+                    <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EmailCco</maml:name>
+                    <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Smtp</maml:name>
+                    <command:parameterValue required="false">System.Object</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>RazaoSocial</maml:name>
+                <maml:description>
+                    <maml:para>Company legal name.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Uf</maml:name>
+                <maml:description>
+                    <maml:para>Brazilian state abbreviation (UF).</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Ambiente</maml:name>
+                <maml:description>
+                    <maml:para>Fiscal environment: Homologacao (test) or Producao (production).</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">Ambiente</command:parameterValue>
+                <dev:type>
+                    <maml:name>Ambiente</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>XmlPath</maml:name>
+                <maml:description>
+                    <maml:para>Existing directory containing XML files generated by the ERP.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>XmlPathNfse</maml:name>
+                <maml:description>
+                    <maml:para>Optional directory containing national NFS-e XML files.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>XmlPathEntrada</maml:name>
+                <maml:description>
+                    <maml:para>Optional inbound XML directory; not scanned by the current closing workflow.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>NomeFantasia</maml:name>
+                <maml:description>
+                    <maml:para>Optional trade name.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Ie</maml:name>
+                <maml:description>
+                    <maml:para>Optional state tax registration number.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>OutputPath</maml:name>
+                <maml:description>
+                    <maml:para>Destination for fiscal closing files.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>CertPath</maml:name>
+                <maml:description>
+                    <maml:para>Path to an A1 certificate (.pfx).</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>CertPassword</maml:name>
+                <maml:description>
+                    <maml:para>A1 certificate password as a SecureString.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Security.SecureString</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EmailPara</maml:name>
+                <maml:description>
+                    <maml:para>Primary recipients of the fiscal closing email.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object[]</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EmailCc</maml:name>
+                <maml:description>
+                    <maml:para>Carbon copy (Cc) recipients.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object[]</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EmailCco</maml:name>
+                <maml:description>
+                    <maml:para>Blind carbon copy (Bcc) recipients.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object[]</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Smtp</maml:name>
+                <maml:description>
+                    <maml:para>Company-specific SMTP configuration.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.Company</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>$p = @{ Cnpj = '11222333000181'; RazaoSocial = 'TEST COMPANY LTD'; Uf = 'SP'; Ambiente = 'Homologacao'; XmlPath = 'C:\ERP\XML' }; New-PipeCompany @p</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Set-PipeCompany</command:name>
+            <command:verb>Set</command:verb>
+            <command:noun>PipeCompany</command:noun>
+            <maml:description>
+                <maml:para>Updates the configuration of a registered company.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Updates the supplied fields and preserves omitted values, subject to company registration validation.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Set-PipeCompany</maml:name>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>RazaoSocial</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>NomeFantasia</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Ie</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Uf</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Ambiente</maml:name>
+                    <command:parameterValue required="false">Ambiente</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>XmlPath</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>XmlPathNfse</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>XmlPathEntrada</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>OutputPath</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>CertPath</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>CertPassword</maml:name>
+                    <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EmailPara</maml:name>
+                    <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EmailCc</maml:name>
+                    <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EmailCco</maml:name>
+                    <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Smtp</maml:name>
+                    <command:parameterValue required="false">System.Object</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>IsActive</maml:name>
+                    <command:parameterValue required="false">System.Boolean</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>RazaoSocial</maml:name>
+                <maml:description>
+                    <maml:para>New company legal name.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>NomeFantasia</maml:name>
+                <maml:description>
+                    <maml:para>Trade name.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Ie</maml:name>
+                <maml:description>
+                    <maml:para>State tax registration number.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Uf</maml:name>
+                <maml:description>
+                    <maml:para>Brazilian state (UF).</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Ambiente</maml:name>
+                <maml:description>
+                    <maml:para>Fiscal environment.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">Ambiente</command:parameterValue>
+                <dev:type>
+                    <maml:name>Ambiente</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>XmlPath</maml:name>
+                <maml:description>
+                    <maml:para>Directory containing outgoing XML files.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>XmlPathNfse</maml:name>
+                <maml:description>
+                    <maml:para>Directory containing national NFS-e XML files.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>XmlPathEntrada</maml:name>
+                <maml:description>
+                    <maml:para>Optional directory containing inbound XML files.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>OutputPath</maml:name>
+                <maml:description>
+                    <maml:para>Directory for output files.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>CertPath</maml:name>
+                <maml:description>
+                    <maml:para>Path to the A1 certificate.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>CertPassword</maml:name>
+                <maml:description>
+                    <maml:para>Certificate password.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Security.SecureString</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EmailPara</maml:name>
+                <maml:description>
+                    <maml:para>Primary recipients.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object[]</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EmailCc</maml:name>
+                <maml:description>
+                    <maml:para>Carbon copy (Cc) recipients.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object[]</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EmailCco</maml:name>
+                <maml:description>
+                    <maml:para>Blind carbon copy (Bcc) recipients.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object[]</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object[]</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Smtp</maml:name>
+                <maml:description>
+                    <maml:para>Specific SMTP configuration.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>IsActive</maml:name>
+                <maml:description>
+                    <maml:para>Sets whether the company is active.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Boolean</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Boolean</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.Company</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Set-PipeCompany -Cnpj '11222333000181' -IsActive $true</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Remove-PipeCompany</command:name>
+            <command:verb>Remove</command:verb>
+            <command:noun>PipeCompany</command:noun>
+            <maml:description>
+                <maml:para>Removes the registration of an inactive company.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Removes the configuration of an inactive company. Associated file deletion is optional and controlled by DeleteFiles.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Remove-PipeCompany</maml:name>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>DeleteFiles</maml:name>
+                    <command:parameterValue required="false">System.Management.Automation.SwitchParameter</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>DeleteFiles</maml:name>
+                <maml:description>
+                    <maml:para>Also requests deletion of associated files, as defined by the command contract.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Management.Automation.SwitchParameter</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Management.Automation.SwitchParameter</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Remove-PipeCompany -Cnpj '11222333000181' -WhatIf</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Get-PipeSmtp</command:name>
+            <command:verb>Get</command:verb>
+            <command:noun>PipeSmtp</command:noun>
+            <maml:description>
+                <maml:para>Retrieves the global SMTP configuration.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Reads the global SMTP configuration persisted by PipeDFe.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Get-PipeSmtp</maml:name>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.Smtp</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Get-PipeSmtp</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Set-PipeSmtp</command:name>
+            <command:verb>Set</command:verb>
+            <command:noun>PipeSmtp</command:noun>
+            <maml:description>
+                <maml:para>Creates or updates global SMTP settings.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Persists global SMTP settings. Initial configuration requires Server, Port, Ssl, Username, Password, and From. Subsequent updates preserve omitted fields.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Set-PipeSmtp</maml:name>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Server</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Port</maml:name>
+                    <command:parameterValue required="false">System.Int32</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Ssl</maml:name>
+                    <command:parameterValue required="false">System.Boolean</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Username</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Password</maml:name>
+                    <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>From</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>SenderAddress</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>ReplyTo</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Timeout</maml:name>
+                    <command:parameterValue required="false">System.Int32</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Server</maml:name>
+                <maml:description>
+                    <maml:para>SMTP server address.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Port</maml:name>
+                <maml:description>
+                    <maml:para>SMTP server port.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Int32</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Int32</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Ssl</maml:name>
+                <maml:description>
+                    <maml:para>Enables SSL/TLS.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Boolean</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Boolean</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Username</maml:name>
+                <maml:description>
+                    <maml:para>SMTP authentication username.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Password</maml:name>
+                <maml:description>
+                    <maml:para>SMTP password as a SecureString.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Security.SecureString</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>From</maml:name>
+                <maml:description>
+                    <maml:para>Sender email address.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>SenderAddress</maml:name>
+                <maml:description>
+                    <maml:para>Optional technical sender address.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>ReplyTo</maml:name>
+                <maml:description>
+                    <maml:para>Optional reply-to address.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Timeout</maml:name>
+                <maml:description>
+                    <maml:para>Timeout in seconds.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Int32</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Int32</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.Smtp</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>$password = Read-Host 'SMTP password' -AsSecureString; $smtp = @{ Server = 'smtp.example.com'; Port = 587; Ssl = $true; Username = 'account@example.com'; Password = $password; From = 'account@example.com' }; Set-PipeSmtp @smtp</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Test-PipeSmtp</command:name>
+            <command:verb>Test</command:verb>
+            <command:noun>PipeSmtp</command:noun>
+            <maml:description>
+                <maml:para>Tests SMTP connectivity and authentication.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Probes TCP connectivity and attempts to send a test message to the sender address. Can use global, company-specific, or directly supplied SMTP settings.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Test-PipeSmtp</maml:name>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>SmtpConfig</maml:name>
+                    <command:parameterValue required="false">System.Object</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>TimeoutSeconds</maml:name>
+                    <command:parameterValue required="false">System.Int32</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>CNPJ of the company whose configuration will be tested.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>SmtpConfig</maml:name>
+                <maml:description>
+                    <maml:para>SMTP configuration supplied directly.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Object</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>TimeoutSeconds</maml:name>
+                <maml:description>
+                    <maml:para>Test timeout in seconds.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.Int32</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.Int32</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.SmtpTestResult</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Test-PipeSmtp</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Get-PipeDFeSequenceGap</command:name>
+            <command:verb>Get</command:verb>
+            <command:noun>PipeDFeSequenceGap</command:noun>
+            <maml:description>
+                <maml:para>Detects numbering gaps in indexed fiscal documents.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Checks document numbers by model and series within the specified period. Numbering gaps do not prove that documents were issued or that an irregularity occurred.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Get-PipeDFeSequenceGap</maml:name>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>StartDate</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EndDate</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>StartDate</maml:name>
+                <maml:description>
+                    <maml:para>Optional period start.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EndDate</maml:name>
+                <maml:description>
+                    <maml:para>Optional period end; requires StartDate when specified.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>System.Management.Automation.PSCustomObject</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Get-PipeDFeSequenceGap -Cnpj '11222333000181'</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Invoke-PipeDFe</command:name>
+            <command:verb>Invoke</command:verb>
+            <command:noun>PipeDFe</command:noun>
+            <maml:description>
+                <maml:para>Runs the fiscal document closing workflow for one or more companies.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>By default, processes the previous full calendar month for all active companies. Creates indexes and closing archives, generates delivery reports, and coordinates SMTP notifications with persistent duplicate-send protection.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Invoke-PipeDFe</maml:name>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String[]</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>StartDate</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>EndDate</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>One or more company CNPJs to process.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String[]</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String[]</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>StartDate</maml:name>
+                <maml:description>
+                    <maml:para>Optional period start.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>EndDate</maml:name>
+                <maml:description>
+                    <maml:para>Optional period end; requires StartDate when specified.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.ResultadoInvoke</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Invoke-PipeDFe -Cnpj '11222333000181' -WhatIf</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Get-PipeDFeHealth</command:name>
+            <command:verb>Get</command:verb>
+            <command:noun>PipeDFeHealth</command:noun>
+            <maml:description>
+                <maml:para>Checks the health of company SQLite indexes.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Checks whether the SQLite index exists and whether its schema version matches the expected version. Returns Healthy, Degraded, or Unhealthy status. Does not check SMTP connectivity.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Get-PipeDFeHealth</maml:name>
+                <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="false">System.String</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Optional company CNPJ. When omitted, checks all active companies.</maml:para>
+                </maml:description>
+                <command:parameterValue required="false">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:inputTypes>
+            <command:inputType>
+                <dev:type>
+                    <maml:name>System.Object</maml:name>
+                </dev:type>
+            </command:inputType>
+        </command:inputTypes>
+        <command:returnValues>
+            <command:returnValue>
+                <dev:type>
+                    <maml:name>PipeDFe.Health</maml:name>
+                </dev:type>
+            </command:returnValue>
+        </command:returnValues>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Get-PipeDFeHealth -Cnpj '11222333000181'</dev:code>
+                <dev:remarks/>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+</helpItems>

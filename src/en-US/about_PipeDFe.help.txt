@@ -1,0 +1,121 @@
+TOPIC
+    about_PipeDFe
+
+SYNOPSIS
+    Introduces PipeDFe and the monthly fiscal document closing workflow.
+
+LONG DESCRIPTION
+    PipeDFe is a PowerShell module that organizes existing Brazilian
+    electronic fiscal documents (DF-e), creates monthly closing archives,
+    and sends them to the accounting team by email.
+
+    Documents are processed per company and reporting period, independently
+    of the ERP that produced them. PipeDFe does not issue fiscal documents
+    or query or download documents from SEFAZ services.
+
+    The version 1.0 scope covers NF-e, NFC-e, NFCom, CT-e, MDF-e, and
+    Brazilian national NFS-e. Companies that issue only national NFS-e
+    documents can also participate in monthly closing.
+
+COMPANY CONFIGURATION
+    New-PipeCompany registers a company and its XML source directories.
+    Get-PipeCompany retrieves registrations; Set-PipeCompany updates them.
+    Remove-PipeCompany removes the registration of an inactive company.
+
+    XmlPath identifies the primary XML directory. XmlPathNfse can also be
+    configured for national NFS-e. The version 1.0 closing workflow does
+    not automatically scan the optional XmlPathEntrada directory.
+
+    Set-PipeSmtp configures the mail server, and Test-PipeSmtp validates
+    its settings by sending a test message. Use a test account before
+    sending fiscal files to the accounting team.
+
+MONTHLY CLOSING
+    Invoke-PipeDFe runs the closing workflow. When dates are omitted,
+    the previous full calendar month is selected. When CNPJ is omitted,
+    all active companies are selected.
+
+    For each company, the module scans configured XML directories, queries
+    its SQLite index, and creates a separate ZIP for each document model
+    present in the period. HTML and XLSX reports are separate from the
+    ZIP archives and are also attached to the closing email.
+
+    The XLSX workbook includes NF-e, NFC-e, NFCom, CT-e, MDF-e, NFS-e,
+    and Occurrences worksheets. CFOP summaries use NF-e and NFC-e item
+    values instead of assigning an entire invoice value to multiple CFOPs.
+
+    For national NFS-e, period selection uses the invoice generation date.
+    The DPS issue date and service tax period (competencia) are distinct
+    fields that are preserved in the report.
+
+ARCHIVE ORGANIZATION
+    XML files are grouped by document model and period. Additional folders
+    named Enviados or Autorizados are not created. When a document has
+    associated events, the invoice and its events may be grouped under
+    a subdirectory named after its access key.
+
+DELIVERY SAFETY
+    Delivery history is persisted in SQLite. A confirmed delivery is not
+    automatically repeated for the same period, archive contents, and
+    recipient set.
+
+    If an SMTP attempt has an indeterminate outcome, PipeDFe blocks
+    automatic resending. Check the recipient mailbox and mail server
+    logs before taking manual action.
+
+    SMTP acceptance does not prove final delivery to the recipient inbox.
+
+EXAMPLES
+    Import the module and list its public commands:
+
+        Import-Module PipeDFe
+        Get-Command -Module PipeDFe
+
+    Preview closing for a single company:
+
+        Invoke-PipeDFe -Cnpj '11222333000181' -WhatIf
+
+    Run closing for a specific period:
+
+        $period = @{
+            Cnpj      = '11222333000181'
+            StartDate = '01/10/2026'
+            EndDate   = '31/10/2026'
+        }
+        Invoke-PipeDFe @period
+
+    Check the SQLite index health for a company:
+
+        Get-PipeDFeHealth -Cnpj '11222333000181'
+
+    Replace the sample CNPJ with your company's data before running.
+
+LIMITATIONS
+    PipeDFe does not replace professional accounting or fiscal review.
+    Numbering gaps indicate documents not found in the local index; they
+    do not, by themselves, prove issuance or regulatory noncompliance.
+
+    Export NF-e and inbound import NF-e are processed as fiscal XML files.
+    Version 1.0 does not separately extract DI, Duimp, customs tariffs,
+    or Siscomex information.
+
+    Attachments are not split across multiple email messages. Confirm
+    SMTP attachment size limits before production deployment.
+
+TROUBLESHOOTING
+    Verify paths and permissions for the account running scheduled tasks.
+    Review Invoke-PipeDFe results and company-specific warnings.
+
+    Use Get-PipeDFeHealth to verify SQLite index existence and schema
+    compatibility. This diagnostic does not test the SMTP server.
+
+    If delivery status is uncertain, do not change recipients or files
+    merely to bypass duplicate protection. Consult the operations guide.
+
+SEE ALSO
+    Get-Help Invoke-PipeDFe -Full
+    Get-Help New-PipeCompany -Full
+    Get-Help Get-PipeDFeHealth -Full
+    README.md
+    docs/OPERACAO.md
+    https://github.com/fabianosrc/PipeDFe
