@@ -1,0 +1,121 @@
+TOPIC
+    about_PipeDFe
+
+SYNOPSIS
+    Apresenta o PipeDFe e o funcionamento do fechamento fiscal mensal.
+
+LONG DESCRIPTION
+    O PipeDFe é um módulo PowerShell para organizar documentos fiscais
+    eletrônicos (DF-e) existentes, gerar arquivos de fechamento e enviá-los
+    à contabilidade por e-mail.
+
+    O módulo processa os XMLs por empresa e por período, independentemente
+    do ERP que os produziu. Não emite notas fiscais nem consulta ou baixa
+    documentos dos serviços da SEFAZ.
+
+    A versão 1.0 contempla NF-e, NFC-e, NFCom, CT-e, MDF-e e NFS-e Nacional.
+    Uma empresa que emite somente NFS-e Nacional também pode participar do
+    fechamento mensal.
+
+COMPANY CONFIGURATION
+    New-PipeCompany cadastra uma empresa e seus caminhos de XML.
+    Get-PipeCompany consulta os cadastros; Set-PipeCompany os atualiza.
+    Remove-PipeCompany remove o cadastro de uma empresa inativa.
+
+    O caminho principal de XMLs é definido por XmlPath. Para NFS-e Nacional,
+    também é possível configurar XmlPathNfse. O fechamento da versão 1.0
+    não varre automaticamente a pasta opcional XmlPathEntrada.
+
+    Set-PipeSmtp configura o servidor de e-mail e Test-PipeSmtp verifica
+    a configuração com uma mensagem de teste. Use uma conta de homologação
+    antes de enviar documentos à contabilidade.
+
+MONTHLY CLOSING
+    Invoke-PipeDFe executa o fechamento. Sem datas explícitas, é usado
+    o mês civil anterior. Sem CNPJ, são selecionadas as empresas ativas.
+
+    Para cada empresa, o módulo examina os XMLs configurados, consulta o
+    índice SQLite e organiza um ZIP para cada modelo presente no período.
+    Os relatórios HTML e XLSX são arquivos separados dos ZIPs e também
+    acompanham o e-mail de fechamento.
+
+    O XLSX contém as abas NF-e, NFC-e, NFCom, CT-e, MDF-e, NFS-e e
+    Ocorrências. O resumo por CFOP considera os itens das NF-e e NFC-e,
+    evitando atribuir o valor integral de uma nota a vários CFOPs.
+
+    Para NFS-e Nacional, a seleção do período utiliza a data de geração
+    da nota. A data de emissão da DPS e a competência são informações
+    distintas, preservadas no relatório.
+
+ARCHIVE ORGANIZATION
+    Os XMLs são agrupados por modelo e período. Não são criadas pastas
+    adicionais chamadas Enviados ou Autorizados. Quando um documento possui
+    evento associado, a organização pode agrupar a nota e seus eventos
+    em uma subpasta identificada pela chave de acesso.
+
+DELIVERY SAFETY
+    O histórico de entregas é persistido em SQLite. Uma entrega confirmada
+    não é repetida automaticamente para o mesmo período, conteúdo dos
+    arquivos e conjunto de destinatários.
+
+    Se uma tentativa de SMTP tiver resultado indeterminado, o PipeDFe
+    bloqueia o reenvio automático. Consulte a caixa de destino e os
+    registros do servidor de e-mail antes de qualquer ação manual.
+
+    A aceitação de uma mensagem pelo SMTP não comprova sua entrega na
+    caixa de entrada final.
+
+EXAMPLES
+    Importar o módulo e consultar os comandos públicos:
+
+        Import-Module PipeDFe
+        Get-Command -Module PipeDFe
+
+    Simular o fechamento de uma empresa:
+
+        Invoke-PipeDFe -Cnpj '11222333000181' -WhatIf
+
+    Executar o fechamento de um período específico:
+
+        $periodo = @{
+            Cnpj      = '11222333000181'
+            StartDate = '01/10/2026'
+            EndDate   = '31/10/2026'
+        }
+        Invoke-PipeDFe @periodo
+
+    Verificar a saúde do índice de uma empresa:
+
+        Get-PipeDFeHealth -Cnpj '11222333000181'
+
+    Substitua o CNPJ pelos dados da sua empresa antes de executar.
+
+LIMITATIONS
+    O PipeDFe não substitui a conferência contábil ou fiscal.
+    As lacunas de numeração indicam documentos não localizados no índice;
+    não são, por si só, prova de emissão ou irregularidade.
+
+    NF-e de exportação e NF-e de entrada por importação são tratadas
+    pelo XML fiscal. A versão 1.0 não extrai separadamente dados de DI,
+    Duimp, tarifas aduaneiras ou Siscomex.
+
+    O envio não fragmenta anexos em múltiplas mensagens. Confira os
+    limites de tamanho do servidor SMTP antes da homologação.
+
+TROUBLESHOOTING
+    Confirme os caminhos e as permissões da conta utilizada na execução
+    automática. Revise o resultado de Invoke-PipeDFe e os avisos por empresa.
+
+    Utilize Get-PipeDFeHealth para conferir a presença e a compatibilidade
+    do índice SQLite. Esse diagnóstico não testa o servidor SMTP.
+
+    Em caso de envio incerto, não altere destinatários nem arquivos para
+    contornar o controle de duplicidade. Consulte o guia de operação.
+
+SEE ALSO
+    Get-Help Invoke-PipeDFe -Full
+    Get-Help New-PipeCompany -Full
+    Get-Help Get-PipeDFeHealth -Full
+    README.md
+    docs/OPERACAO.md
+    https://github.com/fabianosrc/PipeDFe
