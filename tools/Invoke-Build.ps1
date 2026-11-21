@@ -145,6 +145,77 @@ function Assert-SafeBuildDestination {
     }
 }
 
+function Assert-NoReparsePointOnPath {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    # Check each existing ancestor, not just the destination. A junction in
+    # ArtifactRoot can otherwise redirect recursive deletion outside the build.
+    $current = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetPathRoot($current)
+
+    while ($true) {
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+
+        if ($null -ne $item -and
+            ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw "Build path contains a symbolic link or junction: '$current'."
+        }
+
+        if ($current.Equals($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+            break
+        }
+
+        $parent = [System.IO.Path]::GetDirectoryName($current)
+
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $current) {
+            break
+        }
+
+        $current = $parent
+    }
+}
+
+function Assert-NoReparsePointsInTree {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    Assert-NoReparsePointOnPath -Path $Path
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        return
+    }
+
+    # Traverse only real directories. Never follow a reparse point, including
+    # one nested inside an older build artifact.
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push([System.IO.Path]::GetFullPath($Path))
+
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+
+        foreach ($entryPath in [System.IO.Directory]::EnumerateFileSystemEntries($current)) {
+            $entry = Get-Item -LiteralPath $entryPath -Force -ErrorAction Stop
+
+            if ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                throw "Build artifact contains a symbolic link or junction: '$entryPath'."
+            }
+
+            if ($entry.PSIsContainer) {
+                $pending.Push($entry.FullName)
+            }
+        }
+    }
+}
+
 function Invoke-BuildScript {
     [CmdletBinding()]
     param (
@@ -235,6 +306,13 @@ $galleryRoot = Join-Path -Path $outputPath -ChildPath 'PSGallery'
 $galleryDestination = Join-Path -Path $galleryRoot -ChildPath 'PipeDFe'
 
 # Validate all destinations before performing destructive operations.
+# Reparse-point checks also cover existing parent directories of ArtifactRoot.
+Assert-NoReparsePointOnPath -Path $outputPath
+Assert-NoReparsePointOnPath -Path $packageRoot
+Assert-NoReparsePointOnPath -Path $destination
+Assert-NoReparsePointOnPath -Path $galleryRoot
+Assert-NoReparsePointOnPath -Path $galleryDestination
+
 Assert-SafeBuildDestination -Path $packageRoot        -ArtifactRoot $outputPath
 Assert-SafeBuildDestination -Path $destination        -ArtifactRoot $outputPath
 Assert-SafeBuildDestination -Path $galleryRoot        -ArtifactRoot $outputPath
@@ -323,6 +401,8 @@ if ($SkipTests) {
 #region Stage module
 Write-Host "Staging PipeDFe $version..."
 
+Assert-NoReparsePointsInTree -Path $destination
+
 if (Test-Path -LiteralPath $destination) {
     Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction Stop
 }
@@ -335,6 +415,8 @@ foreach ($directory in $directoriesToCopy) {
     $sourceDirectory = Join-Path -Path $root -ChildPath $directory
 
     if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
+        Assert-NoReparsePointsInTree -Path $sourceDirectory
+
         $copyParams = @{
             LiteralPath = $sourceDirectory
             Destination = $destination
@@ -367,6 +449,7 @@ foreach ($fileName in $filesToCopy) {
             ErrorAction = 'Stop'
         }
 
+        Assert-NoReparsePointOnPath -Path $sourceFile
         Copy-Item @copyParams
     }
 }
@@ -390,6 +473,9 @@ foreach ($cultureName in $cultures) {
 }
 #endregion
 
+# Disallow linked content originating from source directories as well.
+Assert-NoReparsePointsInTree -Path $destination
+
 #region Verify staged artifact
 $verifyScript = Join-Path -Path $PSScriptRoot -ChildPath 'Test-BuildArtifact.ps1'
 
@@ -400,13 +486,13 @@ $verifyParams = @{
 
 Write-Host 'Validating the staged module in isolated PowerShell processes...'
 
-$stagedArtifactParams = @{
+$buildScriptStagingArtifactParams = @{
     Path           = $verifyScript
     Arguments      = $verifyParams
     FailureMessage = 'Staged module validation failed. Build aborted.'
 }
 
-Invoke-BuildScript @stagedArtifactParams
+Invoke-BuildScript @buildScriptStagingArtifactParams
 #endregion
 
 #region Integrity inventory
@@ -448,6 +534,8 @@ $integrityJson = ConvertTo-Json -InputObject $integrityData -Depth 5
 #region PowerShell Gallery staging
 # PowerShellGet requires a directory named after the module.
 # Preserve the versioned installation artifact and create a separate copy.
+Assert-NoReparsePointsInTree -Path $galleryDestination
+
 if (Test-Path -LiteralPath $galleryDestination) {
     Remove-Item -LiteralPath $galleryDestination -Recurse -Force -ErrorAction Stop
 }
@@ -469,13 +557,16 @@ Get-ChildItem -LiteralPath $destination -Force |
         Copy-Item @copyItemStagingParams
     }
 
-$scriptStagingParams = @{
+Assert-NoReparsePointsInTree -Path $galleryDestination
+
+$buildScriptStagingParams = @{
     Path           = $verifyScript
     Arguments      = @{ ModulePath  = $galleryDestination; ErrorAction = 'Stop' }
     FailureMessage = 'Gallery staging validation failed. Build aborted.'
 }
 
-Invoke-BuildScript @scriptStagingParams
+Invoke-BuildScript @buildScriptStagingParams
+
 #endregion
 
 #region Optional publication
