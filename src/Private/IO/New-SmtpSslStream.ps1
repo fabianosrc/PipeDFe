@@ -68,9 +68,9 @@ function New-SmtpSslStream {
         Justification = 'Creates a transient SslStream and does not modify persistent system state.'
     )]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
-        'PSReviewUnusedParameter',
+        'PSAvoidUsingAdd-Type',
         '',
-        Justification = 'Callback parameters are required by RemoteCertificateValidationCallback.'
+        Justification = 'Compiled delegate avoids the Runspace dependency that PS scriptblocks have when invoked from .NET TLS threads.'
     )]
     [CmdletBinding()]
     [OutputType([System.Net.Security.SslStream])]
@@ -95,26 +95,41 @@ function New-SmtpSslStream {
     $sslStream = $null
 
     try {
-        # Certificate validation is intentionally strict:
-        # any SSL policy error causes authentication to fail.
-        $certificateValidationCallback = {
-            param (
-                [object]$CallbackSender,
-                [System.Security.Cryptography.X509Certificates.X509Certificate]$Certificate,
-                [System.Security.Cryptography.X509Certificates.X509Chain]$Chain,
-                [System.Net.Security.SslPolicyErrors]$SslPolicyErrors
-            )
+        # The RemoteCertificateValidationCallback is invoked by the .NET TLS
+        # stack on a thread that has no PowerShell Runspace. A scriptblock
+        # delegate would therefore throw "There is no Runspace available to
+        # run scripts in this thread." A compiled C# type avoids that
+        # entirely: it runs as pure .NET code with no Runspace dependency.
+        if (-not ([System.Management.Automation.PSTypeName]'PipeDFe.StrictCertificateValidator').Type) {
+            Add-Type -TypeDefinition @'
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 
-            if ($SslPolicyErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
-                Write-Verbose -Message (
-                    "$FailureContext certificate validation failed: $SslPolicyErrors"
-                )
-
-                return $false
-            }
-
-            return $true
+namespace PipeDFe {
+    public static class StrictCertificateValidator {
+        /// <summary>
+        /// Returns true only when no SSL policy errors are present.
+        /// Safe to use as a RemoteCertificateValidationCallback: runs on
+        /// .NET threads with no PowerShell Runspace required.
+        /// </summary>
+        public static bool Validate(
+            object sender,
+            X509Certificate certificate,
+            X509Chain chain,
+            SslPolicyErrors sslPolicyErrors
+        ) {
+            return sslPolicyErrors == SslPolicyErrors.None;
         }
+    }
+}
+'@
+        }
+
+        $certificateValidationCallback = [System.Delegate]::CreateDelegate(
+            [System.Net.Security.RemoteCertificateValidationCallback],
+            [PipeDFe.StrictCertificateValidator],
+            'Validate'
+        )
 
         # Keep ownership of InnerStream with the caller.
         $sslStream = [System.Net.Security.SslStream]::new(
@@ -143,7 +158,7 @@ function New-SmtpSslStream {
 
         # Propagate the original exception from the asynchronous operation
         # rather than exposing AggregateException to the caller.
-        $authenticationTask.GetAwaiter().GetResult()
+        [void]$authenticationTask.GetAwaiter().GetResult()
 
         if (-not $sslStream.IsAuthenticated) {
             throw [System.Security.Authentication.AuthenticationException]::new(
@@ -170,10 +185,7 @@ function New-SmtpSslStream {
         throw
     } catch [System.AggregateException] {
         $innerException = $_.Exception.Flatten().InnerExceptions |
-            Where-Object {
-                $null -ne $_
-            } |
-
+            Where-Object { $null -ne $_ } |
             Select-Object -First 1
 
         if ($null -ne $innerException) {
