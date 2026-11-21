@@ -1,63 +1,49 @@
 # PipeDFe
 
-**Fechamento de documentos fiscais eletrônicos com PowerShell, por empresa e por período.**
+**Automação da ingestão, do processamento e do envio de documentos fiscais eletrônicos (DF-e) com PowerShell.**
 
-O PipeDFe é um módulo PowerShell para organizar o fechamento de XMLs fiscais e preparar sua entrega à contabilidade. O projeto foi concebido para trabalhar com os XMLs já disponíveis nas pastas configuradas, sem depender de um ERP específico, de um sistema contábil ou de uma estrutura fixa de diretórios de origem.
+O PipeDFe é um módulo PowerShell desenvolvido para automatizar a preparação e o envio de documentos fiscais eletrônicos à contabilidade. A partir dos arquivos XML disponíveis nos diretórios configurados, o módulo identifica e processa os documentos, organiza os arquivos por modelo fiscal, gera relatórios e realiza o envio por e-mail.
 
-> **Status do projeto:** em desenvolvimento, versão `0.1.0` declarada no manifesto consultado. A versão `1.0` ainda não deve ser considerada publicada ou homologada para uso em produção. Antes de operar com dados reais, confira o código e os testes da versão que você está executando.
+O processamento é feito por empresa e por período, sem depender de um ERP específico, de um sistema contábil ou da organização de pastas adotada pelo sistema de origem.
 
-## Objetivo e limites
+> **Estado do projeto:** em desenvolvimento. O manifesto declara a versão `0.1.0`. A versão `1.0.0` ainda não foi publicada ou homologada para uso em produção.
 
-O fluxo do PipeDFe tem como finalidade:
+## Funcionalidades
 
-1. Identificar a empresa e o período do fechamento.
-2. Ler os XMLs existentes nos diretórios configurados e indexar os documentos reconhecidos.
-3. Aplicar as validações e o processamento fiscal implementados para cada modelo.
-4. Identificar possíveis lacunas de numeração nos modelos aplicáveis.
-5. Gerar arquivos ZIP separados por modelo de documento fiscal.
-6. Preparar relatórios do período e, quando configurada, a entrega por SMTP.
-7. Registrar o processamento e o estado da entrega para permitir diagnóstico e reexecução controlada.
+- Ingestão e indexação de XMLs fiscais disponíveis nas pastas configuradas.
+- Processamento dos documentos conforme as regras implementadas para cada modelo.
+- Identificação de lacunas de numeração nos modelos aplicáveis, considerando inutilizações conhecidas.
+- Geração de arquivos ZIP separados por modelo fiscal e período.
+- Geração de relatórios HTML e XLSX, separados dos arquivos ZIP.
+- Envio por SMTP para os destinatários cadastrados, com configuração global ou específica por empresa.
+- Registro persistente das execuções e dos estados de entrega para controlar reprocessamentos e evitar envios duplicados.
+- Diagnóstico dos índices SQLite utilizados pelo módulo.
 
-**O PipeDFe não é um emissor de documentos fiscais e não realiza, por si, a captura ou o download de XMLs da SEFAZ ou dos municípios.** Os documentos de entrada devem existir previamente. Ele também não substitui a conferência fiscal e contábil.
+O PipeDFe **não emite documentos fiscais nem realiza a captura ou o download de XMLs** da SEFAZ ou dos municípios. Os arquivos devem estar disponíveis antes da execução. O conteúdo dos XMLs orienta a identificação e o processamento dos documentos, sem exigir uma convenção de nomes de arquivos do ERP.
 
-O XML é a fonte utilizada para interpretar os documentos; nomes e caminhos dos arquivos de origem não são tratados como um contrato específico de ERP.
+## Documentos fiscais
 
-## Documentos e processamento
-
-O projeto contempla os seguintes modelos no fluxo de indexação, organização e arquivamento, conforme as rotinas existentes:
-
-| Documento | Modelo | Observação |
+| Documento | Modelo | Tratamento |
 | --- | --- | --- |
-| NF-e | 55 | Participa do processamento fiscal normalizado |
-| NFC-e | 65 | Participa do processamento fiscal normalizado |
-| NFCom | 62 | Participa do processamento fiscal normalizado |
-| CT-e | 57 | Participa do fluxo de indexação, lacunas e arquivamento |
-| MDF-e | 58 | Participa do fluxo de indexação, lacunas e arquivamento |
-| NFS-e Nacional | - | Usa uma origem opcional específica e um fluxo próprio de importação/arquivo |
+| Nota Fiscal Eletrônica (NF-e) | 55 | Processamento fiscal normalizado, indexação e arquivamento |
+| Nota Fiscal de Consumidor Eletrônica (NFC-e) | 65 | Processamento fiscal normalizado, indexação e arquivamento |
+| Nota Fiscal Fatura de Serviços de Comunicação Eletrônica (NFCom) | 62 | Processamento fiscal normalizado, indexação e arquivamento |
+| Conhecimento de Transporte Eletrônico (CT-e) | 57 | Indexação, análise de lacunas e arquivamento |
+| Manifesto Eletrônico de Documentos Fiscais (MDF-e) | 58 | Indexação, análise de lacunas e arquivamento |
+| Nota Fiscal de Serviço Eletrônica Nacional (NFS-e) | — | Importação e arquivamento em fluxo próprio |
 
-O tratamento não é idêntico para todos os modelos. A implementação atual distingue o processamento fiscal normalizado de NF-e, NFC-e e NFCom das demais rotinas de indexação, lacunas e arquivos.
+A NFS-e Nacional utiliza a origem opcional `XmlPathNfse`. Empresas que emitem apenas NFS-e também são atendidas pelo fluxo, embora o cadastro da empresa ainda exija um diretório principal em `XmlPath`.
 
-Empresas que trabalham **somente com NFS-e** fazem parte do escopo do projeto. A origem desses XMLs é configurada por `XmlPathNfse`; não é necessário inventar documentos de outros modelos para realizar seu fechamento.
-
-### Organização dos arquivos
-
-O fechamento gera ZIPs **separados por modelo**, respeitando a empresa e o período. Nos arquivos compactados, a organização usa um segmento de período e os XMLs não recebem uma subpasta individual apenas por sua chave de acesso.
-
-Quando um documento possui eventos associados, o agrupamento por chave pode ser necessário para manter o documento e seus eventos relacionados. Não se deve criar essa profundidade extra para todo XML indiscriminadamente.
-
-Os relatórios **HTML e XLSX ficam fora dos ZIPs**, como artefatos independentes do fechamento e da entrega.
-
-> O layout exato dos nomes e caminhos gerados é definido pelas rotinas de arquivamento da versão utilizada; os exemplos deste README não devem ser interpretados como uma garantia de nomenclatura de arquivos.
+Os ZIPs são gerados por modelo. Quando há eventos associados a um documento, os arquivos relacionados podem ser agrupados pela chave de acesso. Os relatórios HTML e XLSX permanecem fora dos ZIPs, como arquivos independentes.
 
 ## Requisitos
 
-- **Windows**: o módulo verifica a plataforma e não oferece suporte a sistemas não Windows no carregamento atual.
-- **Windows PowerShell 5.1** ou **PowerShell 7**.
-- Bibliotecas gerenciadas e nativas do SQLite incluídas na distribuição do módulo, compatíveis com a arquitetura do processo PowerShell.
-- Permissão de leitura nas pastas de XML e de escrita nas pastas de configuração, índices e saída.
-- Para envio de e-mails: servidor SMTP acessível, credenciais e destinatários configurados.
+- Windows, com Windows PowerShell 5.1 ou PowerShell 7.
+- Bibliotecas SQLite gerenciadas e nativas incluídas na distribuição, compatíveis com a arquitetura do processo PowerShell.
+- Permissão de leitura nos diretórios de XML e de escrita nos diretórios de configuração, índices e saída.
+- Para o envio: servidor SMTP acessível, autenticação quando exigida e destinatários configurados.
 
-O carregamento do módulo depende dos arquivos `lib` esperados pelo `PipeDFe.psm1`. Copiar apenas os arquivos `.psm1` e `.psd1` não é suficiente.
+O módulo não oferece suporte ao carregamento em sistemas operacionais não Windows. Os arquivos `PipeDFe.psd1` e `PipeDFe.psm1` não são suficientes isoladamente: a distribuição também precisa incluir `src` e `lib`.
 
 ## Instalação para desenvolvimento
 
@@ -68,16 +54,16 @@ $repositoryPath = 'C:\Workspace\Projects\PipeDFe'
 $manifestPath = Join-Path -Path $repositoryPath -ChildPath 'PipeDFe.psd1'
 
 Import-Module -Name $manifestPath -Force -ErrorAction Stop
-Get-Module -Name PipeDFe
+Get-Command -Module PipeDFe
 ```
 
-Não há, neste README, instrução de instalação pela PowerShell Gallery: a publicação de uma versão estável ainda precisa ser confirmada.
+A instalação pela PowerShell Gallery será documentada após a publicação de uma versão.
 
-## Início rápido
+## Configuração e uso
 
-### 1. Registrar uma empresa
+### 1. Cadastrar uma empresa
 
-O diretório de origem `XmlPath` precisa existir. A pasta de saída pode ser criada durante o cadastro.
+O diretório `XmlPath` deve existir antes do cadastro. Se informado, `XmlPathNfse` também deve existir. O diretório de saída pode ser criado pelo módulo.
 
 ```powershell
 $companyParams = @{
@@ -89,24 +75,27 @@ $companyParams = @{
     XmlPath      = 'C:\Fiscal\EmpresaExemplo\XML'
     XmlPathNfse  = 'C:\Fiscal\EmpresaExemplo\NFSe'
     OutputPath   = 'C:\Fiscal\EmpresaExemplo\Fechamentos'
+    EmailPara    = 'contabilidade@example.com'
     ErrorAction  = 'Stop'
 }
 
 New-PipeCompany @companyParams
 ```
 
-Os caminhos acima são ilustrativos. Informe somente `XmlPathNfse` se houver uma pasta separada para NFS-e Nacional. No cadastro, `NomeFantasia` e `XmlPathNfse` são opcionais.
+Os caminhos, o CNPJ e o endereço eletrônico são ilustrativos. `NomeFantasia`, `XmlPathNfse` e `OutputPath` são opcionais. Para empresas sem NFS-e Nacional, omita `XmlPathNfse`.
 
-Para consultar o cadastro:
+Consulte os cadastros com:
 
 ```powershell
 Get-PipeCompany
 Get-PipeCompany -Cnpj '11222333000181'
 ```
 
-### 2. Configurar SMTP (opcional para o cadastro)
+Os destinatários podem ser definidos por `EmailPara`, `EmailCc` e `EmailCco` no cadastro ou atualizados com `Set-PipeCompany`.
 
-O servidor SMTP pode ser configurado globalmente e, quando aplicável, substituído por uma configuração específica da empresa. As senhas são protegidas com DPAPI na persistência atual; considere as implicações de usuário e máquina ao mover configurações.
+### 2. Configurar o SMTP
+
+O SMTP pode ser configurado globalmente ou por empresa. As credenciais persistidas são protegidas com DPAPI, vinculada ao contexto do Windows; leve isso em consideração ao migrar configurações entre usuários ou computadores.
 
 ```powershell
 $password = Read-Host -Prompt 'SMTP password' -AsSecureString
@@ -124,27 +113,23 @@ $smtpParams = @{
 Set-PipeSmtp @smtpParams
 ```
 
-Teste a conectividade e o envio **em uma caixa de homologação**, antes de qualquer execução com destinatários reais:
+Antes de usar destinatários reais, teste a configuração em um ambiente controlado:
 
 ```powershell
 Test-PipeSmtp
 ```
 
-O teste SMTP realiza uma tentativa real de envio para o endereço configurado como remetente.
+**Atenção:** `Test-PipeSmtp` envia uma mensagem de teste para o endereço configurado como remetente.
 
-Configure os destinatários da empresa por meio dos parâmetros `EmailPara`, `EmailCc` e `EmailCco` de `New-PipeCompany`, ou atualize-os com `Set-PipeCompany`, conforme a versão instalada.
+### 3. Executar o processamento e o envio
 
-### 3. Executar o fechamento
-
-Sem um período informado, a execução usa o **mês calendário completo anterior**. Sem `Cnpj`, considera as empresas ativas cadastradas.
+Por padrão, `Invoke-PipeDFe` utiliza o mês civil completo anterior e considera todas as empresas ativas. É possível restringir a execução a uma empresa e a um intervalo de datas.
 
 ```powershell
+# Visualizar as operações previstas
 Invoke-PipeDFe -WhatIf
-```
 
-Para processar uma empresa e um intervalo específico:
-
-```powershell
+# Processar uma empresa em um período específico
 $invokeParams = @{
     Cnpj      = '11222333000181'
     StartDate = '01/10/2026'
@@ -153,17 +138,12 @@ $invokeParams = @{
 }
 
 $result = Invoke-PipeDFe @invokeParams
-$result | Format-List
 $result.Results | Format-Table Cnpj, Status, TotalDocumentos, Gaps, EmailEnviado
 ```
 
-`-WhatIf` é uma prévia de execução, não uma homologação completa dos XMLs ou do transporte SMTP. A execução efetiva pode gerar arquivos, atualizar índices e enviar mensagens conforme a configuração.
-
-**Atenção:** no fluxo atual, quando há documentos para entregar, a falta de SMTP ou de destinatários pode impedir que o fechamento seja considerado concluído, mesmo que arquivos já tenham sido gerados. Um fechamento sem documentos gera aviso. Consulte sempre `Status`, `Avisos` e `Erro`.
+`-WhatIf` apresenta uma prévia da execução; não valida integralmente os XMLs nem realiza um teste de entrega por SMTP. Após o processamento, consulte `Status`, `Avisos` e `Erro` nos resultados por empresa. A geração dos arquivos não comprova que o envio foi concluído.
 
 ### 4. Consultar lacunas de numeração
-
-Após existir índice para a empresa:
 
 ```powershell
 $gapParams = @{
@@ -175,72 +155,69 @@ $gapParams = @{
 Get-PipeDFeSequenceGap @gapParams
 ```
 
-Uma lacuna indica um número **não encontrado no índice**, não prova que uma nota tenha sido emitida ou omitida. Inutilizações conhecidas são consideradas na análise. NFS-e não participa dessa verificação de sequencialidade.
+Uma lacuna indica que determinado número não foi localizado no índice. Isso não comprova, isoladamente, a emissão ou a ausência de um documento fiscal. A análise considera inutilizações conhecidas, e NFS-e não participa da verificação de sequência.
 
-## Resultado e segurança da entrega
+## Controle das entregas
 
-`Invoke-PipeDFe` retorna um resultado geral (`PipeDFe.ResultadoInvoke`) e resultados por empresa (`PipeDFe.ResultadoEmpresa`). Entre os campos relevantes estão `Success`, `Results`, `Status`, `TotalDocumentos`, `Gaps`, `Arquivos`, `EmailEnviado`, `Avisos` e `Erro`.
+O PipeDFe mantém um histórico persistente das entregas, com estados como `Prepared`, `Sending`, `Delivered`, `Failed` e `Indeterminate`.
 
-A entrega por e-mail usa um **estado persistente**. Os estados previstos no fluxo incluem `Prepared`, `Sending`, `Delivered`, `Failed` e `Indeterminate`:
+Uma entrega confirmada como `Delivered` não deve ser reenviada automaticamente nas mesmas condições. Quando o resultado de uma tentativa de SMTP não pode ser determinado, a entrega permanece em `Indeterminate` e o reenvio automático é bloqueado. Interrupções durante a etapa de envio exigem o mesmo cuidado.
 
-- Uma entrega já confirmada como `Delivered` não deve produzir novo envio automático da mesma entrega.
-- Uma falha identificada antes da tentativa de envio pode ser tratada como `Failed` e seguir a política de reexecução do fluxo.
-- Se o SMTP chegou a ser acionado e não é possível confirmar o resultado, o estado `Indeterminate` **bloqueia o reenvio automático**, para evitar duplicidade.
-- Uma execução interrompida durante `Sending` também deve ser tratada conservadoramente como indeterminada.
+Antes de realizar qualquer reenvio manual, confira os registros da execução e confirme o recebimento com o destinatário. A aceitação da mensagem pelo servidor SMTP não garante sua entrega final à caixa postal.
 
-**Não force novos envios nem apague o estado persistido para contornar um resultado indeterminado.** Verifique o histórico e o recebimento com a contabilidade antes de qualquer ação manual.
-
-Os relatórios mensais HTML e XLSX são produzidos separadamente dos ZIPs durante o preparo da entrega, conforme o fluxo implementado. Sua geração não deve ser presumida em todo cenário, especialmente quando não há documentos ou a entrega é bloqueada antecipadamente.
-
-## Diagnóstico e operação
-
-Verifique os cadastros e a configuração antes de uma execução:
+## Diagnóstico
 
 ```powershell
 Get-PipeCompany
 Get-PipeSmtp
+Get-PipeDFeHealth
 ```
 
-O projeto também possui implementação de `Get-PipeDFeHealth`, que verifica a existência do índice SQLite e compara a versão de schema de cada empresa. **A disponibilização desse comando como API pública deve ser conferida no manifesto da versão instalada**: ele não consta da lista `FunctionsToExport` do manifesto público consultado.
+`Get-PipeDFeHealth` verifica a presença e a versão do schema dos índices SQLite das empresas cadastradas. Os diagnósticos são classificados como `Healthy`, `Degraded` ou `Unhealthy`. Esse comando não testa a conectividade SMTP.
 
-Ao investigar problemas, confira a pasta de origem, a data dos XMLs, o resultado por empresa, os avisos, a conectividade SMTP e os registros de auditoria/entrega. Não trate `Status = 'Aviso'` como equivalente a um envio confirmado.
+## Testes e build
 
-### Cuidados na homologação
-
-- Trabalhe com empresas e documentos de teste ou dados autorizados, nunca publique XMLs fiscais, certificados ou credenciais no repositório.
-- Teste o SMTP em um destinatário controlado; o comando de teste realmente envia uma mensagem.
-- Confira conteúdo e integridade dos ZIPs e a localização separada dos relatórios antes do uso com contabilidades reais.
-- Valide reexecuções, falhas e resultados indeterminados sem provocar entregas duplicadas.
-
-## Testes
-
-A suíte usa **Pester** e separa os cenários unitários dos testes de integração, que exercitam persistência e SQLite reais.
+Os testes automatizados utilizam Pester e estão organizados em suítes unitárias e de integração. Os testes de integração incluem cenários que exercitam persistência e SQLite reais.
 
 ```powershell
 Invoke-Pester -Path .\tests\Unit -Output Detailed
 Invoke-Pester -Path .\tests\Integration -Output Detailed
 ```
 
-Para executar somente a integração do diagnóstico de saúde:
+O pipeline de CI executa verificações no Windows PowerShell 5.1 e no PowerShell 7, com meta mínima de 80% de cobertura de código.
+
+Para gerar uma distribuição local, execute:
 
 ```powershell
-Invoke-Pester -Path .\tests\Integration\Public\Health\Get-PipeDFeHealth.Tests.ps1 -Output Detailed
+.\tools\Invoke-Build.ps1
 ```
 
-Execute os testes nos ambientes Windows PowerShell 5.1 e PowerShell 7 relevantes antes de publicar uma versão. Passar nos testes não substitui a homologação de ponta a ponta com o SMTP e os documentos fiscais pretendidos.
+O processo de build executa as verificações previstas pelo script da versão utilizada. O empacotamento da ajuda localizada e a validação dos artefatos devem ser confirmados antes de qualquer publicação. Consulte [`RELEASE.md`](RELEASE.md) para os critérios de preparação e homologação de uma versão.
 
-## Estado da versão 1.0
+## Ajuda
 
-O objetivo para a v1.0 inclui fechamento mensal confiável por empresa; modelos fiscais suportados; NFS-e Nacional; ZIPs por modelo com eventos associados; relatórios HTML/XLSX externos aos ZIPs; entrega SMTP com deduplicação persistente; avisos operacionais, inclusive de certificado quando aplicáveis; e documentação de operação e homologação.
+O módulo possui documentação de comandos e tópicos conceituais em português do Brasil (`pt-BR`) e inglês (`en-US`).
 
-**Esse é o escopo-alvo, não uma declaração de que todos os itens já foram concluídos ou homologados.** A verificação final deve ser feita contra o código, testes, pendências e checklist de release da versão candidata. Não se deve confundir a existência de uma função interna ou de testes parciais com uma funcionalidade pública estável.
+```powershell
+Get-Help about_PipeDFe
+Get-Help Invoke-PipeDFe -Full
+Get-Help Get-PipeDFeHealth -Examples
+```
 
-A evolução da documentação contempla um guia operacional, checklist de release, changelog e ajuda localizada em português do Brasil e inglês. Esses materiais devem ser vinculados aqui somente quando estiverem efetivamente versionados no repositório.
+A documentação localizada é distribuída com o módulo empacotado. Ao importar diretamente o código-fonte do repositório, a descoberta da ajuda pode depender do layout de instalação.
+
+## Limitações e cuidados
+
+- Utilize XMLs de teste ou dados autorizados durante a homologação.
+- Não inclua documentos fiscais de clientes, certificados ou credenciais em commits e artefatos públicos.
+- Confira os ZIPs e os relatórios gerados antes de habilitar envios para destinatários reais.
+- Teste reexecuções e falhas de transporte sem contornar o controle persistente de entregas.
+- O módulo não substitui a conferência fiscal e contábil.
 
 ## Licença
 
-Licenciado sob **Apache License 2.0**, conforme o manifesto do projeto. Consulte o arquivo de licença incluído na distribuição ou o [texto da licença](https://www.apache.org/licenses/LICENSE-2.0).
+Distribuído sob a [Apache License 2.0](LICENSE).
 
 ---
 
-Repositório: [fabianosrc/PipeDFe](https://github.com/fabianosrc/PipeDFe)
+[Repositório no GitHub](https://github.com/fabianosrc/PipeDFe) · [Histórico de alterações](CHANGELOG.md) · [Processo de release](RELEASE.md)
