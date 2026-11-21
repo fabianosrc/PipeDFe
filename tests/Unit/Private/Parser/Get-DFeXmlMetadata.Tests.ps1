@@ -97,7 +97,7 @@ Describe 'Get-DFeXmlMetadata' {
                 $Metadata | Should -Not -BeNullOrEmpty
                 $Metadata | Should -BeOfType [PSCustomObject]
 
-                $Metadata.PSObject.Properties.Name | Should -HaveCount 18
+                $Metadata.PSObject.Properties.Name | Should -HaveCount 20
 
                 $Metadata.File | Should -BeOfType [System.IO.FileInfo]
                 $Metadata.Tipo.GetType().Name | Should -Be 'TipoXmlDFe'
@@ -1585,6 +1585,81 @@ Describe 'Get-DFeXmlMetadata' {
                 Get-DFeXmlMetadata -Path 'test.xml' | Out-Null
 
                 Should -Invoke Resolve-DFeEvento -Times 0 -Exactly
+            }
+        }
+        #endregion
+
+        #region Documento - NF-e participants
+        Context 'Documento - NF-e participants' {
+
+            BeforeAll {
+
+                $script:ParticipantXml = New-XmlDocument -XmlContent @'
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe>
+        <ide>
+            <mod>55</mod>
+        </ide>
+        <emit>
+            <CNPJ>28775139000126</CNPJ>
+        </emit>
+        <dest>
+            <CNPJ>12345678000199</CNPJ>
+        </dest>
+    </infNFe>
+</NFe>
+'@
+
+                Mock -CommandName Import-DFeXml {
+                    $script:ParticipantXml
+                }
+
+                Mock -CommandName Get-DFeDocumentInfo {
+                    [PSCustomObject]@{
+                        Tipo   = [TipoXmlDFe]::Documento
+                        Modelo = [ModeloDFe]::NFe
+                    }
+                }
+
+                Mock -CommandName Get-DFeDocumentNamespace {
+                    'http://www.portalfiscal.inf.br/nfe'
+                }
+
+                Mock -CommandName Get-DFeAccessKey {
+                    '35260827544456000179550010000140941809759307'
+                }
+            }
+
+            It 'Extracts the issuer CNPJ' {
+                $result = Get-DFeXmlMetadata -Path 'test.xml'
+
+                $result.EmitenteCnpj | Should -Be '28775139000126'
+            }
+
+            It 'Extracts the recipient CNPJ' {
+                $result = Get-DFeXmlMetadata -Path 'test.xml'
+
+                $result.DestinatarioCnpj | Should -Be '12345678000199'
+            }
+
+            It 'Preserves participant identities independently' {
+                $result = Get-DFeXmlMetadata -Path 'test.xml'
+
+                $result.EmitenteCnpj |
+                    Should -Not -Be $result.DestinatarioCnpj
+            }
+
+            It 'Does not determine direction without company context' {
+                $result = Get-DFeXmlMetadata -Path 'test.xml'
+
+                $result.PSObject.Properties.Name |
+                    Should -Not -Contain 'Direcao'
+            }
+
+            It 'Preserves the complete metadata contract' {
+                $result = Get-DFeXmlMetadata -Path 'test.xml'
+
+                Assert-MetadataContract -Metadata $result
             }
         }
         #endregion
