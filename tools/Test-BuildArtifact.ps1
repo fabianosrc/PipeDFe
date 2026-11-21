@@ -314,15 +314,39 @@ try {
         throw "Unexpected module name: '$($manifestInfo.Name)'."
     }
 
-    $moduleData = Import-PowerShellDataFile -LiteralPath $manifestPath
-    $expectedVersion = [version]$moduleData.ModuleVersion
-
-    if ($manifestInfo.Version -ne $expectedVersion) {
+    if ($manifestInfo.Version -ne [version]$(
+        Import-PowerShellDataFile -LiteralPath $manifestPath
+    ).ModuleVersion) {
         throw 'Manifest version validation failed.'
     }
 
-    # Import only the staged manifest.
-    Import-Module -Name $manifestPath -Force -ErrorAction Stop
+    # A consumer must be able to discover the module through PSModulePath,
+    # not only import it by a hard-coded manifest path.
+    $discoverable = @(
+        Get-Module -ListAvailable -Name PipeDFe |
+            Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_.ModuleBase) -and
+                $_.ModuleBase.Equals(
+                    $moduleDirectory,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+            }
+    )
+
+    if ($discoverable.Count -eq 0) {
+        throw "Packaged PipeDFe is not discoverable through PSModulePath: '$moduleDirectory'."
+    }
+
+    # Import by name and version, as an end user does from a clean session.
+    # Confirm the selected version really came from the staged artifact.
+    $importParams = @{
+        Name            = 'PipeDFe'
+        RequiredVersion = $expectedVersion.ToString()
+        Force           = $true
+        ErrorAction     = 'Stop'
+    }
+
+    Import-Module @importParams
 
     $module = Get-Module -Name 'PipeDFe'
 
@@ -332,6 +356,11 @@ try {
 
     if ($module.Version -ne $manifestInfo.Version) {
         throw 'Imported module version differs from the packaged manifest.'
+    }
+
+    if (-not $module.ModuleBase.Equals($moduleDirectory, [System.StringComparison]::OrdinalIgnoreCase)
+    ) {
+        throw "Imported PipeDFe came from an unexpected location: '$($module.ModuleBase)'."
     }
 
     $commands = @($module.ExportedFunctions.Keys | Sort-Object -Unique)
