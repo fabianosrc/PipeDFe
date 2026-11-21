@@ -7,15 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Public `Get-PipeDFeHealth` command export and localized MAML help for all public commands in pt-BR and en-US.
+- Localized `about_PipeDFe` conceptual help topics and integration tests for real PowerShell help resolution.
+- Build artifact verification for module imports and localized help in separate PowerShell processes.
+- Integration coverage for versioned and PowerShell Gallery build layouts, localized help installation, and SHA-256 inventory integrity.
 - Integration coverage for `Get-PipeDFeHealth`, including real company registration, SQLite schema validation, trade-name resolution, missing indexes, and output contracts.
 
 ### Changed
+- Module build now stages a versioned installation layout and a PowerShell Gallery-compatible `PipeDFe` directory, including localized help at the module root.
+- Release instructions now cover both layouts, validation, and explicit opt-in publishing.
 - Health diagnostics use the centralized SQLite index schema version instead of a hardcoded expected version.
 - Health results display `NomeFantasia` when configured and fall back to `RazaoSocial` otherwise.
 - Health unit tests use company fixtures aligned with the actual registration contract and the current index schema.
-- Expanded the project README with setup, operating guidance, fiscal document scope, and delivery safeguards.
+- Reworked the project README to emphasize DF-e ingestion, processing, and automated email delivery as the module's primary purpose.
 
 ### Fixed
+- Standardized the Brazilian Portuguese culture directory name to `pt-BR`.
+- Removed obsolete operational guide references from conceptual help topics.
 - Health classification distinguishes outdated index schemas from database inspection failures.
 
 ## Release history
