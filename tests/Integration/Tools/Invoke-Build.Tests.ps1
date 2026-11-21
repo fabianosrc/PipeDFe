@@ -50,7 +50,6 @@ Describe 'PipeDFe module build' -Tag 'Integration' {
             $Script:BuildTestVersioned = Join-Path -Path $Script:BuildTestArtifacts -ChildPath (
                 'PipeDFe/{0}' -f $Script:BuildTestVersion
             )
-
             $Script:BuildTestGallery = Join-Path -Path $Script:BuildTestArtifacts -ChildPath (
                 'PSGallery/PipeDFe'
             )
@@ -71,7 +70,6 @@ Describe 'PipeDFe module build' -Tag 'Integration' {
 
         #region Installation layouts
         Context 'Installation layouts' {
-
             It 'Creates the versioned module directory' {
                 Test-Path -LiteralPath $Script:BuildTestVersioned -PathType Container |
                     Should -BeTrue
@@ -135,7 +133,8 @@ Describe 'PipeDFe module build' -Tag 'Integration' {
 
             It 'Includes the localized MAML files in the inventory' {
                 $inventoryPath = Join-Path -Path $Script:BuildTestVersioned -ChildPath 'hashes.json'
-                $inventory = Get-Content -LiteralPath $inventoryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $inventory = Get-Content -LiteralPath $inventoryPath -Raw -Encoding UTF8 |
+                    ConvertFrom-Json
 
                 $inventory.module  | Should -BeExactly 'PipeDFe'
                 $inventory.version | Should -BeExactly $Script:BuildTestVersion
@@ -147,15 +146,104 @@ Describe 'PipeDFe module build' -Tag 'Integration' {
 
             It 'Records the actual SHA-256 of a packaged help file' {
                 $inventoryPath = Join-Path -Path $Script:BuildTestVersioned -ChildPath 'hashes.json'
-                $inventory = Get-Content -LiteralPath $inventoryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $inventory = Get-Content -LiteralPath $inventoryPath -Raw -Encoding UTF8 |
+                    ConvertFrom-Json
 
                 $entry = @($inventory.files | Where-Object { $_.file -eq 'pt-BR/PipeDFe-help.xml' })
+
                 $entry | Should -HaveCount 1
 
-                $helpPath = Join-Path -Path $Script:BuildTestVersioned -ChildPath ('pt-BR/PipeDFe-help.xml')
+                $helpPath = Join-Path -Path $Script:BuildTestVersioned -ChildPath (
+                    'pt-BR/PipeDFe-help.xml'
+                )
 
                 $actualHash = (Get-FileHash -LiteralPath $helpPath -Algorithm SHA256).Hash
                 $entry[0].sha256 | Should -BeExactly $actualHash
+            }
+        }
+        #endregion
+
+        #region Unsafe build options
+        Context 'Unsafe build options' {
+
+            It 'Rejects ArtifactRoot set to the repository root' {
+                $script = Join-Path -Path $Script:BuildTestRoot -ChildPath 'tools/Invoke-Build.ps1'
+                $params = @{
+                    SkipLint = $true
+                    SkipTests = $true
+                    ArtifactRoot = $Script:BuildTestRoot
+                }
+
+                { & $script @params } | Should -Throw '*ArtifactRoot*'
+            }
+
+            It 'Rejects ArtifactRoot set to a parent of the repository' {
+                $script = Join-Path -Path $Script:BuildTestRoot -ChildPath 'tools/Invoke-Build.ps1'
+                $params = @{
+                    SkipLint = $true
+                    SkipTests = $true
+                    ArtifactRoot = (Split-Path -Path $Script:BuildTestRoot -Parent)
+                }
+
+                { & $script @params } | Should -Throw '*ArtifactRoot*'
+            }
+
+            It 'Rejects publishing with skipped verification stages' {
+                $script = Join-Path -Path $Script:BuildTestRoot -ChildPath 'tools/Invoke-Build.ps1'
+                $params = @{
+                    Publish = $true
+                    SkipTests = $true
+                    ArtifactRoot = $Script:BuildTestArtifacts
+                }
+
+                { & $script @params } | Should -Throw '*requires lint, tests, and coverage*'
+            }
+        }
+        #endregion
+
+        #region Invalid staged artifacts
+        Context 'Invalid staged artifacts' {
+
+            It 'Rejects a missing required localized help file' {
+                $verifyScript = Join-Path -Path $Script:BuildTestRoot -ChildPath 'tools/Test-BuildArtifact.ps1'
+                $file   = Join-Path -Path $Script:BuildTestVersioned -ChildPath 'en-US/PipeDFe-help.xml'
+                $backup = '{0}.backup' -f $file
+
+                Move-Item -LiteralPath $file -Destination $backup -ErrorAction Stop
+                try {
+                    { & $verifyScript -ModulePath $Script:BuildTestVersioned } |
+                        Should -Throw '*Required build artifact file is missing*'
+                } finally {
+                    Move-Item -LiteralPath $backup -Destination $file -ErrorAction Stop
+                }
+            }
+
+            It 'Rejects malformed localized MAML' {
+                $verifyScript = Join-Path -Path $Script:BuildTestRoot -ChildPath 'tools/Test-BuildArtifact.ps1'
+                $file     = Join-Path -Path $Script:BuildTestVersioned -ChildPath 'pt-BR/PipeDFe-help.xml'
+                $original = [System.IO.File]::ReadAllBytes($file)
+
+                try {
+                    [System.IO.File]::WriteAllText($file, '<helpItems><broken>')
+                    { & $verifyScript -ModulePath $Script:BuildTestVersioned } |
+                        Should -Throw
+                } finally {
+                    [System.IO.File]::WriteAllBytes($file, $original)
+                }
+            }
+
+            It 'Rejects a missing SQLite dependency' {
+                $verifyScript = Join-Path -Path $Script:BuildTestRoot -ChildPath 'tools/Test-BuildArtifact.ps1'
+                $file   = Join-Path -Path $Script:BuildTestVersioned -ChildPath 'lib/native/x86/e_sqlite3.dll'
+                $backup = '{0}.backup' -f $file
+
+                Move-Item -LiteralPath $file -Destination $backup -ErrorAction Stop
+                try {
+                    { & $verifyScript -ModulePath $Script:BuildTestVersioned } |
+                        Should -Throw '*Required build artifact file is missing*'
+                } finally {
+                    Move-Item -LiteralPath $backup -Destination $file -ErrorAction Stop
+                }
             }
         }
         #endregion
