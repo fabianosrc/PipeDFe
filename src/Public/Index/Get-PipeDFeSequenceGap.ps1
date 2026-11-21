@@ -54,6 +54,8 @@ Ps C:> Get-PipeDFeSequenceGap -Cnpj '12345678000195'
 PS C:\> Get-PipeDFeSequenceGap -Cnpj '12.345.678/0001-95'
 >> -StartDate '01/08/2026' -EndDate '31/08/2026'
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   ConvertTo-NormalizedCnpj

@@ -94,6 +94,8 @@ PS C:\> $regParams = @{
 
 PS C:\> New-PipeCompany @regParams
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   Assert-CompanyInput

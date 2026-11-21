@@ -79,6 +79,8 @@ PS C:\> Invoke-PipeDFe -Cnpj '12345678000195', '98765432000100'
 .EXAMPLE
 PS C:\> Invoke-PipeDFe -StartDate '01/08/2026' -EndDate '31/08/2026'
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   ConvertTo-NormalizedCnpj

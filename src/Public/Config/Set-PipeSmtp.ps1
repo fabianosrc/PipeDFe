@@ -84,6 +84,8 @@ PS C:\> Set-PipeSmtp -Ssl $false
 .EXAMPLE
 PS C:\> Set-PipeSmtp -ReplyTo ''
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   ConvertTo-DpapiString

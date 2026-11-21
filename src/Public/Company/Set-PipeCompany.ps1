@@ -85,6 +85,8 @@ PS C:\> Set-PipeCompany -Cnpj '12345678000195' -NomeFantasia 'ACME NOVO'
 .EXAMPLE
 PS C:\> Set-PipeCompany -Cnpj '12345678000195' -IsActive $false
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   Assert-CompanyInput

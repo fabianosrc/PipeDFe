@@ -68,6 +68,8 @@ PS C:\> Test-PipeSmtp -SmtpConfig (Get-PipeSmtp)
 .EXAMPLE
 PS C:\> Test-PipeSmtp -TimeoutSeconds 5
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   ConvertTo-NormalizedCnpj

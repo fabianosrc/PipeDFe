@@ -28,6 +28,8 @@ System.Management.Automation.PSCustomObject - TypeName: PipeDFe.Smtp
 .EXAMPLE
 PS C:> Get-PipeSmtp
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   Get-SmtpConfig

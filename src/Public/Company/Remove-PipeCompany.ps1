@@ -39,6 +39,8 @@ PS C\:> Remove-PipeCompany -Cnpj '12345678000195' -DeleteFiles -WhatIf
 
 Shows what would be removed without performing any changes.
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Compatibility:
 

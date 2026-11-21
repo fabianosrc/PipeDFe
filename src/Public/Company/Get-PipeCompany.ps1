@@ -36,6 +36,8 @@ PS C:\> Get-PipeCompany
 .EXAMPLE
 PS C:\> Get-PipeCompany -IsActive $true
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   ConvertTo-NormalizedCnpj

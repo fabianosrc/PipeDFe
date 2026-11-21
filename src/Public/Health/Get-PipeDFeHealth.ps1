@@ -51,6 +51,8 @@ PS C:\> Get-PipeDFeHealth
 .EXAMPLE
 PS C:\> Get-PipeDFeHealth -Cnpj '12.345.678/0001-95'
 
+.EXTERNALHELP PipeDFe-help.xml
+
 .NOTES
 Private dependencies:
   ConvertTo-NormalizedCnpj
