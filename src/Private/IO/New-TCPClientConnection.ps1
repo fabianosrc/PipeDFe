@@ -97,7 +97,7 @@ function New-TcpClientConnection {
         # Force propagation of any exception raised by ConnectAsync().
         # GetAwaiter().GetResult() exposes the underlying exception rather
         # than requiring callers to handle an AggregateException themselves.
-        $connectTask.GetAwaiter().GetResult()
+        [void]$connectTask.GetAwaiter().GetResult()
 
         # A successfully completed connection task should result in a
         # connected TcpClient. Keep this explicit check as a defensive
