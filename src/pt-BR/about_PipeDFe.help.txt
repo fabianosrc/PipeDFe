@@ -13,7 +13,8 @@ LONG DESCRIPTION
     do ERP que os produziu. Não emite notas fiscais nem consulta ou baixa
     documentos dos serviços da SEFAZ.
 
-    A versão 1.0 contempla NF-e, NFC-e, NFCom, CT-e, MDF-e e NFS-e Nacional.
+    O escopo previsto para a versão 1.0 inclui NF-e, NFC-e, NFCom, CT-e,
+    MDF-e e NFS-e Nacional.
     Uma empresa que emite somente NFS-e Nacional também pode participar do
     fechamento mensal.
 
@@ -117,5 +118,6 @@ SEE ALSO
     Get-Help New-PipeCompany -Full
     Get-Help Get-PipeDFeHealth -Full
     README.md
-    docs/OPERACAO.md
+    RELEASE.md
+    CHANGELOG.md
     https://github.com/fabianosrc/PipeDFe

@@ -13,7 +13,7 @@ LONG DESCRIPTION
     of the ERP that produced them. PipeDFe does not issue fiscal documents
     or query or download documents from SEFAZ services.
 
-    The version 1.0 scope covers NF-e, NFC-e, NFCom, CT-e, MDF-e, and
+    The planned version 1.0 scope covers NF-e, NFC-e, NFCom, CT-e, MDF-e, and
     Brazilian national NFS-e. Companies that issue only national NFS-e
     documents can also participate in monthly closing.
 
@@ -117,5 +117,6 @@ SEE ALSO
     Get-Help New-PipeCompany -Full
     Get-Help Get-PipeDFeHealth -Full
     README.md
-    docs/OPERACAO.md
+    RELEASE.md
+    CHANGELOG.md
     https://github.com/fabianosrc/PipeDFe
