@@ -41,27 +41,29 @@ Full path to the XML file.
 .OUTPUTS
 PSCustomObject
 
-  File       [System.IO.FileInfo] - source file
-  Tipo       [TipoXmlDFe]         - Documento, Evento, or Inutilizacao
-  Modelo     [ModeloDFe]          - fiscal model, or $null when undetermined
-  Root       [string]             - XML root element local name
-  IsProc     [bool]               - true when the root ends with Proc
-  Chave      [string]             - 44-digit chave de acesso (Documento only)
-  ChavePai   [string]             - parent chave de acesso (Evento only)
-  EventoTipo [DFeEvento]          - resolved semantic event type (Evento only)
-  TpEvento   [string]             - raw tpEvento code from XML (Evento only)
-  DescEvento [string]             - descEvento from XML (Evento only)
-  DhEmi      [string]             - emission datetime (Documento only)
-  Ndoc       [string]             - document number (Documento only)
-  Serie      [string]             - serie (Documento and Inutilizacao)
-  NNFIni     [string]             - first number in inutilized range
-                                    (Inutilizacao only)
-  NNFFin     [string]             - last number in inutilized range
-                                    (Inutilizacao only)
-  IdInut     [string]             - inutilizacao identifier from infInut/@Id
-                                    (Inutilizacao only)
-  cStat      [string]             - SEFAZ status code (procInutNFe only)
-  xMotivo    [string]             - SEFAZ status description (procInutNFe only)
+  File             [FileInfo]   - source file
+  Tipo             [TipoXmlDFe] - Documento, Evento, or Inutilizacao
+  Modelo           [ModeloDFe]  - fiscal model, or $null when undetermined
+  Root             [string]     - XML root element local name
+  IsProc           [bool]       - true when the root ends with Proc
+  Chave            [string]     - 44-digit chave de acesso (Documento only)
+  ChavePai         [string]     - parent chave de acesso (Evento only)
+  EmitenteCnpj     [string]     - issuer CNPJ (NF-e documents only)
+  DestinatarioCnpj [string]     - recipient CNPJ (NF-e documents only)
+  EventoTipo       [DFeEvento]  - resolved semantic event type (Evento only)
+  TpEvento         [string]     - raw tpEvento code from XML (Evento only)
+  DescEvento       [string]     - descEvento from XML (Evento only)
+  DhEmi            [string]     - emission datetime (Documento only)
+  Ndoc             [string]     - document number (Documento only)
+  Serie            [string]     - serie (Documento and Inutilizacao)
+  NNFIni           [string]     - first number in inutilized range
+                                  (Inutilizacao only)
+  NNFFin           [string]     - last number in inutilized range
+                                  (Inutilizacao only)
+  IdInut           [string]     - inutilizacao identifier from infInut/@Id
+                                  (Inutilizacao only)
+  cStat            [string]     - SEFAZ status code (procInutNFe only)
+  xMotivo          [string]     - SEFAZ status description (procInutNFe only)
 
 Fields not applicable to the document type are $null.
 
@@ -204,24 +206,26 @@ function Get-DFeXmlMetadata {
             # DFeExtractionMap and emits a false 'configuration bug' warning
             # for every single Evento processed.
             return [PSCustomObject]@{
-                File       = $file
-                Tipo       = $docInfo.Tipo
-                Modelo     = $docInfo.Modelo
-                Root       = $root
-                IsProc     = $root -match 'Proc$'
-                Chave      = $null
-                ChavePai   = $chavePai
-                EventoTipo = $eventoTipo
-                TpEvento   = $tpEvento
-                DescEvento = $descEvento
-                DhEmi      = $null
-                Ndoc       = $null
-                Serie      = $null
-                NNFIni     = $null
-                NNFFin     = $null
-                IdInut     = $null
-                cStat      = $null
-                xMotivo    = $null
+                File             = $file
+                Tipo             = $docInfo.Tipo
+                Modelo           = $docInfo.Modelo
+                Root             = $root
+                IsProc           = $root -match 'Proc$'
+                Chave            = $null
+                ChavePai         = $chavePai
+                EmitenteCnpj     = $null
+                DestinatarioCnpj = $null
+                EventoTipo       = $eventoTipo
+                TpEvento         = $tpEvento
+                DescEvento       = $descEvento
+                DhEmi            = $null
+                Ndoc             = $null
+                Serie            = $null
+                NNFIni           = $null
+                NNFFin           = $null
+                IdInut           = $null
+                cStat            = $null
+                xMotivo          = $null
             }
         }
 
@@ -250,24 +254,26 @@ function Get-DFeXmlMetadata {
 
             # Explicit return: same fallthrough hazard as the Evento branch above.
             return [PSCustomObject]@{
-                File       = $file
-                Tipo       = $docInfo.Tipo
-                Modelo     = $docInfo.Modelo
-                Root       = $root
-                IsProc     = $root -match 'Proc$'
-                Chave      = $null
-                ChavePai   = $null
-                EventoTipo = $null
-                TpEvento   = $null
-                DescEvento = $null
-                DhEmi      = $null
-                Ndoc       = $null
-                Serie      = & $getText '//dfe:infInut/dfe:serie'
-                NNFIni     = & $getText '//dfe:infInut/dfe:nNFIni'
-                NNFFin     = & $getText '//dfe:infInut/dfe:nNFFin'
-                IdInut     = $idInut
-                cStat      = & $getText '//dfe:retInutNFe/dfe:infInut/dfe:cStat'
-                xMotivo    = & $getText '//dfe:retInutNFe/dfe:infInut/dfe:xMotivo'
+                File             = $file
+                Tipo             = $docInfo.Tipo
+                Modelo           = $docInfo.Modelo
+                Root             = $root
+                IsProc           = $root -match 'Proc$'
+                Chave            = $null
+                ChavePai         = $null
+                EmitenteCnpj     = $null
+                DestinatarioCnpj = $null
+                EventoTipo       = $null
+                TpEvento         = $null
+                DescEvento       = $null
+                DhEmi            = $null
+                Ndoc             = $null
+                Serie            = & $getText '//dfe:infInut/dfe:serie'
+                NNFIni           = & $getText '//dfe:infInut/dfe:nNFIni'
+                NNFFin           = & $getText '//dfe:infInut/dfe:nNFFin'
+                IdInut           = $idInut
+                cStat            = & $getText '//dfe:retInutNFe/dfe:infInut/dfe:cStat'
+                xMotivo          = & $getText '//dfe:retInutNFe/dfe:infInut/dfe:xMotivo'
             }
         }
 
@@ -304,30 +310,44 @@ function Get-DFeXmlMetadata {
         # and format validation. Returns $null for any structural violation.
         $chave = Get-DFeAccessKey -Node $infNode -Prefix $extraction.IdPrefix
 
+        $emitente = if ($docInfo.Modelo -eq [ModeloDFe]::NFe) {
+            & $getText '//dfe:infNFe/dfe:emit/dfe:CNPJ'
+        } else {
+            $null
+        }
+
+        $destinatario = if ($docInfo.Modelo -eq [ModeloDFe]::NFe) {
+            & $getText '//dfe:infNFe/dfe:dest/dfe:CNPJ'
+        } else {
+            $null
+        }
+
         if ($null -eq $chave) {
             Write-Warning -Message "[$($file.Name)] Invalid or missing chave de acesso."
             return
         }
 
         [PSCustomObject]@{
-            File       = $file
-            Tipo       = $docInfo.Tipo
-            Modelo     = $docInfo.Modelo
-            Root       = $root
-            IsProc     = $root -match 'Proc$'
-            Chave      = $chave
-            ChavePai   = $null
-            EventoTipo = $null
-            TpEvento   = $null
-            DescEvento = $null
-            DhEmi      = & $getText '//dfe:dhEmi'
-            Ndoc       = & $getText '//dfe:nNF'
-            Serie      = & $getText '//dfe:serie'
-            NNFIni     = $null
-            NNFFin     = $null
-            IdInut     = $null
-            cStat      = $null
-            xMotivo    = $null
+            File             = $file
+            Tipo             = $docInfo.Tipo
+            Modelo           = $docInfo.Modelo
+            Root             = $root
+            IsProc           = $root -match 'Proc$'
+            Chave            = $chave
+            ChavePai         = $null
+            EmitenteCnpj     = $emitente
+            DestinatarioCnpj = $destinatario
+            EventoTipo       = $null
+            TpEvento         = $null
+            DescEvento       = $null
+            DhEmi            = & $getText '//dfe:dhEmi'
+            Ndoc             = & $getText '//dfe:nNF'
+            Serie            = & $getText '//dfe:serie'
+            NNFIni           = $null
+            NNFFin           = $null
+            IdInut           = $null
+            cStat            = $null
+            xMotivo          = $null
         }
     }
 }
