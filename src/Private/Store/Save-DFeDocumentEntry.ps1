@@ -118,17 +118,19 @@ function Save-DFeDocumentEntry {
     }
 
     $direcao = [System.DBNull]::Value
+    $directionProperty = $Metadata.PSObject.Properties['Direcao']
 
-    if ($null -ne $Metadata.Direcao -and -not
-        [string]::IsNullOrWhiteSpace([string]$Metadata.Direcao)
+    if ($null -ne $directionProperty -and -not
+        [string]::IsNullOrWhiteSpace([string]$directionProperty.Value)
     ) {
         if ($Metadata.Modelo -ne [ModeloDFe]::NFe -or
-            $Metadata.Direcao -notin @('Entrada', 'Saida')
+            $directionProperty.Value -notin @('Entrada', 'Saida')
         ) {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
-                        "Invalid direction '$($Metadata.Direcao)' for model '$($Metadata.Modelo)'."
+                        "Invalid direction '$($directionProperty.Value)' " +
+                        "for model '$($Metadata.Modelo)'."
                     ),
                     'InvalidDocumentDirection',
                     [System.Management.Automation.ErrorCategory]::InvalidArgument,
@@ -137,7 +139,7 @@ function Save-DFeDocumentEntry {
             )
         }
 
-        $direcao = [string]$Metadata.Direcao
+        $direcao = [string]$directionProperty.Value
     }
 
     # Compute SHA-256 before opening the connection - file I/O must not
