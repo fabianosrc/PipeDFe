@@ -110,6 +110,10 @@ Describe 'Save-DFeDocumentEntry' -Tag 'Integration' {
                     [object]$Modelo = [ModeloDFe]::NFe,
 
                     [Parameter()]
+                    [AllowNull()]
+                    [string]$Direcao = $null,
+
+                    [Parameter()]
                     [bool]$IsProc = $false,
 
                     [Parameter()]
@@ -123,14 +127,15 @@ Describe 'Save-DFeDocumentEntry' -Tag 'Integration' {
                 )
 
                 [PSCustomObject]@{
-                    Tipo   = [TipoXmlDFe]::Documento
-                    Chave  = $Chave
-                    Modelo = $Modelo
-                    IsProc = $IsProc
-                    File   = $File
-                    Ndoc   = $Ndoc
-                    Serie  = $Serie
-                    DhEmi  = $DhEmi
+                    Tipo    = [TipoXmlDFe]::Documento
+                    Chave   = $Chave
+                    Modelo  = $Modelo
+                    Direcao = $Direcao
+                    IsProc  = $IsProc
+                    File    = $File
+                    Ndoc    = $Ndoc
+                    Serie   = $Serie
+                    DhEmi   = $DhEmi
                 }
             }
 
@@ -153,9 +158,10 @@ Describe 'Save-DFeDocumentEntry' -Tag 'Integration' {
 
                     try {
                         $command.CommandText = @'
-SELECT chave_acesso, modelo, file_path, is_proc, ndoc, serie, dh_emi, sha256, indexed_at
-FROM   dfe_document
-WHERE  chave_acesso = @chave;
+SELECT chave_acesso, modelo, direcao, file_path, is_proc,
+       ndoc, serie, dh_emi, sha256, indexed_at
+FROM dfe_document
+WHERE chave_acesso = @chave;;
 '@
                         $command.Parameters.AddWithValue('@chave', $ChaveAcesso) | Out-Null
 
@@ -165,6 +171,11 @@ WHERE  chave_acesso = @chave;
                                 [pscustomobject]@{
                                     ChaveAcesso = [string]$reader['chave_acesso']
                                     Modelo      = [int]$reader['modelo']
+                                    Direcao     = if ($reader['direcao'] -is [System.DBNull]) {
+                                        $null
+                                    } else {
+                                        [string]$reader['direcao']
+                                    }
                                     FilePath    = [string]$reader['file_path']
                                     IsProc      = [int]$reader['is_proc']
                                     Ndoc        = if ($reader['ndoc'] -is [System.DBNull]) {
@@ -862,5 +873,82 @@ WHERE  chave_acesso = @chave;
                 }
             }
         }
+
+        #region Document direction persistence
+        Context 'Document direction persistence' {
+
+            It 'Persists Saida for an outgoing NF-e' {
+                $file = New-TestXmlFile -Content '<nfe>saida</nfe>'
+
+                $metaParams = @{
+                    File    = $file
+                    Chave   = '35260812345678000199550010000000101234567890'
+                    Modelo  = [ModeloDFe]::NFe
+                    Direcao = 'Saida'
+                }
+
+                $metadata = New-TestDocumentMetadata @metaParams
+
+                Save-DFeDocumentEntry -Cnpj $Script:Cnpj -Metadata $metadata
+
+                $row = Get-TestDocumentRow -Cnpj $Script:Cnpj -ChaveAcesso $metaParams.Chave
+
+                $row.Direcao | Should -Be 'Saida'
+            }
+
+            It 'Persists Entrada for an incoming NF-e' {
+                $file = New-TestXmlFile -Content '<nfe>entrada</nfe>'
+
+                $metaParams = @{
+                    File    = $file
+                    Chave   = '35260812345678000199550010000000111234567890'
+                    Modelo  = [ModeloDFe]::NFe
+                    Direcao = 'Entrada'
+                }
+
+                $metadata = New-TestDocumentMetadata @metaParams
+
+                Save-DFeDocumentEntry -Cnpj $Script:Cnpj -Metadata $metadata
+
+                $row = Get-TestDocumentRow -Cnpj $Script:Cnpj -ChaveAcesso $metaParams.Chave
+
+                $row.Direcao | Should -Be 'Entrada'
+            }
+
+            It 'Rejects an unsupported direction' {
+                $file = New-TestXmlFile -Content '<nfe>invalid</nfe>'
+
+                $metaParams = @{
+                    File    = $file
+                    Chave   = '35260812345678000199550010000000121234567890'
+                    Modelo  = [ModeloDFe]::NFe
+                    Direcao = 'Terceiro'
+                }
+
+                $metadata = New-TestDocumentMetadata @metaParams
+
+                { Save-DFeDocumentEntry -Cnpj $Script:Cnpj -Metadata $metadata } |
+                    Should -Throw -ErrorId 'InvalidDocumentDirection*'
+            }
+
+            It 'Preserves null direction for another fiscal model' {
+                $file = New-TestXmlFile -Content '<cte>document</cte>'
+
+                $metaParams = @{
+                    File   = $file
+                    Chave  = '35260812345678000199570010000000131234567890'
+                    Modelo = [ModeloDFe]::CTe
+                }
+
+                $metadata = New-TestDocumentMetadata @metaParams
+
+                Save-DFeDocumentEntry -Cnpj $Script:Cnpj -Metadata $metadata
+
+                $row = Get-TestDocumentRow -Cnpj $Script:Cnpj -ChaveAcesso $metaParams.Chave
+
+                $row.Direcao | Should -BeNullOrEmpty
+            }
+        }
+        #endregion
     }
 }
