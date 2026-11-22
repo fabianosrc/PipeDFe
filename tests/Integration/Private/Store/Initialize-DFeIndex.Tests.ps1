@@ -454,6 +454,7 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                     'indexed_at'
                     'is_proc'
                     'modelo'
+                    'direcao'
                     'ndoc'
                     'serie'
                     'sha256'
@@ -481,6 +482,19 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
             It 'Defines modelo as INTEGER NOT NULL' {
                 $Script:DocumentColumns['modelo'].Type    | Should -Be 'INTEGER'
                 $Script:DocumentColumns['modelo'].NotNull | Should -Be 1
+            }
+
+            It 'Defines direcao as nullable TEXT' {
+                $Script:DocumentColumns['direcao'].Type |
+                    Should -Be 'TEXT'
+
+                $Script:DocumentColumns['direcao'].NotNull |
+                    Should -Be 0
+            }
+
+            It 'Restricts direction values to Entrada and Saida' {
+                $Script:DocumentSql |
+                    Should -Match "direcao\s+IN\s*\(\s*'Entrada'\s*,\s*'Saida'\s*\)"
             }
 
             It 'Defines file_path as TEXT NOT NULL' {
@@ -1008,6 +1022,7 @@ PRAGMA user_version = 1;
 CREATE TABLE dfe_document (
     chave_acesso          TEXT     NOT NULL PRIMARY KEY,
     modelo                INTEGER  NOT NULL,
+    direcao               TEXT     CHECK (direcao IS NULL OR direcao IN ('Entrada', 'Saida')),
     file_path             TEXT     NOT NULL,
     is_proc               INTEGER  NOT NULL DEFAULT 0 CHECK (is_proc IN (0, 1)),
     ndoc                  INTEGER,
