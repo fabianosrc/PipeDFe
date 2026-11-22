@@ -25,6 +25,13 @@ failure and prevent an incomplete delivery.
 The XML content is the only source of truth. File names and folder
 structure are never used to determine document type or period.
 
+NF-e documents (model 55) are classified relative to the target
+company before persistence. Only Entrada and Saida documents are
+indexed. Terceiro and Indeterminado documents are counted as ignored.
+
+Direction filtering does not change the indexing behavior of
+other fiscal models, events or inutilization records.
+
 .PARAMETER Cnpj
 14-digit normalized CNPJ identifying the target company index.
 
@@ -47,10 +54,12 @@ PS C:\> Invoke-DFeXmlScan -Cnpj '12345678000199' -XmlPath 'C:\ERP\NF-e'
 Private dependencies:
   Get-DFeIndexedHash
   Get-FileSha256
+  Get-DFeNFeDirection
   Get-DFeXmlMetadata
   Save-DFeDocumentEntry
   Save-DFeEventoEntry
   Save-DFeInutilizacaoEntry
+  Import-DFeXml
 #>
 function Invoke-DFeXmlScan {
     [CmdletBinding()]
@@ -157,6 +166,33 @@ function Invoke-DFeXmlScan {
 
             Write-Verbose -Message "[$Cnpj] Skipped (unrecognized type): '$($file.Name)'."
             continue
+        }
+
+        # Only NF-e documents are subject to company-relative direction filtering.
+        # Other fiscal models, events and inutilization records preserve their
+        # existing indexing behavior.
+        if ($metadata.Tipo -eq [TipoXmlDFe]::Documento -and
+            $metadata.Modelo -eq [ModeloDFe]::NFe
+        ) {
+            $xml = Import-DFeXml -Path $file.FullName
+
+            $directionParams = @{
+                Xml  = $xml
+                Cnpj = $Cnpj
+            }
+
+            $direction = Get-DFeNFeDirection @directionParams
+
+            if ($direction -notin @('Entrada', 'Saida')) {
+                $ignored++
+
+                Write-Verbose -Message (
+                    "[$Cnpj] Skipped NF-e '$($file.Name)' " +
+                    "with direction '$direction'."
+                )
+
+                continue
+            }
         }
 
         $memberParams = @{
