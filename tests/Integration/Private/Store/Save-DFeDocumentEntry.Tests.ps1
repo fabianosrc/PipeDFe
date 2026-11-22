@@ -877,6 +877,27 @@ WHERE chave_acesso = @chave;;
         #region Document direction persistence
         Context 'Document direction persistence' {
 
+            It 'Accepts document metadata without a Direcao property' {
+                $file = New-TestXmlFile -Content '<nfcom>document</nfcom>'
+
+                $metaParams = @{
+                    File   = $file
+                    Chave  = '35260812345678000199620010000000141234567890'
+                    Modelo = [ModeloDFe]::NFCom
+                }
+
+                $metadata = New-TestDocumentMetadata @metaParams
+
+                $metadata.PSObject.Properties.Remove('Direcao')
+
+                Save-DFeDocumentEntry -Cnpj $Script:Cnpj -Metadata $metadata
+
+                $row = Get-TestDocumentRow -Cnpj $Script:Cnpj -ChaveAcesso $metaParams.Chave
+
+                $row         | Should -Not -BeNullOrEmpty
+                $row.Direcao | Should -BeNullOrEmpty
+            }
+
             It 'Persists Saida for an outgoing NF-e' {
                 $file = New-TestXmlFile -Content '<nfe>saida</nfe>'
 
