@@ -104,7 +104,9 @@ function Save-DFeDocumentEntry {
         )
     }
 
-    if ($null -eq $Metadata.File -or [string]::IsNullOrWhiteSpace($Metadata.File.FullName)) {
+    if ($null -eq $Metadata.File -or
+        [string]::IsNullOrWhiteSpace($Metadata.File.FullName)
+    ) {
         $PSCmdlet.ThrowTerminatingError(
             [System.Management.Automation.ErrorRecord]::new(
                 [System.ArgumentException]::new('Metadata.File.FullName is required.'),
@@ -113,6 +115,29 @@ function Save-DFeDocumentEntry {
                 $Metadata
             )
         )
+    }
+
+    $direcao = [System.DBNull]::Value
+
+    if ($null -ne $Metadata.Direcao -and -not
+        [string]::IsNullOrWhiteSpace([string]$Metadata.Direcao)
+    ) {
+        if ($Metadata.Modelo -ne [ModeloDFe]::NFe -or
+            $Metadata.Direcao -notin @('Entrada', 'Saida')
+        ) {
+            $PSCmdlet.ThrowTerminatingError(
+                [System.Management.Automation.ErrorRecord]::new(
+                    [System.ArgumentException]::new(
+                        "Invalid direction '$($Metadata.Direcao)' for model '$($Metadata.Modelo)'."
+                    ),
+                    'InvalidDocumentDirection',
+                    [System.Management.Automation.ErrorCategory]::InvalidArgument,
+                    $Metadata
+                )
+            )
+        }
+
+        $direcao = [string]$Metadata.Direcao
     }
 
     # Compute SHA-256 before opening the connection - file I/O must not
@@ -200,6 +225,7 @@ WHERE chave_acesso = @chave;
 INSERT INTO dfe_document (
     chave_acesso,
     modelo,
+    direcao,
     file_path,
     is_proc,
     ndoc,
@@ -214,6 +240,7 @@ INSERT INTO dfe_document (
 ) VALUES (
     @chave,
     @modelo,
+    @direcao,
     @file_path,
     @is_proc,
     @ndoc,
@@ -228,6 +255,7 @@ INSERT INTO dfe_document (
 )
 ON CONFLICT (chave_acesso) DO UPDATE SET
     modelo                = excluded.modelo,
+    direcao               = excluded.direcao,
     file_path             = excluded.file_path,
     is_proc               = excluded.is_proc,
     ndoc                  = excluded.ndoc,
@@ -243,6 +271,7 @@ ON CONFLICT (chave_acesso) DO UPDATE SET
 
         $upsertCmd.Parameters.AddWithValue('@chave',      $Metadata.Chave)         | Out-Null
         $upsertCmd.Parameters.AddWithValue('@modelo',     [int]$Metadata.Modelo)   | Out-Null
+        $upsertCmd.Parameters.AddWithValue('@direcao',    $direcao)                | Out-Null
         $upsertCmd.Parameters.AddWithValue('@file_path',  $Metadata.File.FullName) | Out-Null
         $upsertCmd.Parameters.AddWithValue('@is_proc',    $incomingIsProc)         | Out-Null
         $upsertCmd.Parameters.AddWithValue('@ndoc',       $ndoc)                   | Out-Null
