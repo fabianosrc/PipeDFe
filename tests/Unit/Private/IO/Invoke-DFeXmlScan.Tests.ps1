@@ -187,6 +187,14 @@ Describe 'Invoke-DFeXmlScan' -Tag 'Unit' {
             Mock -CommandName Save-DFeInutilizacaoEntry -MockWith {
 
             }
+
+            Mock -CommandName Import-DFeXml -MockWith {
+                [xml]'<NFe />'
+            }
+
+            Mock -CommandName Get-DFeNFeDirection -MockWith {
+                'Saida'
+            }
         }
 
         #region Indexed hash loading
@@ -568,5 +576,125 @@ Describe 'Invoke-DFeXmlScan' -Tag 'Unit' {
             }
         }
         #region
+
+        #region NF-e direction filtering
+        Context 'NF-e direction filtering' {
+
+            It 'Indexes outgoing invoices' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Saida'
+                }
+
+                $result = Invoke-TestScan
+
+                $result.FilesIndexed | Should -Be 1
+                $result.FilesIgnored | Should -Be 0
+
+                $shouldParams = @{
+                    CommandName = 'Save-DFeDocumentEntry'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 1
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Indexes incoming invoices' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Entrada'
+                }
+
+                $result = Invoke-TestScan
+
+                $result.FilesIndexed | Should -Be 1
+                $result.FilesIgnored | Should -Be 0
+            }
+
+            It 'Ignores third-party invoices' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Terceiro'
+                }
+
+                $result = Invoke-TestScan
+
+                $result.FilesIndexed | Should -Be 0
+                $result.FilesIgnored | Should -Be 1
+
+                $shouldParams = @{
+                    CommandName = 'Save-DFeDocumentEntry'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Ignores invoices with indeterminate direction' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Indeterminado'
+                }
+
+                $result = Invoke-TestScan
+
+                $result.FilesIndexed | Should -Be 0
+                $result.FilesIgnored | Should -Be 1
+            }
+
+            It 'Passes the target company CNPJ to the classifier' {
+                Invoke-TestScan | Out-Null
+
+                $shouldParams = @{
+                    CommandName     = 'Get-DFeNFeDirection'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj
+                    }
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not classify events as invoices' {
+                Mock -CommandName Get-DFeXmlMetadata -MockWith {
+                    New-TestMetadata -Tipo (
+                        [TipoXmlDFe]::Evento
+                    ) -File $Script:FileOne
+                }
+
+                $result = Invoke-TestScan
+
+                $result.FilesIndexed | Should -Be 1
+
+                $shouldParams = @{
+                    CommandName = 'Get-DFeNFeDirection'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not mark a rejected invoice as indexed' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Terceiro'
+                }
+
+                $result = Invoke-TestScan
+
+                $result.FilesIndexed | Should -Be 0
+                $result.FilesSkipped | Should -Be 0
+                $result.FilesIgnored | Should -Be 1
+            }
+        }
+        #endregion
     }
 }
