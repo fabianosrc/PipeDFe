@@ -40,6 +40,11 @@ supported by ConvertTo-DateTimeOffset.
 Optional model filter. When provided, only documents of that model
 are returned.
 
+.PARAMETER Direcao
+Optional company-relative direction filter for NF-e documents.
+Accepts Entrada or Saida. When omitted, documents of all
+directions and fiscal models are returned.
+
 .PARAMETER ProcessingStatus
 Optional processing-state filter. When provided, only documents in the
 specified persistent processing state are returned.
@@ -50,6 +55,7 @@ System.Management.Automation.PSCustomObject
 Each object contains:
   [string] - chave_acesso
   [int]    - modelo
+  [string] - direcao (nullable)
   [string] - dh_emi
   [string] - file_path
   [bool]   - is_proc
@@ -99,6 +105,17 @@ PS C:\> Get-DFeDocumentEntry @params
 
 Returns only documents awaiting processing.
 
+.EXAMPLE
+PS C:\> $getParams = @{
+    Cnpj      = '12345678000199'
+    Modelo    = [ModeloDFe]::NFe
+    Direcao   = 'Entrada'
+    StartDate = '2026-08-01'
+    EndDate   = '2026-08-31T23:59:59'
+}
+
+PS C:\> Get-DFeDocumentEntry @getParams
+
 .NOTES
 Private dependencies:
   Get-StorePath
@@ -122,6 +139,10 @@ function Get-DFeDocumentEntry {
 
         [Parameter()]
         [ModeloDFe]$Modelo,
+
+        [Parameter()]
+        [ValidateSet('Entrada', 'Saida')]
+        [string]$Direcao,
 
         [Parameter()]
         [ValidateSet('Indexed', 'Processing', 'Processed', 'Failed')]
@@ -187,6 +208,17 @@ function Get-DFeDocumentEntry {
             $parameter.Value = [int]$Modelo
         }
 
+        if ($PSBoundParameters.ContainsKey('Direcao')) {
+            $conditions.Add('direcao = @direcao')
+
+            $parameter = $command.Parameters.Add(
+                '@direcao',
+                [System.Data.DbType]::String
+            )
+
+            $parameter.Value = $Direcao
+        }
+
         if ($PSBoundParameters.ContainsKey('ProcessingStatus')) {
             $conditions.Add(
                 'processing_status = @processingStatus'
@@ -220,7 +252,8 @@ SELECT
     processing_status,
     processing_started_at,
     processed_at,
-    processing_error
+    processing_error,
+    direcao
 FROM
     dfe_document
 $whereClause
@@ -234,6 +267,7 @@ ORDER BY
             [pscustomobject]@{
                 chave_acesso          = $reader.GetString(0)
                 modelo                = $reader.GetInt32(1)
+                direcao               = if ($reader.IsDBNull(13)) { $null } else { $reader.GetString(13) }
                 dh_emi                = $reader.GetString(2)
                 file_path             = $reader.GetString(3)
                 is_proc               = [bool]$reader.GetInt32(4)
