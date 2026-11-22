@@ -694,6 +694,97 @@ Describe 'Invoke-DFeXmlScan' -Tag 'Unit' {
                 $result.FilesSkipped | Should -Be 0
                 $result.FilesIgnored | Should -Be 1
             }
+
+            It 'Passes Saida direction to document persistence' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Saida'
+                }
+
+                Invoke-TestScan | Out-Null
+
+                $shouldParams = @{
+                    CommandName     = 'Save-DFeDocumentEntry'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj -and
+                        $Metadata.Direcao -eq 'Saida'
+                    }
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Passes Entrada direction to document persistence' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Entrada'
+                }
+
+                Invoke-TestScan | Out-Null
+
+                $shouldParams = @{
+                    CommandName     = 'Save-DFeDocumentEntry'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Cnpj -eq $Script:Cnpj -and
+                        $Metadata.Direcao -eq 'Entrada'
+                    }
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not add direction metadata to events' {
+                Mock -CommandName Get-DFeXmlMetadata -MockWith {
+                    $metadataParams = @{
+                        Tipo = [TipoXmlDFe]::Evento
+                        File = $Script:FileOne
+                    }
+
+                    New-TestMetadata @metadataParams
+                }
+
+                Invoke-TestScan | Out-Null
+
+                $shouldParams = @{
+                    CommandName     = 'Save-DFeEventoEntry'
+                    ModuleName      = 'PipeDFe'
+                    Scope           = 'It'
+                    Exactly         = $true
+                    Times           = 1
+                    ParameterFilter = {
+                        $Metadata.PSObject.Properties.Name -notcontains 'Direcao'
+                    }
+                }
+
+                Should -Invoke @shouldParams
+            }
+
+            It 'Does not persist direction metadata for rejected invoices' {
+                Mock -CommandName Get-DFeNFeDirection -MockWith {
+                    'Terceiro'
+                }
+
+                $result = Invoke-TestScan
+
+                $result.FilesIndexed | Should -Be 0
+                $result.FilesIgnored | Should -Be 1
+
+                $shouldParams = @{
+                    CommandName = 'Save-DFeDocumentEntry'
+                    ModuleName  = 'PipeDFe'
+                    Scope       = 'It'
+                    Exactly     = $true
+                    Times       = 0
+                }
+
+                Should -Invoke @shouldParams
+            }
         }
         #endregion
     }
