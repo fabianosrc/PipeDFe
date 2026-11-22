@@ -84,9 +84,16 @@ Describe 'Invoke-DFeXmlScan' {
     <infNFe Id="NFe$($Script:ChaveNFe)">
         <ide>
             <dhEmi>2026-08-15T10:00:00-03:00</dhEmi>
+            <mod>55</mod>
             <serie>001</serie>
             <nNF>1</nNF>
         </ide>
+        <emit>
+            <CNPJ>12345678000199</CNPJ>
+        </emit>
+        <dest>
+            <CNPJ>28775139000126</CNPJ>
+        </dest>
     </infNFe>
 </NFe>
 "@
@@ -96,11 +103,18 @@ Describe 'Invoke-DFeXmlScan' {
 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
     <NFe>
         <infNFe Id="NFe$($Script:ChaveNFeTwo)">
-        <ide>
-            <dhEmi>2026-08-15T10:00:00-03:00</dhEmi>
-            <serie>001</serie>
-            <nNF>2</nNF>
-        </ide>
+            <ide>
+                <dhEmi>2026-08-15T10:00:00-03:00</dhEmi>
+                <mod>55</mod>
+                <serie>001</serie>
+                <nNF>2</nNF>
+            </ide>
+            <emit>
+                <CNPJ>12345678000199</CNPJ>
+            </emit>
+            <dest>
+                <CNPJ>28775139000126</CNPJ>
+            </dest>
         </infNFe>
     </NFe>
 </nfeProc>
@@ -375,9 +389,16 @@ Describe 'Invoke-DFeXmlScan' {
     <infNFe Id="NFe$($Script:ChaveRecurse)">
         <ide>
             <dhEmi>2026-08-15T10:00:00-03:00</dhEmi>
+            <mod>55</mod>
             <serie>001</serie>
             <nNF>3</nNF>
         </ide>
+        <emit>
+            <CNPJ>12345678000199</CNPJ>
+        </emit>
+        <dest>
+            <CNPJ>28775139000126</CNPJ>
+        </dest>
     </infNFe>
 </NFe>
 "@
@@ -426,9 +447,16 @@ Describe 'Invoke-DFeXmlScan' {
     <infNFe Id="NFe$($Script:ChaveValid)">
         <ide>
             <dhEmi>2026-08-15T10:00:00-03:00</dhEmi>
+            <mod>55</mod>
             <serie>001</serie>
             <nNF>4</nNF>
         </ide>
+        <emit>
+            <CNPJ>12345678000199</CNPJ>
+        </emit>
+        <dest>
+            <CNPJ>28775139000126</CNPJ>
+        </dest>
     </infNFe>
 </NFe>
 "@
@@ -535,9 +563,16 @@ Describe 'Invoke-DFeXmlScan' {
     <infNFe Id="NFe$($Script:ChaveIdem)">
         <ide>
             <dhEmi>2026-08-15T10:00:00-03:00</dhEmi>
+            <mod>55</mod>
             <serie>001</serie>
             <nNF>5</nNF>
         </ide>
+        <emit>
+            <CNPJ>12345678000199</CNPJ>
+        </emit>
+        <dest>
+            <CNPJ>28775139000126</CNPJ>
+        </dest>
     </infNFe>
 </NFe>
 "@
