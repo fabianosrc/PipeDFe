@@ -172,6 +172,7 @@ Describe 'Get-DFeDocumentEntry' -Tag 'Integration' {
 CREATE TABLE dfe_document (
     chave_acesso          TEXT    NOT NULL PRIMARY KEY,
     modelo                INTEGER NOT NULL,
+    direcao               TEXT    CHECK (direcao IS NULL OR direcao IN ('Entrada', 'Saida')),
     file_path             TEXT    NOT NULL,
     is_proc               INTEGER NOT NULL DEFAULT 0,
     ndoc                  INTEGER,
@@ -204,6 +205,10 @@ CREATE TABLE dfe_document (
 
                     [Parameter()]
                     [ModeloDFe]$Modelo = [ModeloDFe]::NFe,
+
+                    [Parameter()]
+                    [AllowNull()]
+                    [string]$Direcao = $null,
 
                     [Parameter()]
                     [string]$DhEmi = '2026-08-15T12:00:00.0000000+00:00',
@@ -248,6 +253,7 @@ CREATE TABLE dfe_document (
                 [pscustomobject]@{
                     ChaveAcesso         = $ChaveAcesso
                     Modelo              = $Modelo
+                    Direcao             = $Direcao
                     DhEmi               = $DhEmi
                     FilePath            = $FilePath
                     IsProc              = $IsProc
@@ -282,6 +288,7 @@ CREATE TABLE dfe_document (
 INSERT INTO dfe_document (
     chave_acesso,
     modelo,
+    direcao,
     file_path,
     is_proc,
     ndoc,
@@ -296,6 +303,7 @@ INSERT INTO dfe_document (
 ) VALUES (
     @chave_acesso,
     @modelo,
+    @direcao,
     @file_path,
     @is_proc,
     @ndoc,
@@ -314,6 +322,12 @@ INSERT INTO dfe_document (
                         [System.DBNull]::Value
                     } else {
                         [int]$Document.Ndoc
+                    }
+
+                    $direcaoValue = if ([string]::IsNullOrWhiteSpace($Document.Direcao)) {
+                        [System.DBNull]::Value
+                    } else {
+                        [string]$Document.Direcao
                     }
 
                     $serieValue = if ($null -eq $Document.Serie) {
@@ -354,6 +368,11 @@ INSERT INTO dfe_document (
                     $command.Parameters.AddWithValue(
                         '@modelo',
                         [int]$Document.Modelo
+                    ) | Out-Null
+
+                    $command.Parameters.AddWithValue(
+                        '@direcao',
+                        $direcaoValue
                     ) | Out-Null
 
                     $command.Parameters.AddWithValue(
@@ -1100,6 +1119,7 @@ INSERT INTO dfe_document (
                 $Script:ExpectedProperties = @(
                     'chave_acesso'
                     'modelo'
+                    'direcao'
                     'dh_emi'
                     'file_path'
                     'is_proc'
@@ -1418,6 +1438,135 @@ INSERT INTO dfe_document (
                 }
 
                 $result | Should -BeNullOrEmpty
+            }
+        }
+        #endregion
+
+        #region Direction filter
+        Context 'Direction filter' {
+
+            BeforeAll {
+
+                $Script:DirectionCnpj   = '11223344000155'
+                $Script:DirectionDbPath = New-TestDatabasePath
+
+                $connection = New-TestConnection -DatabasePath $Script:DirectionDbPath
+
+                try {
+                    New-TestSchema -Connection $connection
+
+                    $directionEntradaParams = @{
+                        ChaveAcesso = '35260811223344000155550010000001021234567890'
+                        Direcao     = 'Entrada'
+                    }
+
+                    $directionSaidaParams = @{
+                        ChaveAcesso = '35260811223344000155550010000001011234567890'
+                        Direcao     = 'Saida'
+                    }
+
+                    $otherDirectionParams = @{
+                        ChaveAcesso = '35260811223344000155570010000001031234567890'
+                        Modelo      = ([ModeloDFe]::CTe)
+                    }
+
+                    $Script:DirectionEntrada = New-TestDocument @directionEntradaParams
+
+                    $Script:DirectionSaida = New-TestDocument @directionSaidaParams
+
+                    $Script:DirectionOtherModel = New-TestDocument @otherDirectionParams
+
+                    foreach ($document in @(
+                            $Script:DirectionSaida
+                            $Script:DirectionEntrada
+                            $Script:DirectionOtherModel
+                        )
+                    ) {
+                        $saveParams = @{
+                            Connection = $connection
+                            Document   = $document
+                        }
+
+                        Save-TestDocument @saveParams
+                    }
+                } finally {
+                    Close-TestConnection -Connection $connection
+                }
+
+                Mock -CommandName Get-StorePath -MockWith {
+                    return $Script:DirectionDbPath
+                }
+            }
+
+            It 'Returns only outgoing invoices when filtering by Saida' {
+                $getParams = @{
+                    Cnpj    = $Script:DirectionCnpj
+                    Direcao = 'Saida'
+                }
+
+                $results = @(Get-DFeDocumentEntry @getParams)
+
+                $results                 | Should -HaveCount 1
+                $results[0].chave_acesso | Should -Be $Script:DirectionSaida.ChaveAcesso
+                $results[0].direcao      | Should -Be 'Saida'
+            }
+
+            It 'Returns only incoming invoices when filtering by Entrada' {
+                $getParams = @{
+                    Cnpj    = $Script:DirectionCnpj
+                    Direcao = 'Entrada'
+                }
+
+                $results = @(Get-DFeDocumentEntry @getParams)
+
+                $results                 | Should -HaveCount 1
+                $results[0].chave_acesso | Should -Be $Script:DirectionEntrada.ChaveAcesso
+                $results[0].direcao      | Should -Be 'Entrada'
+            }
+
+            It 'Returns all directions when the filter is omitted' {
+                $results = @(Get-DFeDocumentEntry -Cnpj $Script:DirectionCnpj)
+
+                $results            | Should -HaveCount 3
+                @($results.direcao) | Should -Contain 'Entrada'
+                @($results.direcao) | Should -Contain 'Saida'
+            }
+
+            It 'Returns null direction for another fiscal model' {
+                $getParams = @{
+                    Cnpj   = $Script:DirectionCnpj
+                    Modelo = [ModeloDFe]::CTe
+                }
+
+                $results = @(Get-DFeDocumentEntry @getParams)
+
+                $results            | Should -HaveCount 1
+                $results[0].direcao | Should -BeNullOrEmpty
+            }
+
+            It 'Combines model, direction, dates and processing status' {
+                $getParams = @{
+                    Cnpj             = $Script:DirectionCnpj
+                    Modelo           = [ModeloDFe]::NFe
+                    Direcao          = 'Entrada'
+                    StartDate        = '2026-08-15T00:00:00+00:00'
+                    EndDate          = '2026-08-15T23:59:59+00:00'
+                    ProcessingStatus = 'Indexed'
+                }
+
+                $results = @(Get-DFeDocumentEntry @getParams)
+
+                $results                 | Should -HaveCount 1
+                $results[0].chave_acesso | Should -Be $Script:DirectionEntrada.ChaveAcesso
+            }
+
+            It 'Rejects unsupported direction values' {
+                $getParams = @{
+                    Cnpj    = $Script:DirectionCnpj
+                    Direcao = 'Terceiro'
+                }
+
+                { Get-DFeDocumentEntry @getParams } | Should -Throw
             }
         }
         #endregion

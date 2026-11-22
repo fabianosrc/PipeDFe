@@ -62,6 +62,7 @@ Describe 'Get-DFeDocumentEntry' -Tag 'Unit' {
             $Script:Row1 = @{
                 chave_acesso          = '35260812345678000199550010000000011000000001'
                 modelo                = 55
+                direcao               = 'Saida'
                 dh_emi                = '2026-08-01T10:00:00.0000000+00:00'
                 file_path             = 'C:\DFe\0001.xml'
                 is_proc               = 1
@@ -78,6 +79,7 @@ Describe 'Get-DFeDocumentEntry' -Tag 'Unit' {
             $Script:Row2 = @{
                 chave_acesso          = '35260812345678000199550010000000021000000002'
                 modelo                = 55
+                direcao               = 'Entrada'
                 dh_emi                = '2026-08-15T10:00:00.0000000+00:00'
                 file_path             = 'C:\DFe\0002.xml'
                 is_proc               = 0
@@ -94,6 +96,7 @@ Describe 'Get-DFeDocumentEntry' -Tag 'Unit' {
             $Script:Row3 = @{
                 chave_acesso          = '35260812345678000199550010000000031000000003'
                 modelo                = 65
+                direcao               = $null
                 dh_emi                = '2026-08-20T10:00:00.0000000+00:00'
                 file_path             = 'C:\DFe\0003.xml'
                 is_proc               = 1
@@ -194,11 +197,13 @@ Describe 'Get-DFeDocumentEntry' -Tag 'Unit' {
                             10 { return $null -eq $row.processing_started_at }
                             11 { return $null -eq $row.processed_at          }
                             12 { return $null -eq $row.processing_error      }
+                            13 { return $null -eq $row.direcao               }
 
                             default { throw "Unexpected column index: $Index" }
                         }
                     }
                 }
+
                 $reader | Add-Member @memberParams -Force
 
                 $memberParams = @{
@@ -219,6 +224,7 @@ Describe 'Get-DFeDocumentEntry' -Tag 'Unit' {
                             10 { return [string]$row.processing_started_at }
                             11 { return [string]$row.processed_at          }
                             12 { return [string]$row.processing_error      }
+                            13 { return [string]$row.direcao               }
 
                             default { throw "Unexpected GetString column index: $Index" }
                         }
@@ -1060,6 +1066,7 @@ Describe 'Get-DFeDocumentEntry' -Tag 'Unit' {
                 @($result[0].PSObject.Properties.Name) | Should -Be @(
                     'chave_acesso'
                     'modelo'
+                    'direcao'
                     'dh_emi'
                     'file_path'
                     'is_proc'
