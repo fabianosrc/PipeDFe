@@ -154,6 +154,7 @@ function Initialize-DFeIndex {
 CREATE TABLE IF NOT EXISTS dfe_document (
     chave_acesso          TEXT     NOT NULL PRIMARY KEY,
     modelo                INTEGER  NOT NULL,
+    direcao               TEXT     CHECK (direcao IS NULL OR direcao IN ('Entrada', 'Saida')),
     file_path             TEXT     NOT NULL,
     is_proc               INTEGER  NOT NULL DEFAULT 0 CHECK (is_proc IN (0, 1)),
     ndoc                  INTEGER,
@@ -845,6 +846,7 @@ CREATE INDEX IF NOT EXISTS ix_dfe_nfse_gerado_em
             $currentDocumentColumns = @(
                 'chave_acesso'
                 'modelo'
+                'direcao'
                 'file_path'
                 'is_proc'
                 'ndoc'
