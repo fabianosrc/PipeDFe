@@ -193,6 +193,14 @@ function Invoke-DFeXmlScan {
 
                 continue
             }
+
+            $directionMemberParams = @{
+                NotePropertyName  = 'Direcao'
+                NotePropertyValue = $direction
+                Force             = $true
+            }
+
+            $metadata | Add-Member @directionMemberParams
         }
 
         $memberParams = @{
