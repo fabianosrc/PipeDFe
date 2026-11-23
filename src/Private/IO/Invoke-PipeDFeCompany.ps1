@@ -333,6 +333,36 @@ function Invoke-PipeDFeCompany {
                         DateRange = $DateRange
                     }
 
+                    if ($tipoDFe -eq 'NFe') {
+                        $nfeEntries = @($entries | Where-Object { [int]$_.modelo -eq 55 })
+
+                        foreach ($entry in $nfeEntries) {
+                            $directionProperty = $entry.PSObject.Properties['direcao']
+
+                            if ($null -eq $directionProperty -or
+                                $directionProperty.Value -notin @('Entrada', 'Saida')
+                            ) {
+                                throw [System.InvalidOperationException]::new(
+                                    "NF-e '$($entry.chave_acesso)' does not have a valid " +
+                                    'direction. Archive generation was aborted.'
+                                )
+                            }
+                        }
+
+                        $directions = @(
+                            $nfeEntries | Select-Object -ExpandProperty direcao -Unique
+                        )
+
+                        foreach ($direction in $directions) {
+                            $directionParams = $archiveInfoParams.Clone()
+                            $directionParams.Direcao = $direction
+
+                            Resolve-DFeArchiveInfo @directionParams
+                        }
+
+                        continue
+                    }
+
                     Resolve-DFeArchiveInfo @archiveInfoParams
                 }
             )
