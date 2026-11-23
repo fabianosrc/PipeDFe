@@ -1013,6 +1013,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
                 $expected = @(
                     'TipoDFe'
+                    'Direcao'
                     'FileName'
                     'FileHash'
                     'TempPath'
@@ -1036,6 +1037,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 $result = @(New-DFeArchive @archiveParams)[0]
 
                 $result.TipoDFe  | Should -Be $Script:NFeArchiveInfo.TipoDFe
+                $result.Direcao  | Should -Be $Script:NFeArchiveInfo.Direcao
                 $result.FileName | Should -Be $Script:NFeArchiveInfo.FileName
                 $result.FileHash | Should -Be $Script:FakeHash
                 $result.TempPath | Should -Be $Script:NFeArchiveInfo.TempPath
