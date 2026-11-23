@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/PipeDFe.svg" alt="PipeDFe" width="280">
+</p>
+
 # PipeDFe
 
 **Automação da ingestão, do processamento e do envio de documentos fiscais eletrônicos (DF-e) com PowerShell.**
