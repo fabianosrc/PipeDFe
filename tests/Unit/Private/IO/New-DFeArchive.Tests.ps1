@@ -13,7 +13,8 @@ Coverage includes:
   - Event loading for every document.
   - snake_case to PascalCase mapping.
   - SHA-256 preservation in mapped objects.
-  - Document grouping by ModeloDFe.
+  - Document grouping by ModeloDFe and NF-e direction.
+  - Direction-aware fixture contracts and event ownership.
   - Event grouping by parent document.
   - One compression per ArchiveInfo.
   - Correct XmlPath, Entries, Eventos, ZipPath and PeriodSegment.
@@ -86,6 +87,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
             $Script:NFeArchiveInfo = [PSCustomObject]@{
                 TipoDFe  = 'NFe'
+                Direcao  = 'Saida'
                 FileName = 'NFe_test.zip'
                 TempPath = $Script:NFeTempZip
                 DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
@@ -102,6 +104,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 [PSCustomObject]@{
                     chave_acesso = $Script:NFeKey
                     modelo       = 55
+                    direcao      = 'Saida'
                     file_path    = 'nfe.xml'
                     sha256       = 'nfe-sha'
                     indexed_at   = '2026-08-01T00:00:00+00:00'
@@ -256,6 +259,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
                 $archiveInfo = [PSCustomObject]@{
                     TipoDFe  = 'NFe'
+                    Direcao  = 'Saida'
                     FileName = 'NFe_test.zip'
                     TempPath = $tempZip
                     DestPath = Join-Path -Path $newOutput -ChildPath 'NFe_test.zip'
@@ -415,7 +419,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
-                    Entries      = $Script:ValidEntries
+                    Entries      = @($Script:ValidEntries[1])
                     ArchiveInfos = @($Script:CTeArchiveInfo)
                     DateRange    = $Script:DateRange
                 }
@@ -450,7 +454,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 $archiveParams = @{
                     Cnpj         = $Script:Cnpj
                     Company      = $Script:ValidCompany
-                    Entries      = $Script:ValidEntries
+                    Entries      = @($Script:ValidEntries[1])
                     ArchiveInfos = @($Script:CTeArchiveInfo)
                     DateRange    = $Script:DateRange
                 }
@@ -533,7 +537,9 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = { $ZipPath -eq $Script:NFeArchiveInfo.TempPath }
+                    ParameterFilter = {
+                        $ZipPath -eq $Script:NFeArchiveInfo.TempPath
+                    }
                 }
 
                 Should -Invoke @invokeParams
@@ -556,7 +562,9 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = { $PeriodSegment -eq '202610' }
+                    ParameterFilter = {
+                        $PeriodSegment -eq '202610'
+                    }
                 }
 
                 Should -Invoke @invokeParams
@@ -570,6 +578,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
                 $archiveInfo = [PSCustomObject]@{
                     TipoDFe  = 'NFe'
+                    Direcao  = 'Saida'
                     FileName = 'NFe_test.zip'
                     TempPath = Join-Path @pathParams
                     DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
@@ -606,6 +615,7 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
 
                 $archiveInfo = [PSCustomObject]@{
                     TipoDFe  = 'NFe'
+                    Direcao  = 'Saida'
                     FileName = 'NFe_test.zip'
                     TempPath = Join-Path @pathParams
                     DestPath = Join-Path -Path $Script:OutputPath -ChildPath 'NFe_test.zip'
@@ -755,7 +765,9 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                     Scope           = 'It'
                     Exactly         = $true
                     Times           = 1
-                    ParameterFilter = { $Path -eq $Script:NFeArchiveInfo.TempPath }
+                    ParameterFilter = {
+                        $Path -eq $Script:NFeArchiveInfo.TempPath
+                    }
                 }
 
                 Should -Invoke @invokeParams
@@ -1028,6 +1040,186 @@ Describe 'New-DFeArchive' -Tag 'Unit' {
                 $result.FileHash | Should -Be $Script:FakeHash
                 $result.TempPath | Should -Be $Script:NFeArchiveInfo.TempPath
                 $result.DestPath | Should -Be $Script:NFeArchiveInfo.DestPath
+            }
+        }
+        #endregion
+
+        #region NFe direction isolation
+        Context 'NFe direction isolation' {
+
+            BeforeAll {
+
+                $Script:EntradaKey = '3' * 44
+
+                $Script:EntradaEntry = [PSCustomObject]@{
+                    chave_acesso = $Script:EntradaKey
+                    modelo       = 55
+                    direcao      = 'Entrada'
+                    file_path    = 'entrada.xml'
+                    sha256       = 'entrada-sha'
+                }
+
+                $Script:EntradaArchiveInfo = [PSCustomObject]@{
+                    TipoDFe  = 'NFe'
+                    Direcao  = 'Entrada'
+                    FileName = 'NFe_Entrada_test.zip'
+                    TempPath = Join-Path $TestDrive 'NFe_Entrada_test.zip'
+                    DestPath = Join-Path $Script:OutputPath 'NFe_Entrada_test.zip'
+                }
+            }
+
+            It 'Creates separate groups for incoming and outgoing NFe documents' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries) + @($Script:EntradaEntry)
+                    ArchiveInfos = @(
+                        $Script:NFeArchiveInfo
+                        $Script:EntradaArchiveInfo
+                        $Script:CTeArchiveInfo
+                    )
+                    DateRange    = $Script:DateRange
+                }
+
+                $results = @(New-DFeArchive @archiveParams)
+
+                $results | Should -HaveCount 3
+
+                $outgoing = @(
+                    $Script:CapturedCompressionCalls |
+                        Where-Object {
+                            $_.ZipPath -eq $Script:NFeArchiveInfo.TempPath
+                        }
+                )
+
+                $incoming = @(
+                    $Script:CapturedCompressionCalls |
+                        Where-Object {
+                            $_.ZipPath -eq $Script:EntradaArchiveInfo.TempPath
+                        }
+                )
+
+                $outgoing | Should -HaveCount 1
+                $incoming | Should -HaveCount 1
+
+                $outgoing[0].Entries | Should -HaveCount 1
+                $incoming[0].Entries | Should -HaveCount 1
+
+                $outgoing[0].Entries[0].ChaveAcesso | Should -Be $Script:NFeKey
+                $incoming[0].Entries[0].ChaveAcesso | Should -Be $Script:EntradaKey
+            }
+
+            It 'Keeps events associated with their own NFe direction' {
+                $Script:EntradaEvento = [PSCustomObject]@{
+                    chave_pai = $Script:EntradaKey
+                    file_path = 'evento-entrada.xml'
+                    sha256    = 'evento-entrada-sha'
+                }
+
+                Mock -CommandName Get-DFeEventoEntry -MockWith {
+                    if ($ChavePai -eq $Script:EntradaKey) {
+                        return $Script:EntradaEvento
+                    }
+
+                    if ($ChavePai -eq $Script:NFeKey) {
+                        return $Script:NFeEvento
+                    }
+
+                    return @()
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries) + @($Script:EntradaEntry)
+                    ArchiveInfos = @(
+                        $Script:NFeArchiveInfo
+                        $Script:EntradaArchiveInfo
+                        $Script:CTeArchiveInfo
+                    )
+                    DateRange    = $Script:DateRange
+                }
+
+                New-DFeArchive @archiveParams | Out-Null
+
+                $outgoing = @(
+                    $Script:CapturedCompressionCalls |
+                        Where-Object {
+                            $_.ZipPath -eq $Script:NFeArchiveInfo.TempPath
+                        }
+                )[0]
+
+                $incoming = @(
+                    $Script:CapturedCompressionCalls |
+                        Where-Object {
+                            $_.ZipPath -eq $Script:EntradaArchiveInfo.TempPath
+                        }
+                )[0]
+
+                @($outgoing.Eventos.ChavePai) | Should -Contain $Script:NFeKey
+                @($outgoing.Eventos.ChavePai) | Should -Not -Contain $Script:EntradaKey
+
+                @($incoming.Eventos.ChavePai) | Should -Contain $Script:EntradaKey
+                @($incoming.Eventos.ChavePai) | Should -Not -Contain $Script:NFeKey
+            }
+
+            It 'Rejects an NFe archive definition without direction' {
+                $archiveInfo = [PSCustomObject]@{
+                    TipoDFe  = 'NFe'
+                    FileName = 'NFe_test.zip'
+                    TempPath = Join-Path $TestDrive 'NFe_missing_direction.zip'
+                    DestPath = Join-Path $Script:OutputPath 'NFe_missing_direction.zip'
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries)
+                    ArchiveInfos = @($archiveInfo)
+                    DateRange    = $Script:DateRange
+                }
+
+                { New-DFeArchive @archiveParams } |
+                    Should -Throw -ErrorId 'ArchiveDirectionRequired*'
+            }
+
+            It 'Rejects an uncovered incoming NFe before compression' {
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @($Script:ValidEntries) + @($Script:EntradaEntry)
+                    ArchiveInfos = @($Script:NFeArchiveInfo)
+                    DateRange    = $Script:DateRange
+                }
+
+                { New-DFeArchive @archiveParams } |
+                    Should -Throw -ErrorId 'ArchiveDirectionUncovered*'
+
+                Should -Invoke -CommandName Compress-DFeArchive -Times 0
+            }
+
+            It 'Rejects a direction assigned to a non-NFe archive' {
+                $archiveInfo = [PSCustomObject]@{
+                    TipoDFe  = 'CTe'
+                    Direcao  = 'Entrada'
+                    FileName = 'CTe_invalid.zip'
+                    TempPath = Join-Path $TestDrive 'CTe_invalid.zip'
+                    DestPath = Join-Path $Script:OutputPath 'CTe_invalid.zip'
+                }
+
+                $archiveParams = @{
+                    Cnpj         = $Script:Cnpj
+                    Company      = $Script:ValidCompany
+                    Entries      = @(
+                        $Script:ValidEntries |
+                            Where-Object { $_.modelo -eq 57 }
+                    )
+                    ArchiveInfos = @($archiveInfo)
+                    DateRange    = $Script:DateRange
+                }
+
+                { New-DFeArchive @archiveParams } |
+                    Should -Throw -ErrorId 'ArchiveDirectionUnsupported*'
             }
         }
         #endregion
