@@ -184,8 +184,8 @@ function New-DFeDelivery {
 
     $normalizedArchives = [System.Collections.Generic.List[pscustomobject]]::new()
 
-    $seenArchiveTypes = [System.Collections.Generic.HashSet[string]]::new(
-        [System.StringComparer]::OrdinalIgnoreCase
+    $seenArchiveGroups = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
     )
 
     foreach ($archive in $Archives) {
@@ -229,6 +229,30 @@ function New-DFeDelivery {
         $archiveHash     = ([string]$archive.FileHash).Trim().ToLowerInvariant()
         $destinationPath = ([string]$archive.DestPath).Trim()
 
+        $directionProperty = $archive.PSObject.Properties['Direcao']
+        $archiveDirection  = ''
+
+        if ($null -ne $directionProperty -and $null -ne $directionProperty.Value) {
+            $archiveDirection = [string]$directionProperty.Value
+        }
+
+        if ($archiveDirection -ne '') {
+            if ($archiveType -cne 'NFE' -or
+                $archiveDirection -cnotin @('Entrada', 'Saida')
+            ) {
+                $PSCmdlet.ThrowTerminatingError(
+                    [System.Management.Automation.ErrorRecord]::new(
+                        [System.ArgumentException]::new(
+                            "Invalid direction '$archiveDirection' for archive type '$archiveType'."
+                        ),
+                        'DFeDeliveryInvalidArchiveDirection',
+                        [System.Management.Automation.ErrorCategory]::InvalidArgument,
+                        $archive
+                    )
+                )
+            }
+        }
+
         if ($archiveType.IndexOf([char]0) -ge 0) {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
@@ -255,11 +279,13 @@ function New-DFeDelivery {
             )
         }
 
-        if (-not $seenArchiveTypes.Add($archiveType)) {
+        $archiveGroup = $archiveType + [char]0 + $archiveDirection
+
+        if (-not $seenArchiveGroups.Add($archiveGroup)) {
             $PSCmdlet.ThrowTerminatingError(
                 [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
-                        "More than one archive was supplied for type '$archiveType'."
+                        "More than one archive was supplied for group '$archiveType/$archiveDirection'."
                     ),
                     'DFeDeliveryDuplicateArchiveType',
                     [System.Management.Automation.ErrorCategory]::InvalidArgument,
@@ -318,11 +344,13 @@ function New-DFeDelivery {
         $normalizedArchives.Add(
             [PSCustomObject]@{
                 TipoDFe  = $archiveType
+                Direcao  = $archiveDirection
                 FileName = $archiveFileName
                 FileHash = $archiveHash
                 DestPath = $destinationPath
             }
         )
+
     }
     #endregion
 
@@ -334,10 +362,12 @@ function New-DFeDelivery {
             RecipientType = 'To'
             Entries       = $To
         }
+
         [PSCustomObject]@{
             RecipientType = 'Cc'
             Entries       = $Cc
         }
+
         [PSCustomObject]@{
             RecipientType = 'Bcc'
             Entries       = $Bcc
@@ -399,7 +429,11 @@ function New-DFeDelivery {
 
     foreach ($archive in $normalizedArchives) {
         $archiveIdentity.Add(
-            $archive.TipoDFe + [char]0 + $archive.FileHash
+            $archive.TipoDFe +
+            [char]0 +
+            $archive.Direcao +
+            [char]0 +
+            $archive.FileHash
         )
     }
 
@@ -471,7 +505,6 @@ function New-DFeDelivery {
 
     $connection  = $null
     $transaction = $null
-    $reader      = $null
 
     $insertCommand          = $null
     $archiveCommand         = $null
@@ -480,6 +513,10 @@ function New-DFeDelivery {
     $deliveryCommand        = $null
     $archiveSelectCommand   = $null
     $recipientSelectCommand = $null
+
+    $deliveryReader  = $null
+    $archiveReader   = $null
+    $recipientReader = $null
 
     try {
         $connection = Open-DFeIndexConnection -Cnpj $Cnpj
@@ -511,20 +548,14 @@ INSERT INTO dfe_delivery (
 ON CONFLICT (delivery_key) DO NOTHING;
 '@
 
-        $insertCommand.Parameters.AddWithValue('@delivery_id', $deliveryId) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@delivery_key', $deliveryKey) | Out-Null
+        $insertCommand.Parameters.AddWithValue('@delivery_id', $deliveryId)       | Out-Null
+        $insertCommand.Parameters.AddWithValue('@delivery_key', $deliveryKey)     | Out-Null
         $insertCommand.Parameters.AddWithValue('@period_start', $periodStartText) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@period_end', $periodEndText) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@created_at', $timestamp) | Out-Null
-        $insertCommand.Parameters.AddWithValue('@updated_at', $timestamp) | Out-Null
+        $insertCommand.Parameters.AddWithValue('@period_end', $periodEndText)     | Out-Null
+        $insertCommand.Parameters.AddWithValue('@created_at', $timestamp)         | Out-Null
+        $insertCommand.Parameters.AddWithValue('@updated_at', $timestamp)         | Out-Null
 
         $rowsInserted = [int]$insertCommand.ExecuteNonQuery()
-
-        if ($rowsInserted -notin @(0, 1)) {
-            throw [System.InvalidOperationException]::new(
-                "Unexpected number of delivery rows inserted: $rowsInserted."
-            )
-        }
 
         # Block a new delivery identity when the same company and period
         # already has a completed or potentially transmitted delivery.
@@ -580,12 +611,14 @@ LIMIT 1;
 INSERT INTO dfe_delivery_archive (
     delivery_id,
     tipo_dfe,
+    direcao,
     file_name,
     file_hash,
     dest_path
 ) VALUES (
     @delivery_id,
     @tipo_dfe,
+    @direcao,
     @file_name,
     @file_hash,
     @dest_path
@@ -617,12 +650,18 @@ INSERT INTO dfe_delivery_archive (
                 [System.Data.DbType]::String
             )
 
+            $archiveDirectionParam = $archiveCommand.Parameters.Add(
+                '@direcao',
+                [System.Data.DbType]::String
+            )
+
             foreach ($archive in $normalizedArchives) {
-                $archiveIdParam.Value = $deliveryId
-                $archiveTypeParam.Value = $archive.TipoDFe
-                $archiveNameParam.Value = $archive.FileName
-                $archiveHashParam.Value = $archive.FileHash
-                $archivePathParam.Value = $archive.DestPath
+                $archiveIdParam.Value        = $deliveryId
+                $archiveTypeParam.Value      = $archive.TipoDFe
+                $archiveNameParam.Value      = $archive.FileName
+                $archiveHashParam.Value      = $archive.FileHash
+                $archivePathParam.Value      = $archive.DestPath
+                $archiveDirectionParam.Value = $archive.Direcao
 
                 $archiveRowsInserted = $archiveCommand.ExecuteNonQuery()
 
@@ -664,8 +703,8 @@ INSERT INTO dfe_delivery_recipient (
             )
 
             foreach ($recipient in $recipientRows) {
-                $recipientIdParam.Value = $deliveryId
-                $recipientTypeParam.Value = $recipient.RecipientType
+                $recipientIdParam.Value      = $deliveryId
+                $recipientTypeParam.Value    = $recipient.RecipientType
                 $recipientAddressParam.Value = $recipient.Address
 
                 $recipientRowsInserted = $recipientCommand.ExecuteNonQuery()
@@ -696,45 +735,47 @@ FROM dfe_delivery
 WHERE delivery_key = @delivery_key;
 '@
 
-        $deliveryCommand.Parameters.AddWithValue('@delivery_key', $deliveryKey) |
-            Out-Null
+        $deliveryCommand.Parameters.AddWithValue(
+            '@delivery_key',
+            $deliveryKey
+        ) | Out-Null
 
-        $reader = $deliveryCommand.ExecuteReader()
+        $deliveryReader = $deliveryCommand.ExecuteReader()
 
         try {
-            if (-not $reader.Read()) {
+            if (-not $deliveryReader.Read()) {
                 throw [System.InvalidOperationException]::new(
                     'The delivery insert completed but the persisted record was not found.'
                 )
             }
 
-            $storedDeliveryId = $reader.GetString(0)
-            $storedPeriodStart = $reader.GetString(1)
-            $storedPeriodEnd = $reader.GetString(2)
-            $storedStatus = $reader.GetString(3)
-            $storedCreatedAt = $reader.GetString(4)
-            $storedUpdatedAt = $reader.GetString(5)
+            $storedDeliveryId  = $deliveryReader.GetString(0)
+            $storedPeriodStart = $deliveryReader.GetString(1)
+            $storedPeriodEnd   = $deliveryReader.GetString(2)
+            $storedStatus      = $deliveryReader.GetString(3)
+            $storedCreatedAt   = $deliveryReader.GetString(4)
+            $storedUpdatedAt   = $deliveryReader.GetString(5)
 
-            $storedStartedAt = if ($reader.IsDBNull(6)) {
+            $storedStartedAt = if ($deliveryReader.IsDBNull(6)) {
                 $null
             } else {
-                $reader.GetString(6)
+                $deliveryReader.GetString(6)
             }
 
-            $storedDeliveredAt = if ($reader.IsDBNull(7)) {
+            $storedDeliveredAt = if ($deliveryReader.IsDBNull(7)) {
                 $null
             } else {
-                $reader.GetString(7)
+                $deliveryReader.GetString(7)
             }
 
-            $storedError = if ($reader.IsDBNull(8)) {
+            $storedError = if ($deliveryReader.IsDBNull(8)) {
                 $null
             } else {
-                $reader.GetString(8)
+                $deliveryReader.GetString(8)
             }
         } finally {
-            $reader.Dispose()
-            $reader = $null
+            $deliveryReader.Dispose()
+            $deliveryReader = $null
         }
 
         # Read archive metadata from SQLite.
@@ -745,12 +786,15 @@ WHERE delivery_key = @delivery_key;
         $archiveSelectCommand.CommandText = @'
 SELECT
     tipo_dfe,
+    direcao,
     file_name,
     file_hash,
     dest_path
 FROM dfe_delivery_archive
 WHERE delivery_id = @delivery_id
-ORDER BY tipo_dfe COLLATE BINARY;
+ORDER BY
+    tipo_dfe COLLATE BINARY,
+    direcao COLLATE BINARY;
 '@
 
         $archiveSelectCommand.Parameters.AddWithValue(
@@ -758,22 +802,29 @@ ORDER BY tipo_dfe COLLATE BINARY;
             $storedDeliveryId
         ) | Out-Null
 
-        $reader = $archiveSelectCommand.ExecuteReader()
+        $archiveReader = $archiveSelectCommand.ExecuteReader()
 
         try {
-            while ($reader.Read()) {
+            while ($archiveReader.Read()) {
+                $storedDirection = $archiveReader.GetString(1)
+
                 $archiveRows.Add(
                     [PSCustomObject]@{
-                        TipoDFe  = $reader.GetString(0)
-                        FileName = $reader.GetString(1)
-                        FileHash = $reader.GetString(2)
-                        DestPath = $reader.GetString(3)
+                        TipoDFe  = $archiveReader.GetString(0)
+                        Direcao  = if ($storedDirection -eq '') {
+                            $null
+                        } else {
+                            $storedDirection
+                        }
+                        FileName = $archiveReader.GetString(2)
+                        FileHash = $archiveReader.GetString(3)
+                        DestPath = $archiveReader.GetString(4)
                     }
                 )
             }
         } finally {
-            $reader.Dispose()
-            $reader = $null
+            $archiveReader.Dispose()
+            $archiveReader = $null
         }
 
         # Read recipient metadata from SQLite.
@@ -795,20 +846,20 @@ ORDER BY recipient_type COLLATE BINARY, address COLLATE BINARY;
             $storedDeliveryId
         ) | Out-Null
 
-        $reader = $recipientSelectCommand.ExecuteReader()
+        $recipientReader = $recipientSelectCommand.ExecuteReader()
 
         try {
-            while ($reader.Read()) {
+            while ($recipientReader.Read()) {
                 $storedRecipients.Add(
                     [PSCustomObject]@{
-                        RecipientType = $reader.GetString(0)
-                        Address       = $reader.GetString(1)
+                        RecipientType = $recipientReader.GetString(0)
+                        Address       = $recipientReader.GetString(1)
                     }
                 )
             }
         } finally {
-            $reader.Dispose()
-            $reader = $null
+            $recipientReader.Dispose()
+            $recipientReader = $null
         }
 
         $transaction.Commit()
@@ -850,8 +901,16 @@ ORDER BY recipient_type COLLATE BINARY, address COLLATE BINARY;
             )
         )
     } finally {
-        if ($null -ne $reader) {
-            $reader.Dispose()
+        if ($null -ne $deliveryReader) {
+            $deliveryReader.Dispose()
+        }
+
+        if ($null -ne $archiveReader) {
+            $archiveReader.Dispose()
+        }
+
+        if ($null -ne $recipientReader) {
+            $recipientReader.Dispose()
         }
 
         if ($null -ne $insertCommand) {
