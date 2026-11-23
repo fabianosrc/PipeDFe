@@ -560,13 +560,20 @@ CREATE INDEX IF NOT EXISTS ix_dfe_delivery_period
     ON dfe_delivery (period_start, period_end);
 
 CREATE TABLE IF NOT EXISTS dfe_delivery_archive (
-    delivery_id     TEXT NOT NULL,
-    tipo_dfe        TEXT NOT NULL,
-    file_name       TEXT NOT NULL,
-    file_hash       TEXT NOT NULL,
-    dest_path       TEXT NOT NULL,
+    delivery_id TEXT NOT NULL,
+    tipo_dfe    TEXT NOT NULL,
+    direcao     TEXT NOT NULL DEFAULT ''
+                CHECK (direcao IN ('', 'Entrada', 'Saida')),
+    file_name   TEXT NOT NULL,
+    file_hash   TEXT NOT NULL,
+    dest_path   TEXT NOT NULL,
 
-    PRIMARY KEY (delivery_id, tipo_dfe),
+    PRIMARY KEY (delivery_id, tipo_dfe, direcao),
+
+    CHECK (
+        tipo_dfe = 'NFE'
+        OR direcao = ''
+    ),
 
     CHECK (
         length(file_hash) = 64
@@ -594,6 +601,7 @@ CREATE TABLE IF NOT EXISTS dfe_delivery_recipient (
         ON DELETE CASCADE
 );
 '@
+
             $createNFComSchemaV6Sql = @'
 CREATE TABLE IF NOT EXISTS dfe_nfcom (
     chave_acesso TEXT NOT NULL PRIMARY KEY,
@@ -1062,6 +1070,14 @@ WHERE type = @type
                 # =====================================================================
                 6 {
                     @($createNFSeSchemaV7Sql)
+                }
+
+                7 {
+                    throw [System.InvalidOperationException]::new(
+                        'Schema version 7 requires an explicit upgrade to version 8. ' +
+                        'Automatic migration is not available. Preserve existing data ' +
+                        'and use a new test database or an approved migration procedure.'
+                    )
                 }
 
                 # =====================================================================
