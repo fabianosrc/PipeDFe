@@ -29,8 +29,8 @@ Document entries returned by Get-DFeDocumentEntry.
 
 .PARAMETER ArchiveInfos
 Definitions returned by Resolve-DFeArchiveInfo. Each definition must expose
-TipoDFe, FileName, TempPath and DestPath. For NFe, Direcao must be Entrada or
-Saida. For other models, Direcao must be null or absent.
+TipoDFe, FileName, TempPath and DestPath. For NFe, Direcao must be Entrada
+or Saida. For other models, Direcao must be null or absent.
 
 .PARAMETER DateRange
 Date range used to derive the internal ZIP period segment.
@@ -38,8 +38,9 @@ Date range used to derive the internal ZIP period segment.
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
-Each successfully published archive returns TipoDFe, FileName, FileHash,
-TempPath and DestPath. No results are returned for an empty archive plan.
+Each successfully published archive returns TipoDFe, Direcao, FileName,
+FileHash, TempPath and DestPath. No results are returned for an empty
+archive plan.
 
 .NOTES
 Private dependencies:
@@ -125,7 +126,8 @@ function New-DFeArchive {
         foreach ($name in @('TipoDFe', 'FileName', 'TempPath', 'DestPath')) {
             $member = $archiveInfo.PSObject.Properties[$name]
 
-            if ($null -eq $member -or [string]::IsNullOrWhiteSpace([string]$member.Value)) {
+            if ($null -eq $member -or
+                [string]::IsNullOrWhiteSpace([string]$member.Value)) {
                 throw [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new(
                         "[$Cnpj] Archive information requires '$name'."
@@ -167,7 +169,8 @@ function New-DFeArchive {
         if ($modelValue -eq 55 -and $direction -cnotin @('Entrada', 'Saida')) {
             throw [System.Management.Automation.ErrorRecord]::new(
                 [System.InvalidOperationException]::new(
-                    "[$Cnpj] NFe archive '$($archiveInfo.FileName)' requires Entrada or Saida."
+                    "[$Cnpj] NFe archive '$($archiveInfo.FileName)' " +
+                    "requires Entrada or Saida."
                 ),
                 'ArchiveDirectionRequired',
                 [System.Management.Automation.ErrorCategory]::InvalidData,
@@ -197,7 +200,7 @@ function New-DFeArchive {
                 [System.InvalidOperationException]::new(
                     "[$Cnpj] Duplicate archive group '$archiveId'."
                 ),
-                'ArchiveDirectionDuplicate',
+                'ArchiveGroupDuplicate',
                 [System.Management.Automation.ErrorCategory]::InvalidData,
                 $archiveInfo
             )
@@ -206,6 +209,9 @@ function New-DFeArchive {
         $destPath = [System.IO.Path]::GetFullPath([string]$archiveInfo.DestPath)
         $tempPath = [System.IO.Path]::GetFullPath([string]$archiveInfo.TempPath)
 
+        # Rejects if either path already appears in the opposite set, if either
+        # path appears twice in its own set, or if dest and temp are identical
+        # within the same entry.
         $pathConflict = (
             $destPaths.Contains($destPath) -or
             $tempPaths.Contains($tempPath) -or
@@ -246,7 +252,8 @@ function New-DFeArchive {
         if ($groupEntries.Count -eq 0) {
             throw [System.Management.Automation.ErrorRecord]::new(
                 [System.InvalidOperationException]::new(
-                    "[$Cnpj] Archive '$($archiveInfo.FileName)' has no matching documents."
+                    "[$Cnpj] Archive '$($archiveInfo.FileName)' " +
+                    "has no matching documents."
                 ),
                 'ArchiveEntriesNotFound',
                 [System.Management.Automation.ErrorCategory]::InvalidData,
@@ -259,9 +266,10 @@ function New-DFeArchive {
                 if (-not $coveredNfeKeys.Add([string]$entry.chave_acesso)) {
                     throw [System.Management.Automation.ErrorRecord]::new(
                         [System.InvalidOperationException]::new(
-                            "[$Cnpj] NF-e '$($entry.chave_acesso)' is covered more than once."
+                            "[$Cnpj] NF-e '$($entry.chave_acesso)' " +
+                            "is covered more than once."
                         ),
-                        'ArchiveDirectionDuplicate',
+                        'ArchiveKeyDuplicate',
                         [System.Management.Automation.ErrorCategory]::InvalidData,
                         $entry
                     )
@@ -383,14 +391,25 @@ function New-DFeArchive {
 
             Publish-DFeArchive @publishParams
 
+            $directionProperty = $info.PSObject.Properties['Direcao']
+
+            $archiveDirection = if ($null -ne $directionProperty) {
+                $directionProperty.Value
+            } else {
+                $null
+            }
+
             [PSCustomObject]@{
                 TipoDFe  = $info.TipoDFe
+                Direcao  = $archiveDirection
                 FileName = $info.FileName
                 FileHash = $zipHash
                 TempPath = $info.TempPath
                 DestPath = $info.DestPath
             }
         } finally {
+            # Best-effort removal; a cleanup failure must not shadow the
+            # original error.
             if (Test-Path -LiteralPath $info.TempPath -PathType Leaf) {
                 $removeParams = @{
                     LiteralPath = $info.TempPath
