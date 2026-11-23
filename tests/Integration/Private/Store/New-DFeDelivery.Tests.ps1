@@ -64,7 +64,9 @@ Describe 'New-DFeDelivery' -Tag 'Integration' {
                 'PipeDFe.New-DFeDelivery.Tests-{0}' -f $testId
             )
 
-            $Script:ModuleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
+            $Script:ModuleRoot = (
+                Get-Item -LiteralPath $PSScriptRoot
+            ).Parent.Parent.Parent.Parent.FullName
 
             New-Item -Path $Script:TempRoot -ItemType Directory -Force |
                 Out-Null
@@ -458,7 +460,8 @@ WHERE delivery_id = @delivery_id;
                 $result.Recipients[0].PSObject.Properties.Name |
                     Should -Not -Contain 'Name'
 
-                $result.Recipients[0].Address | Should -Be 'finance@example.com'
+                $result.Recipients[0].Address |
+                    Should -Be 'finance@example.com'
             }
 
             It 'Stores period and timestamps in UTC round-trip format' {
@@ -552,7 +555,7 @@ WHERE delivery_id = @delivery_id;
                 $second.DeliveryKey    | Should -Be $first.DeliveryKey
                 $second.DeliveryStatus | Should -Be 'Prepared'
 
-                $second.Archives | Should -HaveCount 1
+                $second.Archives   | Should -HaveCount 1
                 $second.Recipients | Should -HaveCount 2
 
                 $countParams = @{
@@ -632,7 +635,7 @@ WHERE delivery_id = @delivery_id;
         Context 'Delivery identity' {
 
             It 'Produces the same key regardless of archive order' {
-                $nfe  = New-TestArchive -TipoDFe 'NFe' -Content 'ordered archive nfe'
+                $nfe  = New-TestArchive -TipoDFe 'NFe'  -Content 'ordered archive nfe'
                 $nfce = New-TestArchive -TipoDFe 'NFCe' -Content 'ordered archive nfce'
 
                 $firstParams = @{
@@ -879,6 +882,7 @@ WHERE delivery_id = @delivery_id;
 
             It 'Blocks changed archive content after a delivered period' {
                 $cnpj = '12345678000432'
+
                 Initialize-DFeIndex -Cnpj $cnpj | Out-Null
 
                 $firstArchive  = New-TestArchive -TipoDFe 'NFe' -Content 'original archive'
@@ -910,6 +914,7 @@ SELECT COUNT(*) FROM dfe_delivery;
 
             It 'Blocks changed recipients after a delivered period' {
                 $cnpj = '12345678000513'
+
                 Initialize-DFeIndex -Cnpj $cnpj | Out-Null
 
                 $archive = New-TestArchive -TipoDFe 'NFCom' -Content 'fiscal archive'
@@ -940,6 +945,7 @@ SELECT COUNT(*) FROM dfe_delivery;
 
             It 'Preserves idempotent retrieval for an identical delivered delivery' {
                 $cnpj = '12345678000602'
+
                 Initialize-DFeIndex -Cnpj $cnpj | Out-Null
 
                 $archive = New-TestArchive -TipoDFe 'NFe' -Content 'unchanged archive'
@@ -1371,6 +1377,110 @@ SELECT COUNT(*) FROM dfe_delivery;
                 }
 
                 Assert-TestErrorId -ErrorId 'DFeDeliveryInvalidPeriod' -ScriptBlock {
+                    New-DFeDelivery @params
+                }
+            }
+
+            It 'Persists separate NFe Entrada and Saida archives in one delivery' {
+                $entrada = New-TestArchive -TipoDFe 'NFe' -Content 'entrada content'
+                $saida   = New-TestArchive -TipoDFe 'NFe' -Content 'saida content'
+
+                $entrada | Add-Member -NotePropertyName Direcao -NotePropertyValue 'Entrada'
+                $saida   | Add-Member -NotePropertyName Direcao -NotePropertyValue 'Saida'
+
+                $params = @{
+                    Cnpj        = $Script:TestCnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($entrada, $saida)
+                    To          = @('direction@example.com')
+                }
+
+                $delivery = New-DFeDelivery @params
+
+                $delivery.Created        | Should -BeTrue
+                $delivery.DeliveryStatus | Should -Be 'Prepared'
+                @($delivery.Archives)    | Should -HaveCount 2
+
+                $directions = @(
+                    $delivery.Archives |
+                        Select-Object -ExpandProperty Direcao
+                )
+
+                $directions | Should -Contain 'Entrada'
+                $directions | Should -Contain 'Saida'
+
+                $storedCount = Get-TestScalar -Cnpj $Script:TestCnpj -Sql @'
+SELECT COUNT(*)
+FROM dfe_delivery_archive
+WHERE delivery_id = @delivery_id
+AND tipo_dfe = 'NFE';
+'@ -Parameters @{ '@delivery_id' = $delivery.DeliveryId }
+
+                $storedCount | Should -Be 2
+            }
+
+            It 'Reuses the same delivery identity regardless of NFe direction order' {
+                $entrada = New-TestArchive -TipoDFe 'NFe' -Content 'first direction'
+                $saida   = New-TestArchive -TipoDFe 'NFe' -Content 'second direction'
+
+                $entrada | Add-Member -NotePropertyName Direcao -NotePropertyValue 'Entrada'
+                $saida   | Add-Member -NotePropertyName Direcao -NotePropertyValue 'Saida'
+
+                $params = @{
+                    Cnpj        = $Script:TestCnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($entrada, $saida)
+                    To          = @('direction-order@example.com')
+                }
+
+                $first = New-DFeDelivery @params
+                $params.Archives = @($saida, $entrada)
+
+                $second = New-DFeDelivery @params
+
+                $first.DeliveryId  | Should -BeExactly $second.DeliveryId
+                $first.DeliveryKey | Should -BeExactly $second.DeliveryKey
+
+                $first.Created  | Should -BeTrue
+                $second.Created | Should -BeFalse
+            }
+
+            It 'Rejects duplicate NFe archives with the same direction' {
+                $firstArchive  = New-TestArchive -TipoDFe 'NFe' -Content 'entrada one'
+                $secondArchive = New-TestArchive -TipoDFe 'NFe' -Content 'entrada two'
+
+                $firstArchive  | Add-Member -NotePropertyName Direcao -NotePropertyValue 'Entrada'
+                $secondArchive | Add-Member -NotePropertyName Direcao -NotePropertyValue 'Entrada'
+
+                $params = @{
+                    Cnpj        = $Script:TestCnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($firstArchive, $secondArchive)
+                    To          = @('duplicate-direction@example.com')
+                }
+
+                Assert-TestErrorId -ErrorId 'DFeDeliveryDuplicateArchiveType' -ScriptBlock {
+                    New-DFeDelivery @params
+                }
+            }
+
+            It 'Rejects direction metadata for a non-NFe archive' {
+                $archive = New-TestArchive -TipoDFe 'CTe' -Content 'cte content'
+
+                $archive | Add-Member -NotePropertyName Direcao -NotePropertyValue 'Entrada'
+
+                $params = @{
+                    Cnpj        = $Script:TestCnpj
+                    PeriodStart = $Script:PeriodStart
+                    PeriodEnd   = $Script:PeriodEnd
+                    Archives    = @($archive)
+                    To          = @('invalid-direction@example.com')
+                }
+
+                Assert-TestErrorId -ErrorId 'DFeDeliveryInvalidArchiveDirection' -ScriptBlock {
                     New-DFeDelivery @params
                 }
             }
