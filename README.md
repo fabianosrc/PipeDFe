@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/PipeDFe.svg" alt="PipeDFe" width="280">
+  <img src="docs/assets/PipeDFe.svg" alt="PipeDFe" width="720">
 </p>
 
 # PipeDFe
