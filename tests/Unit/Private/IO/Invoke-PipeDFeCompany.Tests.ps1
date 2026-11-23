@@ -106,6 +106,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             $Script:Entry = [PSCustomObject]@{
                 chave_acesso          = '35260112345678000199550010000000011234567890'
                 modelo                = 55
+                direcao               = 'Saida'
                 dh_emi                = '2026-08-15T10:00:00+00:00'
                 file_path             = 'C:\xml\nfe.xml'
                 is_proc               = $false
@@ -122,6 +123,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
             $Script:SecondEntry = [PSCustomObject]@{
                 chave_acesso          = '35260112345678000199550010000000021234567891'
                 modelo                = 65
+                direcao               = $null
                 dh_emi                = '2026-08-16T10:00:00+00:00'
                 file_path             = 'C:\xml\nfce.xml'
                 is_proc               = $false
@@ -212,6 +214,7 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                 [PSCustomObject]@{
                     chave_acesso          = $Entry.chave_acesso
                     modelo                = [int]$Modelo
+                    direcao               = $Entry.direcao
                     dh_emi                = $Entry.dh_emi
                     file_path             = $Entry.file_path
                     is_proc               = $Entry.is_proc
@@ -1496,6 +1499,67 @@ Describe 'Invoke-PipeDFeCompany' -Tag 'Unit' {
                     'FilesSkipped'
                     'FilesIgnored'
                 )
+            }
+        }
+        #endregion
+
+        #region NFe archive direction planning
+        Context 'NFe archive direction planning' {
+
+            It 'Resolves separate archive information for Entrada and Saida' {
+                $entradaEntry = Copy-TestEntry -Entry $Script:Entry
+                $entradaEntry.chave_acesso = '3' * 44
+                $entradaEntry.direcao = 'Entrada'
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    @($Script:Entry, $entradaEntry)
+                }
+
+                Invoke-TestCompany | Out-Null
+
+                $resolveParams = @{
+                    CommandName = 'Resolve-DFeArchiveInfo'
+                    Times       = 1
+                    Exactly     = $true
+                    ParameterFilter = {
+                        $TipoDFe -eq 'NFe' -and $Direcao -eq 'Entrada'
+                    }
+                }
+
+                Should -Invoke @resolveParams
+
+                $resolveParams.ParameterFilter = {
+                    $TipoDFe -eq 'NFe' -and $Direcao -eq 'Saida'
+                }
+
+                Should -Invoke @resolveParams
+            }
+
+            It 'Does not create an empty Entrada archive for a Saida-only company' {
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $Script:Entry
+                }
+
+                Invoke-TestCompany | Out-Null
+
+                Should -Invoke -CommandName Resolve-DFeArchiveInfo -Times 1 -Exactly
+            }
+
+            It 'Aborts archive creation for an NFe without direction' {
+                $invalidEntry = Copy-TestEntry -Entry $Script:Entry
+                $invalidEntry.direcao = $null
+
+                Mock -CommandName Get-DFeDocumentEntry -MockWith {
+                    return $invalidEntry
+                }
+
+                $result = Invoke-TestCompany
+
+                $result.Status | Should -Be 'Falha'
+                $result.Erro | Should -Match 'valid direction'
+
+                Should -Invoke -CommandName New-DFeArchive -Times 0
+                Should -Invoke -CommandName Invoke-DFeDelivery -Times 0
             }
         }
         #endregion
