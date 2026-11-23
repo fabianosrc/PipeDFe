@@ -416,7 +416,7 @@ Describe 'Resolve-DFeArchiveInfo' {
             }
 
             It 'Exposes exactly the documented properties' {
-                $expected = @('TipoDFe', 'FileName', 'TempPath', 'DestPath')
+                $expected = @('TipoDFe', 'Direcao', 'FileName', 'TempPath', 'DestPath')
                 $actual   = @($Script:Sample.PSObject.Properties.Name)
 
                 $actual | Should -Be $expected
@@ -440,6 +440,103 @@ Describe 'Resolve-DFeArchiveInfo' {
 
             It 'Preserves TipoDFe as-is in the output' {
                 $Script:Sample.TipoDFe | Should -Be 'NFe'
+            }
+        }
+        #endregion
+
+        #region NFe direction
+        Context 'NFe direction archive naming' {
+
+            It 'Generates a distinct name for outgoing NFe archives' {
+                $params = @{
+                    TipoDFe   = 'NFe'
+                    Direcao   = 'Saida'
+                    Cnpj      = $Script:Cnpj
+                    Company   = $Script:ValidCompany
+                    DateRange = $Script:ValidDateRange
+                }
+
+                $result = Resolve-DFeArchiveInfo @params
+
+                $result.FileName |
+                    Should -Be 'NFe_Saida_11222333000181_RIBEIRO_BONAFE_202606.zip'
+
+                $result.TipoDFe | Should -Be 'NFe'
+                $result.Direcao | Should -Be 'Saida'
+            }
+
+            It 'Generates a distinct name for incoming NFe archives' {
+                $params = @{
+                    TipoDFe   = 'NFe'
+                    Direcao   = 'Entrada'
+                    Cnpj      = $Script:Cnpj
+                    Company   = $Script:ValidCompany
+                    DateRange = $Script:ValidDateRange
+                }
+
+                $result = Resolve-DFeArchiveInfo @params
+
+                $result.FileName |
+                    Should -Be 'NFe_Entrada_11222333000181_RIBEIRO_BONAFE_202606.zip'
+
+                $result.Direcao | Should -Be 'Entrada'
+            }
+
+            It 'Preserves the existing filename for other fiscal models' {
+                $params = @{
+                    TipoDFe   = 'CTe'
+                    Cnpj      = $Script:Cnpj
+                    Company   = $Script:ValidCompany
+                    DateRange = $Script:ValidDateRange
+                }
+
+                $result = Resolve-DFeArchiveInfo @params
+
+                $result.FileName |
+                    Should -Be 'CTe_11222333000181_RIBEIRO_BONAFE_202606.zip'
+
+                $result.Direcao | Should -BeNullOrEmpty
+            }
+
+            It 'Rejects direction for other fiscal models' {
+                $params = @{
+                    TipoDFe   = 'CTe'
+                    Direcao   = 'Entrada'
+                    Cnpj      = $Script:Cnpj
+                    Company   = $Script:ValidCompany
+                    DateRange = $Script:ValidDateRange
+                }
+
+                { Resolve-DFeArchiveInfo @params } |
+                    Should -Throw -ErrorId 'ArchiveDirectionUnsupported*'
+            }
+
+            It 'Rejects unsupported direction values' {
+                $params = @{
+                    TipoDFe   = 'NFe'
+                    Direcao   = 'Terceiro'
+                    Cnpj      = $Script:Cnpj
+                    Company   = $Script:ValidCompany
+                    DateRange = $Script:ValidDateRange
+                }
+
+                { Resolve-DFeArchiveInfo @params } | Should -Throw
+            }
+
+            It 'Preserves deterministic destination paths for matching inputs' {
+                $params = @{
+                    TipoDFe   = 'NFe'
+                    Direcao   = 'Saida'
+                    Cnpj      = $Script:Cnpj
+                    Company   = $Script:ValidCompany
+                    DateRange = $Script:ValidDateRange
+                }
+
+                $first  = Resolve-DFeArchiveInfo @params
+                $second = Resolve-DFeArchiveInfo @params
+
+                $first.DestPath | Should -Be $second.DestPath
+                $first.TempPath | Should -Not -Be $second.TempPath
             }
         }
         #endregion
