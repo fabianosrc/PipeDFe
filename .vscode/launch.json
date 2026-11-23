@@ -1,0 +1,73 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Current Script",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${file}",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Import Module (Dev Session)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/tools/Invoke-DevImport.ps1",
+            "cwd": "${workspaceFolder}",
+            "createTemporaryIntegratedConsole": true
+        },
+        {
+            "name": "Run Pester (All Tests)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/tools/Invoke-Tests.ps1",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Run Pester (Current Test Directory)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/tools/Invoke-Tests.ps1",
+            "args": [
+                "-TestPath",
+                "${fileDirname}",
+                "-DetailedOutput"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Run Pester (Coverage)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/tools/Invoke-Tests.ps1",
+            "args": [
+                "-Coverage"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Run PSScriptAnalyzer",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/tools/Invoke-Lint.ps1",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Run Build",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/tools/Invoke-Build.ps1",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Run Build (Skip Tests)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/tools/Invoke-Build.ps1",
+            "args": [
+                "-SkipTests"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
