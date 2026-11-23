@@ -71,6 +71,10 @@ function Resolve-DFeArchiveInfo {
         [ValidateNotNullOrEmpty()]
         [string]$TipoDFe,
 
+        [Parameter()]
+        [ValidateSet('Entrada', 'Saida')]
+        [string]$Direcao,
+
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [string]$Cnpj,
@@ -110,6 +114,17 @@ function Resolve-DFeArchiveInfo {
         )
     }
 
+    if ($PSBoundParameters.ContainsKey('Direcao') -and $TipoDFe -cne 'NFe') {
+        throw [System.Management.Automation.ErrorRecord]::new(
+            [System.ArgumentException]::new(
+                "Direction is supported only for NFe archives. Received '$TipoDFe'."
+            ),
+            'ArchiveDirectionUnsupported',
+            [System.Management.Automation.ErrorCategory]::InvalidArgument,
+            $TipoDFe
+        )
+    }
+
     $sourceName = if (-not [string]::IsNullOrWhiteSpace($Company.NomeFantasia)) {
         $Company.NomeFantasia
     } else {
@@ -141,8 +156,14 @@ function Resolve-DFeArchiveInfo {
     $periodSegment = Get-ArchivePeriodSegment -DateRange $DateRange
     $companyLabel = $labelWords -join '_'
 
+    $archivePrefix = if ($PSBoundParameters.ContainsKey('Direcao')) {
+        '{0}_{1}' -f $TipoDFe, $Direcao
+    } else {
+        $TipoDFe
+    }
+
     $fileName = '{0}_{1}_{2}_{3}.zip' -f (
-        $TipoDFe,
+        $archivePrefix,
         $Cnpj,
         $companyLabel,
         $periodSegment
@@ -163,8 +184,15 @@ function Resolve-DFeArchiveInfo {
         ChildPath = $fileName
     }
 
+    $direction = if ($PSBoundParameters.ContainsKey('Direcao')) {
+        $Direcao
+    } else {
+        $null
+    }
+
     [PSCustomObject]@{
         TipoDFe  = $TipoDFe
+        Direcao  = $direction
         FileName = $fileName
         TempPath = Join-Path @tempPathParams
         DestPath = Join-Path @destPathParams
