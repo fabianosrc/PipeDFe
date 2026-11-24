@@ -3,7 +3,6 @@
 Ensures the SQLite index database and schema exist for a given CNPJ.
 
 .DESCRIPTION
-.DESCRIPTION
 Creates the index database and its parent directory when missing.
 Initializes new indexes at the current schema version and can be called
 repeatedly for an existing index at that version.
@@ -114,7 +113,7 @@ function Initialize-DFeIndex {
     try {
         $connection = Open-SqliteConnection -Path $databasePath
 
-        $assertSupportedLegacyVersion = {
+        $assertSupportedIndexVersion = {
             param (
                 [Parameter()]
                 [int]$Version
@@ -127,16 +126,22 @@ function Initialize-DFeIndex {
                     'Automatic migration is not supported.'
                 )
             }
+
+            if ($Version -gt $Script:DFeIndexSchemaVersion) {
+                throw [System.InvalidOperationException]::new(
+                    "Unsupported index schema version '$Version'."
+                )
+            }
         }
 
-        # Reject legacy indexes before applying persistent journal settings.
+        # Reject unsupported index versions before applying persistent journal settings.
         $versionCommand = $connection.CreateCommand()
 
         try {
             $versionCommand.CommandText = 'PRAGMA user_version;'
             $initialVersion = [int]$versionCommand.ExecuteScalar()
 
-            & $assertSupportedLegacyVersion $initialVersion
+            & $assertSupportedIndexVersion $initialVersion
         } finally {
             $versionCommand.Dispose()
         }
@@ -173,19 +178,11 @@ function Initialize-DFeIndex {
             $command.CommandText = 'PRAGMA user_version;'
             $currentVersion = [int]$command.ExecuteScalar()
 
-            & $assertSupportedLegacyVersion $currentVersion
-
-            if ($currentVersion -ge 1 -and $currentVersion -lt $Script:DFeIndexSchemaVersion) {
-                throw [System.InvalidOperationException]::new(
-                    "Index schema version '$currentVersion' requires " +
-                    "an explicit migration to version '$Script:DFeIndexSchemaVersion'. " +
-                    'Automatic migration is not supported.'
-                )
-            }
+            & $assertSupportedIndexVersion $currentVersion
 
             # Schema definitions used to initialize new indexes and recover
-            # supported unversioned indexes. The version guard rejects
-            # versioned legacy indexes before schema changes.
+            # supported unversioned indexes. The version guard runs before
+            # any schema changes.
             $createCoreSchemaSql = @'
 CREATE TABLE IF NOT EXISTS dfe_document (
     chave_acesso          TEXT     NOT NULL PRIMARY KEY,
