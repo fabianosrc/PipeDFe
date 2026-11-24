@@ -6,16 +6,10 @@ Integration tests for safe rejection of unsupported index schema versions.
 
 .DESCRIPTION
 Coverage includes:
-- Existing index databases stamped with versions 1 through 6 are migrated
-  to the current schema without destroying existing rows.
-- An actual v7 database created by Initialize-DFeIndex is accepted without
-  migration and its schema version is not changed.
-- An incompatible version 0 database (dfe_document exists but is missing
-  required columns) is rejected without altering its schema.
-
-The version 1-6 fixtures intentionally test the migration path only; they
-are not asserted to be faithful historical schemas. Rejection of unsupported
-future versions is covered by Initialize-DFeIndex.Tests.ps1.
+  - Rejection of index versions 1 through 7 with existing data preserved.
+  - Preservation of journal mode when a legacy index is rejected.
+  - Idempotent initialization of an existing v8 index.
+  - Rejection of an incompatible unversioned index with its schema and data preserved.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -177,9 +171,32 @@ INSERT INTO guard_sentinel (value) VALUES ('preserved');
 
                 [int](Invoke-FixtureSql @sqlParams) | Should -Be 0
             }
+
+            It 'Preserves DELETE journal mode when rejecting a legacy index' {
+                $cnpj = '12345678000906'
+                $path = New-VersionGuardFixture -Cnpj $cnpj -Version 6
+
+                $journalParams = @{
+                    Path   = $path
+                    Sql    = 'PRAGMA journal_mode = DELETE;'
+                    Scalar = $true
+                }
+
+                (Invoke-FixtureSql @journalParams) | Should -Be 'delete'
+
+                $journalParams.Sql = 'PRAGMA journal_mode;'
+
+                (Invoke-FixtureSql @journalParams) | Should -Be 'delete'
+
+                { Initialize-DFeIndex -Cnpj $cnpj -ErrorAction Stop } |
+                    Should -Throw -ErrorId 'IndexSchemaInitFailed*'
+
+                (Invoke-FixtureSql @journalParams) | Should -Be 'delete'
+            }
         }
         #endregion
 
+        #region Current index schema
         Context 'Current index schema' {
 
             BeforeAll {

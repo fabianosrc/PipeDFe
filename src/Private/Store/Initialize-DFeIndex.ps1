@@ -3,10 +3,14 @@
 Ensures the SQLite index database and schema exist for a given CNPJ.
 
 .DESCRIPTION
-Creates the index database and its parent directory when missing, then
-initializes or upgrades the database schema to the current version.
+.DESCRIPTION
+Creates the index database and its parent directory when missing.
+Initializes new indexes at the current schema version and can be called
+repeatedly for an existing index at that version.
 
-The function is idempotent and safe to call on every run.
+Rejects legacy index versions 1 through 7 with IndexSchemaInitFailed.
+A version 0 index is initialized or recovered when its existing structure
+passes the compatibility checks.
 
 The database uses:
   - WAL journal mode for concurrent readers.
@@ -55,7 +59,7 @@ Schema:
 
 Schema evolution is tracked through SQLite PRAGMA user_version.
 
-Current schema version: 7.
+Current schema version: 8.
 
 .PARAMETER Cnpj
 14-digit normalized CNPJ identifying the company index.
@@ -110,6 +114,33 @@ function Initialize-DFeIndex {
     try {
         $connection = Open-SqliteConnection -Path $databasePath
 
+        $assertSupportedLegacyVersion = {
+            param (
+                [Parameter()]
+                [int]$Version
+            )
+
+            if ($Version -ge 1 -and $Version -lt $Script:DFeIndexSchemaVersion) {
+                throw [System.InvalidOperationException]::new(
+                    "Index schema version '$Version' requires " +
+                    "an explicit migration to version '$Script:DFeIndexSchemaVersion'. " +
+                    'Automatic migration is not supported.'
+                )
+            }
+        }
+
+        # Reject legacy indexes before applying persistent journal settings.
+        $versionCommand = $connection.CreateCommand()
+
+        try {
+            $versionCommand.CommandText = 'PRAGMA user_version;'
+            $initialVersion = [int]$versionCommand.ExecuteScalar()
+
+            & $assertSupportedLegacyVersion $initialVersion
+        } finally {
+            $versionCommand.Dispose()
+        }
+
         # Execute PRAGMAs individually for provider compatibility.
         $pragmaStatements = @(
             'PRAGMA journal_mode = WAL;'
@@ -142,6 +173,8 @@ function Initialize-DFeIndex {
             $command.CommandText = 'PRAGMA user_version;'
             $currentVersion = [int]$command.ExecuteScalar()
 
+            & $assertSupportedLegacyVersion $currentVersion
+
             if ($currentVersion -ge 1 -and $currentVersion -lt $Script:DFeIndexSchemaVersion) {
                 throw [System.InvalidOperationException]::new(
                     "Index schema version '$currentVersion' requires " +
@@ -150,14 +183,9 @@ function Initialize-DFeIndex {
                 )
             }
 
-            # -------------------------------------------------------------------------
-            # Schema definitions and migration steps.
-            #
-            # Each legacy version is upgraded to the current schema in a single call and
-            # inside the same transaction. This keeps Initialize-DFeIndex aligned with
-            # its contract: after successful return, the database is at the current
-            # schema version.
-            # -------------------------------------------------------------------------
+            # Schema definitions used to initialize new indexes and recover
+            # supported unversioned indexes. The version guard rejects
+            # versioned legacy indexes before schema changes.
             $createCoreSchemaSql = @'
 CREATE TABLE IF NOT EXISTS dfe_document (
     chave_acesso          TEXT     NOT NULL PRIMARY KEY,
