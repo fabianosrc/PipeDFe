@@ -90,7 +90,11 @@ function Restore-DFeSqliteDatabase {
 
     $targetDirectory = [System.IO.Path]::GetDirectoryName($targetPath)
 
-    $acceptedVersions = if ($Scope -eq 'Index') { @(6, 7) } else { @(1) }
+    $acceptedVersions = if ($Scope -eq 'Index') {
+        @(6, 7, $Script:DFeIndexSchemaVersion)
+    } else {
+        @(1)
+    }
 
     $requiredTables = if ($Scope -eq 'Index') {
         @(
@@ -194,7 +198,7 @@ function Restore-DFeSqliteDatabase {
             )
         }
 
-        if ($Scope -eq 'Index' -and $actualVersion -eq 7) {
+        if ($Scope -eq 'Index' -and $actualVersion -ge 7) {
             $requiredTables += 'dfe_nfse'
         }
 
