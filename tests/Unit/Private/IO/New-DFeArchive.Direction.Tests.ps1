@@ -251,6 +251,7 @@ Describe 'New-DFeArchive direction-aware planning' -Tag 'Unit' {
 
             $result[0].PSObject.Properties.Name | Should -Be @(
                 'TipoDFe'
+                'Direcao'
                 'FileName'
                 'FileHash'
                 'TempPath'
