@@ -241,6 +241,15 @@ Describe 'Open-DFeIndexConnection' {
         #region CNPJ validation
         Context 'Cnpj validation' {
 
+            BeforeAll {
+
+                $Script:CnpjValidationDatabasePath = New-TestDatabasePath
+
+                Mock -CommandName Initialize-DFeIndex -MockWith {
+                    $Script:CnpjValidationDatabasePath
+                }
+            }
+
             It 'Accepts a valid 14-digit CNPJ' {
                 {
                     $connection = Open-DFeIndexConnection -Cnpj '12345678000199' -ErrorAction Stop
