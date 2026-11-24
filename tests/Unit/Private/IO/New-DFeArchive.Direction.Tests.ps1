@@ -314,7 +314,7 @@ Describe 'New-DFeArchive direction-aware planning' -Tag 'Unit' {
             }
 
             { Invoke-DirectionTestArchive @params } |
-                Should -Throw -ErrorId 'ArchiveDirectionDuplicate*'
+                Should -Throw -ErrorId 'ArchiveGroupDuplicate*'
 
             Should -Invoke -CommandName Compress-DFeArchive -Times 0
         }
