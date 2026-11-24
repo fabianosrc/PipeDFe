@@ -142,6 +142,14 @@ function Initialize-DFeIndex {
             $command.CommandText = 'PRAGMA user_version;'
             $currentVersion = [int]$command.ExecuteScalar()
 
+            if ($currentVersion -ge 1 -and $currentVersion -lt $Script:DFeIndexSchemaVersion) {
+                throw [System.InvalidOperationException]::new(
+                    "Index schema version '$currentVersion' requires " +
+                    "an explicit migration to version '$Script:DFeIndexSchemaVersion'. " +
+                    'Automatic migration is not supported.'
+                )
+            }
+
             # -------------------------------------------------------------------------
             # Schema definitions and migration steps.
             #
