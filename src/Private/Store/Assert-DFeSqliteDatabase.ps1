@@ -44,7 +44,11 @@ function Assert-DFeSqliteDatabase {
         )
     }
 
-    $expectedVersion = if ($Scope -eq 'Index') { 7 } else { 1 }
+    $expectedVersion = if ($Scope -eq 'Index') {
+        $Script:DFeIndexSchemaVersion
+    } else {
+        1
+    }
 
     $requiredTables = if ($Scope -eq 'Index') {
         @(
