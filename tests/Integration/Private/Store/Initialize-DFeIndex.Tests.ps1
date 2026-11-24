@@ -359,8 +359,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                     Should -Be (Get-TestDatabasePath -Cnpj $Script:Cnpj)
             }
         }
+        #region
 
-        # WAL journal mode
+        #region WAL journal mode
         # WAL is stored in the database file itself - not a transient connection
         # setting - and is therefore visible to any subsequent connection.
         # It is part of the observable contract of Initialize-DFeIndex.
@@ -376,8 +377,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                 $journalMode.ToString().ToLowerInvariant() | Should -Be 'wal'
             }
         }
+        #endregion
 
-        # Schema version
+        #region Schema version
         Context 'Schema version' {
 
             It 'Sets PRAGMA user_version to 8 on a new database' {
@@ -390,8 +392,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                 [int]$version | Should -Be 8
             }
         }
+        #endregion
 
-        # Schema tables
+        #region Schema tables
         Context 'Schema tables' {
 
             It 'Creates dfe_document' {
@@ -424,8 +427,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                 Test-TestObjectExist @objParams | Should -BeTrue
             }
         }
+        #region
 
-        # dfe_document schema
+        #region dfe_document schema
         Context 'dfe_document schema' {
 
             BeforeAll {
@@ -538,8 +542,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                     Should -Match 'CHECK\s*\(\s*is_proc\s+IN\s*\(\s*0\s*,\s*1\s*\)\s*\)'
             }
         }
+        #endregion
 
-        # dfe_evento schema
+        #region dfe_evento schema
         Context 'dfe_evento schema' {
 
             BeforeAll {
@@ -597,8 +602,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                 $Script:EventoColumns['file_path'].Primary | Should -Be 2
             }
         }
+        #endregion
 
-        # dfe_inutilizacao schema
+        #region dfe_inutilizacao schema
         Context 'dfe_inutilizacao schema' {
 
             BeforeAll {
@@ -668,8 +674,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                 $Script:InutilizacaoColumns['indexed_at'].NotNull | Should -Be 1
             }
         }
+        #endregion
 
-        # Index definitions
+        #region Index definitions
         Context 'Index definitions' {
 
             It 'Creates ix_dfe_document_modelo_serie' {
@@ -746,8 +753,9 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
                 $sql | Should -Match '\bON\s+dfe_inutilizacao\s*\(\s*modelo\s*,\s*serie\s*\)'
             }
         }
+        #endregion
 
-        # Schema constraints
+        #region Schema constraints
         Context 'Schema constraints' {
 
             It 'Rejects duplicate dfe_document chave_acesso' {
@@ -817,8 +825,9 @@ INSERT INTO dfe_inutilizacao (
                     Should -Throw
             }
         }
+        #endregion
 
-        # Idempotency
+        #region Idempotency
         Context 'Idempotency' {
 
             BeforeAll {
@@ -885,8 +894,9 @@ INSERT INTO dfe_document (
                 [int]$version | Should -Be 8
             }
         }
+        #endregion
 
-        # Existing valid database (user_version = 1, schema intact)
+        #region Existing valid database (user_version = 1, schema intact)
         # Verifies that a v1 database is correctly migrated to v4 in a single call.
         Context 'Existing valid database' {
 
@@ -949,24 +959,42 @@ PRAGMA user_version = 1;
 '@
             }
 
-            It 'Succeeds without throwing' {
+            It 'Rejects schema v1 with IndexSchemaInitFailed' {
                 { Initialize-DFeIndex -Cnpj $Script:ExistingCnpj -ErrorAction Stop } |
-                    Should -Not -Throw
+                    Should -Throw -ErrorId 'IndexSchemaInitFailed*'
             }
 
-            It 'Returns the correct path' {
-                $path = Initialize-DFeIndex -Cnpj $Script:ExistingCnpj
-                $path | Should -Be $Script:ExistingDbPath
-            }
-
-            It 'Upgrades user_version to 7' {
+            It 'Preserves schema version 1' {
                 $sqlParams = @{
                     Path = $Script:ExistingDbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 8
+                [int](Invoke-TestScalar @sqlParams) | Should -Be 1
+            }
+
+            It 'Preserves existing core tables' {
+                foreach ($table in @('dfe_document', 'dfe_evento', 'dfe_inutilizacao')) {
+                    $sqlParams = @{
+                        Path = $Script:ExistingDbPath
+                        Type = 'table'
+                        Name = $table
+                    }
+
+                    Test-TestObjectExist @sqlParams | Should -BeTrue
+                }
+            }
+
+            It 'Does not create normalized fiscal tables' {
+                foreach ($table in @('dfe_nfe', 'dfe_nfe_item', 'dfe_nfe_total_icms')) {
+                    $sqlParams = @{
+                        Path = $Script:ExistingDbPath
+                        Type = 'table'
+                        Name = $table
+                    }
+
+                    Test-TestObjectExist @sqlParams | Should -BeFalse
+                }
             }
 
             It 'leaves all core tables intact' {
@@ -982,21 +1010,21 @@ PRAGMA user_version = 1;
                 }
             }
 
-            It 'Creates the normalized fiscal tables after migration' {
+            It 'Does not create normalized fiscal tables' {
                 foreach ($table in @('dfe_nfe', 'dfe_nfe_item', 'dfe_nfe_total_icms')) {
-                    $objParams = @{
+                    $sqlParams = @{
                         Path = $Script:ExistingDbPath
                         Type = 'table'
                         Name = $table
                     }
 
-                    Test-TestObjectExist @objParams |
-                        Should -BeTrue -Because "table '$table' must be created by v1->v4 migration"
+                    Test-TestObjectExist @sqlParams | Should -BeFalse
                 }
             }
         }
+        #endregion
 
-        # Partial compatible schema (mid-creation crash recovery)
+        #region Partial compatible schema (mid-creation crash recovery)
         #
         # Simulates a database left with user_version = 0 and one table already
         # created by a prior incomplete run. The existing table has the expected
@@ -1088,8 +1116,9 @@ CREATE TABLE dfe_document (
                 }
             }
         }
+        #endregion
 
-        # Normalized NF-e fiscal tables
+        #region Normalized NF-e fiscal tables
         Context 'Normalized NF-e fiscal tables' {
 
             It 'Creates the normalized NF-e fiscal tables' {
@@ -1119,8 +1148,9 @@ CREATE TABLE dfe_document (
                 }
             }
         }
+        #endregion
 
-        # dfe_nfe schema
+        #region dfe_nfe schema
         Context 'dfe_nfe schema' {
 
             BeforeAll {
@@ -1200,8 +1230,9 @@ CREATE TABLE dfe_document (
                     )
             }
         }
+        #endregion
 
-        # dfe_nfe_participante schema
+        #region dfe_nfe_participante schema
         Context 'dfe_nfe_participante schema' {
 
             BeforeAll {
@@ -1267,8 +1298,9 @@ CREATE TABLE dfe_document (
                     )
             }
         }
+        #endregion
 
-        # dfe_nfe_item schema
+        #region dfe_nfe_item schema
         Context 'dfe_nfe_item schema' {
 
             BeforeAll {
@@ -1313,8 +1345,9 @@ CREATE TABLE dfe_document (
                 }
             }
         }
+        #endregion
 
-        # Normalized fiscal Indexes
+        #region Normalized fiscal Indexes
         Context 'Normalized fiscal Indexes' {
 
             It 'Creates the CFOP item index' {
@@ -1339,8 +1372,9 @@ CREATE TABLE dfe_document (
                     Should -BeTrue
             }
         }
+        #endregion
 
-        # Normalized fiscal foreign keys
+        #region Normalized fiscal foreign keys
         Context 'Normalized fiscal foreign keys' {
 
             BeforeAll {
@@ -1477,8 +1511,9 @@ CREATE TABLE dfe_document (
                 }
             }
         }
+        #endregion
 
-        # Normalized fiscal cascade behavior
+        #region Normalized fiscal cascade behavior
         Context 'Normalized fiscal cascade behavior' {
 
             It 'Removes the complete fiscal projection when dfe_document is deleted' {
@@ -1558,9 +1593,10 @@ DELETE FROM dfe_document WHERE chave_acesso = @chave;
                 }
             }
         }
+        #endregion
 
-        # Schema migration v3 to v4
-        Context 'Schema migration v3 to v4' {
+        #region Unsupported schema v3
+        Context 'Unsupported schema v3' {
 
             BeforeAll {
 
@@ -1635,36 +1671,23 @@ PRAGMA user_version = 3;
                 } finally {
                     $connection.Dispose()
                 }
-
-                Initialize-DFeIndex -Cnpj $Script:MigrationCnpj | Out-Null
             }
 
-            It 'Upgrades user_version to 8' {
-                $invokeParams = @{
+            It 'Rejects schema v3 with IndexSchemaInitFailed' {
+                { Initialize-DFeIndex -Cnpj $Script:MigrationCnpj -ErrorAction Stop } |
+                    Should -Throw -ErrorId 'IndexSchemaInitFailed*'
+            }
+
+            It 'Preserves schema version 3' {
+                $sqlParams = @{
                     Path = $Script:MigrationDbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                $version = Invoke-TestScalar @invokeParams
-
-                [int]$version | Should -Be 8
+                [int](Invoke-TestScalar @sqlParams) | Should -Be 3
             }
 
-            It 'Creates the normalized fiscal schema' {
-                $objParams = @{
-                    Path = $Script:MigrationDbPath
-                    Type = 'table'
-                    Name = 'dfe_nfe'
-                }
-
-                Test-TestObjectExist @objParams | Should -BeTrue
-
-                $objParams['Name'] = 'dfe_nfe_item'
-
-                Test-TestObjectExist @objParams | Should -BeTrue
-            }
-
-            It 'Preserves existing dfe_document data' {
+            It 'Preserves existing fiscal documents' {
                 $sqlParams = @{
                     Path = $Script:MigrationDbPath
                     Sql  = @'
@@ -1674,24 +1697,23 @@ WHERE chave_acesso = '35260912345678000199550010000000011234567890';
 '@
                 }
 
-                $status = Invoke-TestScalar @sqlParams
-
-                [string]$status | Should -Be 'Processed'
+                [string](Invoke-TestScalar @sqlParams) | Should -BeExactly 'Processed'
             }
 
-            It 'Creates the processing status index when absent from a v3 database' {
-                $objParams = @{
+            It 'Does not create normalized fiscal tables' {
+                $sqlParams = @{
                     Path = $Script:MigrationDbPath
-                    Type = 'index'
-                    Name = 'ix_dfe_document_processing_status'
+                    Type = 'table'
+                    Name = 'dfe_nfe'
                 }
 
-                Test-TestObjectExist @objParams | Should -BeTrue
+                Test-TestObjectExist @sqlParams | Should -BeFalse
             }
         }
+        #endregion
 
-        # Schema migration v2 to v4
-        Context 'Schema migration v2 to v4' {
+        #region Unsupported schema v2
+        Context 'Unsupported schema v2' {
 
             BeforeAll {
 
@@ -1762,22 +1784,24 @@ PRAGMA user_version = 2;
                 } finally {
                     $connection.Dispose()
                 }
-
-                Initialize-DFeIndex -Cnpj $Script:MigrationV2Cnpj | Out-Null
             }
 
-            It 'Upgrades user_version to 8' {
+
+            It 'Rejects schema v2 with IndexSchemaInitFailed' {
+                { Initialize-DFeIndex -Cnpj $Script:MigrationV2Cnpj -ErrorAction Stop } |
+                    Should -Throw -ErrorId 'IndexSchemaInitFailed*'
+            }
+
+            It 'Preserves schema version 2' {
                 $sqlParams = @{
                     Path = $Script:MigrationV2DbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                $version = Invoke-TestScalar @sqlParams
-
-                [int]$version | Should -Be 8
+                [int](Invoke-TestScalar @sqlParams) | Should -Be 2
             }
 
-            It 'Adds processing state columns' {
+            It 'Does not add processing state columns' {
                 $sqlParams = @{
                     Path      = $Script:MigrationV2DbPath
                     TableName = 'dfe_document'
@@ -1785,35 +1809,24 @@ PRAGMA user_version = 2;
 
                 $columns = Get-TestTableInfo @sqlParams
 
-                $columns.ContainsKey('processing_status')     | Should -BeTrue
-                $columns.ContainsKey('processing_started_at') | Should -BeTrue
-                $columns.ContainsKey('processed_at')          | Should -BeTrue
-                $columns.ContainsKey('processing_error')      | Should -BeTrue
+                $columns.ContainsKey('processing_status')     | Should -BeFalse
+                $columns.ContainsKey('processing_started_at') | Should -BeFalse
+                $columns.ContainsKey('processed_at')          | Should -BeFalse
+                $columns.ContainsKey('processing_error')      | Should -BeFalse
             }
 
-            It 'Creates the normalized fiscal schema' {
-                $objParams = @{
-                    Path = $Script:MigrationV2DbPath
-                    Type = 'table'
-                    Name = 'dfe_nfe'
-                }
-
-                Test-TestObjectExist @objParams | Should -BeTrue
-            }
-
-            It 'Preserves existing dfe_document data' {
+            It 'Preserves existing fiscal documents' {
                 $sqlParams = @{
                     Path = $Script:MigrationV2DbPath
                     Sql  = 'SELECT COUNT(*) FROM dfe_document;'
                 }
 
-                $count = Invoke-TestScalar @sqlParams
-
-                [int]$count | Should -Be 1
+                [int](Invoke-TestScalar @sqlParams) | Should -Be 1
             }
         }
+        #endregion
 
-        # Unsupported (future) schema version
+        #region Unsupported (future) schema version
         Context 'Unsupported schema version' {
 
             BeforeAll {
@@ -1860,8 +1873,9 @@ PRAGMA user_version = 2;
                 [int]$version | Should -Be 999
             }
         }
+        #endregion
 
-        # Corrupted database
+        #region Corrupted database
         #
         # A file whose header is not a valid SQLite magic string causes the first
         # PRAGMA executed after Open() to fail with "file is not a database".
