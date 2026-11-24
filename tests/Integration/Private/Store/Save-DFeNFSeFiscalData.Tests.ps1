@@ -174,7 +174,7 @@ FROM
             Initialize-DFeIndex -Cnpj $cnpj | Should -BeExactly $path
 
             Invoke-NFSeTestSql -Path $path -Sql 'PRAGMA user_version;' |
-                Should -Be 7
+                Should -Be $Script:DFeIndexSchemaVersion
 
             $legacyParams = @{
                 Path = $path

@@ -380,14 +380,14 @@ Describe 'Initialize-DFeIndex' -Tag 'Integration' {
         # Schema version
         Context 'Schema version' {
 
-            It 'Sets PRAGMA user_version to 7 on a new database' {
+            It 'Sets PRAGMA user_version to 8 on a new database' {
                 $sqlParams = @{
                     Path = $Script:DbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 7
+                [int]$version | Should -Be 8
             }
         }
 
@@ -882,7 +882,7 @@ INSERT INTO dfe_document (
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 7
+                [int]$version | Should -Be 8
             }
         }
 
@@ -966,7 +966,7 @@ PRAGMA user_version = 1;
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 7
+                [int]$version | Should -Be 8
             }
 
             It 'leaves all core tables intact' {
@@ -1052,14 +1052,14 @@ CREATE TABLE dfe_document (
                     Should -Not -Throw
             }
 
-            It 'Completes the schema to user_version = 7' {
+            It 'Completes the schema to user_version = 8' {
                 $sqlParams = @{
                     Path = $Script:PartialDbPath
                     Sql  = 'PRAGMA user_version;'
                 }
 
                 $version = Invoke-TestScalar @sqlParams
-                [int]$version | Should -Be 7
+                [int]$version | Should -Be 8
             }
 
             It 'Creates all remaining core tables' {
@@ -1639,7 +1639,7 @@ PRAGMA user_version = 3;
                 Initialize-DFeIndex -Cnpj $Script:MigrationCnpj | Out-Null
             }
 
-            It 'Upgrades user_version to 7' {
+            It 'Upgrades user_version to 8' {
                 $invokeParams = @{
                     Path = $Script:MigrationDbPath
                     Sql  = 'PRAGMA user_version;'
@@ -1647,7 +1647,7 @@ PRAGMA user_version = 3;
 
                 $version = Invoke-TestScalar @invokeParams
 
-                [int]$version | Should -Be 7
+                [int]$version | Should -Be 8
             }
 
             It 'Creates the normalized fiscal schema' {
@@ -1766,7 +1766,7 @@ PRAGMA user_version = 2;
                 Initialize-DFeIndex -Cnpj $Script:MigrationV2Cnpj | Out-Null
             }
 
-            It 'Upgrades user_version to 7' {
+            It 'Upgrades user_version to 8' {
                 $sqlParams = @{
                     Path = $Script:MigrationV2DbPath
                     Sql  = 'PRAGMA user_version;'
@@ -1774,7 +1774,7 @@ PRAGMA user_version = 2;
 
                 $version = Invoke-TestScalar @sqlParams
 
-                [int]$version | Should -Be 7
+                [int]$version | Should -Be 8
             }
 
             It 'Adds processing state columns' {

@@ -407,7 +407,7 @@ Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
                     return @($Script:CompanyA)
                 }
 
-                New-MockHealthyDatabase -SchemaVersion 7
+                New-MockHealthyDatabase -SchemaVersion $Script:DFeIndexSchemaVersion
 
                 $Script:Result = Get-PipeDFeHealth
 
@@ -423,7 +423,7 @@ Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
             }
 
             It 'Sets DbVersion to 2' {
-                $Script:CompanyResult.DbVersion | Should -Be 7
+                $Script:CompanyResult.DbVersion | Should -Be 8
             }
 
             It 'Sets DbVersionOk to true' {
@@ -696,7 +696,7 @@ Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
                     )
 
                     if ($Path -eq $Script:DbPathA) {
-                        return New-MockSqliteConnection -SchemaVersion 7
+                        return New-MockSqliteConnection -SchemaVersion 8
                     }
 
                     return New-MockSqliteConnection -SchemaVersion 1
@@ -728,7 +728,7 @@ Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
                     return @($Script:CompanyA)
                 }
 
-                New-MockHealthyDatabase -SchemaVersion 7
+                New-MockHealthyDatabase -SchemaVersion 8
 
                 $Script:Result = Get-PipeDFeHealth
 

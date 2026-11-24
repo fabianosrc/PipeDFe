@@ -43,7 +43,7 @@ Describe 'Get-PipeDFeHealth' -Tag 'Integration' {
             $Script:RazaoSocial  = 'EMPRESA TESTE LTDA'
             $Script:NomeFantasia = 'EMPRESA TESTE'
 
-            $Script:ExpectedSchemaVersion = 7
+            $Script:ExpectedSchemaVersion = $Script:DFeIndexSchemaVersion
             #endregion
         }
 

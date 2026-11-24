@@ -238,7 +238,7 @@ INSERT INTO audit_execution (
                 $result.PSTypeNames    | Should -Contain 'PipeDFe.SqliteRestore'
                 $result.Scope          | Should -Be 'Index'
                 $result.IntegrityCheck | Should -Be 'ok'
-                $result.SchemaVersion  | Should -Be 7
+                $result.SchemaVersion  | Should -Be $Script:DFeIndexSchemaVersion
                 $result.SizeBytes      | Should -BeGreaterThan 0
 
                 $target = Get-StorePath -Scope Index -Cnpj $Script:IndexTargetCnpj
@@ -251,7 +251,8 @@ INSERT INTO audit_execution (
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                [int](Get-TestScalar @queryParams) | Should -Be 7
+                [int](Get-TestScalar @queryParams) |
+                    Should -Be $Script:DFeIndexSchemaVersion
             }
 
             It 'Restores a v6 index backup and allows initialization to migrate it' {
@@ -292,7 +293,7 @@ INSERT INTO audit_execution (
 
                 $target = Initialize-DFeIndex -Cnpj $targetCnpj
                 $validation = Assert-DFeSqliteDatabase -Path $target -Scope Index
-                $validation.SchemaVersion | Should -Be 7
+                $validation.SchemaVersion | Should -Be 8
             }
 
             It 'Restores persisted audit records into a new database' {
@@ -343,7 +344,7 @@ WHERE execution_id = @execution_id;
                     Sql  = 'PRAGMA user_version;'
                 }
 
-                [int](Get-TestScalar @queryParams) | Should -Be 7
+                [int](Get-TestScalar @queryParams) | Should -Be 8
             }
 
             It 'Rejects the destination database as its own source' {

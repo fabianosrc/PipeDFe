@@ -160,7 +160,7 @@ Describe 'Assert-DFeSqliteDatabase' -Tag 'Integration' {
                 $result.PSTypeNames    | Should -Contain 'PipeDFe.SqliteValidation'
                 $result.Path           | Should -Be $Script:IndexPath
                 $result.Scope          | Should -Be 'Index'
-                $result.SchemaVersion  | Should -Be 7
+                $result.SchemaVersion  | Should -Be $Script:DFeIndexSchemaVersion
                 $result.IntegrityCheck | Should -Be 'ok'
                 $result.SizeBytes      | Should -BeGreaterThan 0
             }

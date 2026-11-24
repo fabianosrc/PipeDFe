@@ -162,7 +162,7 @@ Describe 'Initialize-DFeIndex NFCom schema v6' -Tag 'Integration' {
             Remove-Item @removeItemParams
         }
 
-        It 'Creates the full NFCom schema for a new index at user_version 7' {
+        It 'Creates the full NFCom schema for a new index at user_version 8' {
             $path = Initialize-DFeIndex -Cnpj $Script:BaseCnpj
 
             $versionParams = @{
@@ -170,7 +170,7 @@ Describe 'Initialize-DFeIndex NFCom schema v6' -Tag 'Integration' {
                 Sql  = 'PRAGMA user_version;'
             }
 
-            [int](Get-TestScalar @versionParams) | Should -Be 7
+            [int](Get-TestScalar @versionParams) | Should -Be 8
 
             foreach ($tableName in $Script:NFComTables) {
                 $tableParams = @{
@@ -184,7 +184,7 @@ Describe 'Initialize-DFeIndex NFCom schema v6' -Tag 'Integration' {
             }
         }
 
-        It 'Migrates an existing v5 index to v7 without losing legacy records' {
+        It 'Migrates an existing v5 index to v8 without losing legacy records' {
             $cnpj = '12345678000188'
             $path = Initialize-DFeIndex -Cnpj $cnpj
 
@@ -240,7 +240,7 @@ INSERT INTO dfe_document (
                 Sql  = 'PRAGMA user_version;'
             }
 
-            [int](Get-TestScalar @versionParams) | Should -Be 7
+            [int](Get-TestScalar @versionParams) | Should -Be 8
 
             $docCountParams = @{
                 Path = $path
@@ -257,7 +257,7 @@ INSERT INTO dfe_document (
             [int](Get-TestScalar @nfcomTableParams) | Should -Be 1
         }
 
-        It 'Is idempotent for databases already at v7' {
+        It 'Is idempotent for databases already at v8' {
             $path   = Initialize-DFeIndex -Cnpj $Script:BaseCnpj
             $second = Initialize-DFeIndex -Cnpj $Script:BaseCnpj
 
@@ -268,7 +268,7 @@ INSERT INTO dfe_document (
                 Sql  = 'PRAGMA user_version;'
             }
 
-            [int](Get-TestScalar @versionParams) | Should -Be 7
+            [int](Get-TestScalar @versionParams) | Should -Be 8
         }
 
         It 'Rejects unsupported future schema versions with IndexSchemaInitFailed' {
@@ -277,7 +277,7 @@ INSERT INTO dfe_document (
 
             $bumpParams = @{
                 Path = $path
-                Sql  = 'PRAGMA user_version = 8;'
+                Sql  = 'PRAGMA user_version = 7;'
             }
 
             Invoke-TestNonQuery @bumpParams
