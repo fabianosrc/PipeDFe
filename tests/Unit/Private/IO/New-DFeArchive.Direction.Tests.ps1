@@ -394,6 +394,70 @@ Describe 'New-DFeArchive direction-aware planning' -Tag 'Unit' {
             Should -Invoke -CommandName Publish-DFeArchive  -Times 0
         }
 
+        It 'Rejects duplicate CTe groups with distinct paths before side effects' {
+            $outputPath = Join-Path $TestDrive 'duplicate-cte-output'
+            $company    = $Script:Company.PSObject.Copy()
+            $company.OutputPath = $outputPath
+
+            $first = New-DirectionTestInfo -TipoDFe 'CTe'
+            $first.DestPath = Join-Path $outputPath $first.FileName
+
+            $second = New-DirectionTestInfo -TipoDFe 'CTe'
+            $second.FileName = 'CTe-Second.zip'
+            $second.TempPath = Join-Path $TestDrive 'CTe-Second.tmp.zip'
+            $second.DestPath = Join-Path $outputPath $second.FileName
+
+            $archiveParams = @{
+                Cnpj         = $Script:Cnpj
+                Company      = $company
+                Entries      = @($Script:CteEntry)
+                ArchiveInfos = @($first, $second)
+                DateRange    = $Script:DateRange
+                ErrorAction  = 'Stop'
+            }
+
+            { New-DFeArchive @archiveParams } |
+                Should -Throw -ErrorId 'ArchiveGroupDuplicate*'
+
+            Test-Path -LiteralPath $outputPath | Should -BeFalse
+
+            Should -Invoke -CommandName Get-DFeEventoEntry  -Times 0 -Exactly
+            Should -Invoke -CommandName Compress-DFeArchive -Times 0 -Exactly
+            Should -Invoke -CommandName Publish-DFeArchive  -Times 0 -Exactly
+        }
+
+        It 'Rejects an NF-e key repeated across directions before side effects' {
+            $outputPath = Join-Path $TestDrive 'duplicate-key-output'
+            $company = $Script:Company.PSObject.Copy()
+            $company.OutputPath = $outputPath
+
+            $entrada = $Script:InEntry.PSObject.Copy()
+            $entrada.chave_acesso = $Script:OutEntry.chave_acesso
+
+            $entradaInfo = $Script:InInfo.PSObject.Copy()
+            $entradaInfo.DestPath = Join-Path $outputPath $entradaInfo.FileName
+
+            $saidaInfo = $Script:OutInfo.PSObject.Copy()
+            $saidaInfo.DestPath = Join-Path $outputPath $saidaInfo.FileName
+
+            $params = @{
+                Cnpj         = $Script:Cnpj
+                Company      = $company
+                Entries      = @($entrada, $Script:OutEntry)
+                ArchiveInfos = @($entradaInfo, $saidaInfo)
+                DateRange    = $Script:DateRange
+                ErrorAction  = 'Stop'
+            }
+
+            { New-DFeArchive @params } |
+                Should -Throw -ErrorId 'ArchiveKeyDuplicate*'
+
+            Test-Path -LiteralPath $outputPath | Should -BeFalse
+            Should -Invoke -CommandName Get-DFeEventoEntry -Times 0 -Exactly
+            Should -Invoke -CommandName Compress-DFeArchive -Times 0 -Exactly
+            Should -Invoke -CommandName Publish-DFeArchive -Times 0 -Exactly
+        }
+
         It 'Preserves ZipNotCreated when compression does not create the file' {
             Mock -CommandName Compress-DFeArchive -MockWith {
 

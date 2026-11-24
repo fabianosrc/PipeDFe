@@ -234,6 +234,33 @@ Describe 'New-DFeArchive' -Tag 'Integration' {
             }
         }
 
+        It 'Keeps the first ZIP published when the second source fails validation' {
+            $invalidSource = $Script:Documents[1].PSObject.Copy()
+            $invalidSource.sha256 = '0' * 64
+
+            $first  = $Script:Infos[0]
+            $second = $Script:Infos[1]
+
+            $archiveParams = @{
+                Cnpj         = $Script:Cnpj
+                Company      = $Script:Company
+                Entries      = @($Script:Documents[0], $invalidSource)
+                ArchiveInfos = @($first, $second)
+                DateRange    = $Script:DateRange
+                ErrorAction  = 'Stop'
+            }
+
+            { New-DFeArchive @archiveParams } |
+                Should -Throw -ErrorId 'ArchiveSourceHashMismatch*'
+
+            Test-Path -LiteralPath $first.DestPath -PathType Leaf |
+                Should -BeTrue
+
+            Test-Path -LiteralPath $second.DestPath | Should -BeFalse
+            Test-Path -LiteralPath $first.TempPath  | Should -BeFalse
+            Test-Path -LiteralPath $second.TempPath | Should -BeFalse
+        }
+
         It 'Publishes independent Entrada, Saida and CTe ZIPs with their own events' {
             $params = @{
                 Cnpj         = $Script:Cnpj
@@ -249,8 +276,23 @@ Describe 'New-DFeArchive' -Tag 'Integration' {
             $results | Should -HaveCount 3
 
             foreach ($info in $Script:Infos) {
-                Test-Path -LiteralPath $info.DestPath -PathType Leaf | Should -BeTrue
-                Test-Path -LiteralPath $info.TempPath -PathType Leaf | Should -BeFalse
+                Test-Path -LiteralPath $info.DestPath -PathType Leaf |
+                    Should -BeTrue
+
+                Test-Path -LiteralPath $info.TempPath -PathType Leaf |
+                    Should -BeFalse
+            }
+
+            foreach ($result in $results) {
+                $hashParams = @{
+                    LiteralPath = $result.DestPath
+                    Algorithm   = 'SHA256'
+                }
+
+                $publishedHash = (Get-FileHash @hashParams).Hash
+
+                $result.FileHash.ToLowerInvariant() |
+                    Should -BeExactly $publishedHash.ToLowerInvariant()
             }
 
             $entrada = @(Get-LocalZipEntry -Path $Script:Infos[0].DestPath)
@@ -284,7 +326,8 @@ Describe 'New-DFeArchive' -Tag 'Integration' {
                 ErrorAction  = 'Stop'
             }
 
-            { New-DFeArchive @params } | Should -Throw
+            { New-DFeArchive @params } |
+                Should -Throw -ErrorId 'ArchiveSourceHashMismatch*'
 
             $testPathParamsOne = @{
                 LiteralPath = $Script:Infos[0].DestPath
