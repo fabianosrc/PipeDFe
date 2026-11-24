@@ -288,6 +288,38 @@ CREATE TABLE dfe_delivery_archive (
         ON DELETE CASCADE
 );
 
+INSERT INTO dfe_delivery (
+    delivery_id,
+    delivery_key,
+    period_start,
+    period_end,
+    delivery_status,
+    created_at,
+    updated_at
+) VALUES (
+    'legacy-delivery',
+    lower(hex(zeroblob(32))),
+    '2026-10-01',
+    '2026-10-31',
+    'Delivered',
+    '2026-11-01',
+    '2026-11-01'
+);
+
+INSERT INTO dfe_delivery_archive (
+    delivery_id,
+    tipo_dfe,
+    file_name,
+    file_hash,
+    dest_path
+) VALUES (
+    'legacy-delivery',
+    'NFE',
+    'NFe.zip',
+    lower(hex(zeroblob(32))),
+    'NFe.zip'
+);
+
 PRAGMA user_version = 6;
 '@
 
@@ -352,6 +384,19 @@ WHERE (name = 'delivery_id' AND pk = 1)
                 # Restoration must not imply an automatic schema migration.
                 { Initialize-DFeIndex -Cnpj $targetCnpj -ErrorAction Stop } |
                     Should -Throw -ErrorId 'IndexSchemaInitFailed*'
+
+                $deliveryParams = @{
+                    Path = $target
+                    Sql  = @'
+SELECT d.delivery_status || '|' || a.tipo_dfe || '|' || a.file_name
+FROM dfe_delivery AS d
+INNER JOIN dfe_delivery_archive AS a ON a.delivery_id = d.delivery_id
+WHERE d.delivery_id = 'legacy-delivery';
+'@
+                }
+
+                (Get-TestScalar @deliveryParams) |
+                    Should -BeExactly 'Delivered|NFE|NFe.zip'
 
                 # Rejected initialization must not change the restored database.
                 [int](Get-TestScalar @versionParams) | Should -Be 6
