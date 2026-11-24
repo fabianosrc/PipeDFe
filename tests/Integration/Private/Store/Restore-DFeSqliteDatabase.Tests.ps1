@@ -255,25 +255,70 @@ INSERT INTO audit_execution (
                     Should -Be $Script:DFeIndexSchemaVersion
             }
 
-            It 'Restores a v6 index backup and allows initialization to migrate it' {
+            It 'Restores a v6 index backup without allowing automatic migration' {
                 $sourceCnpj = '92345678000199'
                 $targetCnpj = '92345678000188'
-                $source = Initialize-DFeIndex -Cnpj $sourceCnpj
-                $connection = Open-SqliteConnection -Path $source
 
-                try {
-                    $command = $connection.CreateCommand()
-                    try {
-                        $command.CommandText = 'DROP TABLE dfe_nfse; PRAGMA user_version = 6;'
-                        $null = $command.ExecuteNonQuery()
-                    } finally {
-                        $command.Dispose()
-                    }
-                } finally {
-                    $connection.Dispose()
+                $source = Initialize-DFeIndex -Cnpj $sourceCnpj
+
+                # Reconstruct the historical v6 delivery archive structure.
+                # The fixture starts from an isolated v8 database and replaces
+                # the archive table with the v6 definition.
+                $fixtureSql = @'
+DROP TABLE dfe_nfse;
+
+DROP TABLE dfe_delivery_archive;
+
+CREATE TABLE dfe_delivery_archive (
+    delivery_id TEXT NOT NULL,
+    tipo_dfe    TEXT NOT NULL,
+    file_name   TEXT NOT NULL,
+    file_hash   TEXT NOT NULL,
+    dest_path   TEXT NOT NULL,
+
+    PRIMARY KEY (delivery_id, tipo_dfe),
+
+    CHECK (
+        length(file_hash) = 64
+        AND file_hash NOT GLOB '*[^0-9a-f]*'
+    ),
+
+    FOREIGN KEY (delivery_id)
+        REFERENCES dfe_delivery (delivery_id)
+        ON DELETE CASCADE
+);
+
+PRAGMA user_version = 6;
+'@
+
+                Invoke-TestNonQuery -Path $source -Sql $fixtureSql
+
+                # Verify the historical archive contract before backing up.
+                $directionParams = @{
+                    Path = $source
+                    Sql  = @'
+SELECT COUNT(*)
+FROM pragma_table_info('dfe_delivery_archive')
+WHERE name = 'direcao';
+'@
                 }
 
+                [int](Get-TestScalar @directionParams) | Should -Be 0
+
+                $primaryKeyParams = @{
+                    Path = $source
+                    Sql  = @'
+SELECT COUNT(*)
+FROM pragma_table_info('dfe_delivery_archive')
+WHERE (name = 'delivery_id' AND pk = 1)
+   OR (name = 'tipo_dfe' AND pk = 2);
+'@
+                }
+
+                [int](Get-TestScalar @primaryKeyParams) | Should -Be 2
+
                 $backupPath = New-TestBackupPath -Name 'index-v6'
+
                 $backupParams = @{
                     Cnpj            = $sourceCnpj
                     Scope           = 'Index'
@@ -289,11 +334,53 @@ INSERT INTO audit_execution (
                 }
 
                 $result = Restore-DFeSqliteDatabase @restoreParams
+
                 $result.SchemaVersion | Should -Be 6
 
-                $target = Initialize-DFeIndex -Cnpj $targetCnpj
-                $validation = Assert-DFeSqliteDatabase -Path $target -Scope Index
-                $validation.SchemaVersion | Should -Be 8
+                $target = Get-StorePath -Scope Index -Cnpj $targetCnpj
+
+                Test-Path -LiteralPath $target -PathType Leaf |
+                    Should -BeTrue
+
+                $versionParams = @{
+                    Path = $target
+                    Sql  = 'PRAGMA user_version;'
+                }
+
+                [int](Get-TestScalar @versionParams) | Should -Be 6
+
+                # Restoration must not imply an automatic schema migration.
+                { Initialize-DFeIndex -Cnpj $targetCnpj -ErrorAction Stop } |
+                    Should -Throw -ErrorId 'IndexSchemaInitFailed*'
+
+                # Rejected initialization must not change the restored database.
+                [int](Get-TestScalar @versionParams) | Should -Be 6
+
+                $restoredDirectionParams = @{
+                    Path = $target
+                    Sql  = $directionParams.Sql
+                }
+
+                [int](Get-TestScalar @restoredDirectionParams) | Should -Be 0
+
+                $restoredPrimaryKeyParams = @{
+                    Path = $target
+                    Sql  = $primaryKeyParams.Sql
+                }
+
+                [int](Get-TestScalar @restoredPrimaryKeyParams) | Should -Be 2
+
+                $nfseParams = @{
+                    Path = $target
+                    Sql  = @'
+SELECT COUNT(*)
+FROM sqlite_master
+WHERE type = 'table'
+  AND name = 'dfe_nfse';
+'@
+                }
+
+                [int](Get-TestScalar @nfseParams) | Should -Be 0
             }
 
             It 'Restores persisted audit records into a new database' {
