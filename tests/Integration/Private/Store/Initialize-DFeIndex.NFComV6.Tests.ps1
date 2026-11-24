@@ -184,7 +184,7 @@ Describe 'Initialize-DFeIndex NFCom schema v6' -Tag 'Integration' {
             }
         }
 
-        It 'Migrates an existing v5 index to v8 without losing legacy records' {
+        It 'Rejects a v5 index without modifying existing fiscal records' {
             $cnpj = '12345678000188'
             $path = Initialize-DFeIndex -Cnpj $cnpj
 
@@ -231,16 +231,15 @@ INSERT INTO dfe_document (
 
             Invoke-TestNonQuery @insertDocParams
 
-            $result = Initialize-DFeIndex -Cnpj $cnpj
-
-            $result | Should -Be $path
+            { Initialize-DFeIndex -Cnpj $cnpj -ErrorAction Stop } |
+                Should -Throw -ErrorId 'IndexSchemaInitFailed*'
 
             $versionParams = @{
                 Path = $path
                 Sql  = 'PRAGMA user_version;'
             }
 
-            [int](Get-TestScalar @versionParams) | Should -Be 8
+            [int](Get-TestScalar @versionParams) | Should -Be 5
 
             $docCountParams = @{
                 Path = $path
@@ -250,11 +249,11 @@ INSERT INTO dfe_document (
             [int](Get-TestScalar @docCountParams) | Should -Be 1
 
             $nfcomTableParams = @{
-                Path       = $path
-                Sql        = "SELECT COUNT(*) FROM sqlite_master WHERE name = 'dfe_nfcom';"
+                Path = $path
+                Sql  = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dfe_nfcom';"
             }
 
-            [int](Get-TestScalar @nfcomTableParams) | Should -Be 1
+            [int](Get-TestScalar @nfcomTableParams) | Should -Be 0
         }
 
         It 'Is idempotent for databases already at v8' {
@@ -271,7 +270,7 @@ INSERT INTO dfe_document (
             [int](Get-TestScalar @versionParams) | Should -Be 8
         }
 
-        It 'Rejects unsupported future schema versions with IndexSchemaInitFailed' {
+        It 'Rejects unsupported legacy schema v7' {
             $cnpj = '12345678000177'
             $path = Initialize-DFeIndex -Cnpj $cnpj
 
