@@ -125,10 +125,13 @@ Describe 'Save-DFeNFSeFiscalData' -Tag 'Integration' {
         }
 
         #region Schema migration
-        It 'Upgrades a v6 index without changing existing fiscal and delivery tables' {
+        It 'Rejects a legacy schema version without modifying existing fiscal data' {
             $cnpj = '12345678000188'
             $path = Initialize-DFeIndex -Cnpj $cnpj
 
+            # Simulate an unsupported schema version while preserving fiscal records.
+            # This fixture verifies rejection and data preservation, not historical
+            # schema migration compatibility.
             $setupParams = @{
                 Path     = $path
                 NonQuery = $true
@@ -170,12 +173,19 @@ FROM
 
             Invoke-NFSeTestSql @setupParams
 
-            Initialize-DFeIndex -Cnpj $cnpj | Should -BeExactly $path
-            Initialize-DFeIndex -Cnpj $cnpj | Should -BeExactly $path
+            # Legacy schemas must not be upgraded automatically.
+            { Initialize-DFeIndex -Cnpj $cnpj -ErrorAction Stop } |
+                Should -Throw -ErrorId 'IndexSchemaInitFailed*'
 
-            Invoke-NFSeTestSql -Path $path -Sql 'PRAGMA user_version;' |
-                Should -Be $Script:DFeIndexSchemaVersion
+            # The original schema version must remain unchanged.
+            $versionParams = @{
+                Path = $path
+                Sql  = 'PRAGMA user_version;'
+            }
 
+            [int](Invoke-NFSeTestSql @versionParams) | Should -Be 6
+
+            # Existing fiscal data must remain intact.
             $legacyParams = @{
                 Path = $path
                 Sql  = @'
@@ -187,15 +197,18 @@ INNER JOIN dfe_nfcom AS n ON n.chave_acesso = d.chave_acesso;
 
             Invoke-NFSeTestSql @legacyParams | Should -BeExactly 'nfcom.xml|123'
 
+            # Initialization must not recreate missing schema objects.
             $tableParams = @{
                 Path = $path
                 Sql  = @'
-SELECT COUNT(*) FROM sqlite_master
-WHERE type = 'table' AND name IN ('dfe_nfse', 'dfe_nfcom', 'dfe_nfe', 'dfe_delivery');
+SELECT COUNT(*)
+FROM sqlite_master
+WHERE type = 'table'
+  AND name = 'dfe_nfse';
 '@
             }
 
-            Invoke-NFSeTestSql @tableParams | Should -Be 4
+            [int](Invoke-NFSeTestSql @tableParams) | Should -Be 0
         }
         #endregion
 
