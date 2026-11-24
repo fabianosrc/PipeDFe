@@ -7,7 +7,7 @@ Integration tests for safe rejection of unsupported index schema versions.
 .DESCRIPTION
 Coverage includes:
   - Rejection of index versions 1 through 7 with existing data preserved.
-  - Preservation of journal mode when a legacy index is rejected.
+  - Preservation of journal mode when a legacy or future index is rejected.
   - Idempotent initialization of an existing v8 index.
   - Rejection of an incompatible unversioned index with its schema and data preserved.
 #>
@@ -192,6 +192,46 @@ INSERT INTO guard_sentinel (value) VALUES ('preserved');
                     Should -Throw -ErrorId 'IndexSchemaInitFailed*'
 
                 (Invoke-FixtureSql @journalParams) | Should -Be 'delete'
+            }
+            It 'Preserves DELETE journal mode when rejecting a future index version' {
+                $futureVersion = $Script:DFeIndexSchemaVersion + 1
+                $fixtureParams = @{
+                    Cnpj    = '12345678000909'
+                    Version = $futureVersion
+                }
+
+                $path = New-VersionGuardFixture @fixtureParams
+
+                $journalParams = @{
+                    Path   = $path
+                    Sql    = 'PRAGMA journal_mode = DELETE;'
+                    Scalar = $true
+                }
+
+                (Invoke-FixtureSql @journalParams) | Should -Be 'delete'
+
+                $journalParams.Sql = 'PRAGMA journal_mode;'
+
+                (Invoke-FixtureSql @journalParams) | Should -Be 'delete'
+
+                $initializeParams = @{
+                    Cnpj        = $fixtureParams.Cnpj
+                    ErrorAction = 'Stop'
+                }
+
+                { Initialize-DFeIndex @initializeParams } |
+                    Should -Throw -ErrorId 'IndexSchemaInitFailed*'
+
+                (Invoke-FixtureSql @journalParams) | Should -Be 'delete'
+
+                $versionParams = @{
+                    Path   = $path
+                    Sql    = 'PRAGMA user_version;'
+                    Scalar = $true
+                }
+
+                [int](Invoke-FixtureSql @versionParams) |
+                    Should -Be $futureVersion
             }
         }
         #endregion
