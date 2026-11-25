@@ -242,11 +242,11 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
         It 'Persists pre-SMTP failure as Failed and allows a controlled retry' {
             Mock -CommandName Send-DFeNotification -MockWith {
                 [pscustomobject]@{
-                    Success       = $false
-                    EmailsSent    = @()
-                    ErrorMessage  = 'Attachment validation failed.'
-                    FailedAt      = 'Send'
-                    SendAttempted = $false
+                    Success             = $false
+                    EmailsSent          = @()
+                    ErrorMessage        = 'Attachment validation failed.'
+                    FailedAt            = 'Send'
+                    AcceptanceUncertain = $false
                 }
             }
 
@@ -264,11 +264,11 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             Mock -CommandName Send-DFeNotification -MockWith {
                 [pscustomobject]@{
-                    Success       = $true
-                    EmailsSent    = @('dest@example.com')
-                    ErrorMessage  = $null
-                    FailedAt      = $null
-                    SendAttempted = $true
+                    Success             = $true
+                    EmailsSent          = @('dest@example.com')
+                    ErrorMessage        = $null
+                    FailedAt            = $null
+                    AcceptanceUncertain = $false
                 }
             }
 
@@ -289,11 +289,11 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
         It 'Persists an uncertain SMTP outcome as Indeterminate and blocks another send' {
             Mock -CommandName Send-DFeNotification -MockWith {
                 [pscustomobject]@{
-                    Success       = $false
-                    EmailsSent    = @()
-                    ErrorMessage  = 'SMTP connection closed during send.'
-                    FailedAt      = 'Send'
-                    SendAttempted = $true
+                    Success             = $false
+                    EmailsSent          = @()
+                    ErrorMessage        = 'SMTP connection closed after DATA without a final response.'
+                    FailedAt            = 'Send'
+                    AcceptanceUncertain = $true
                 }
             }
 
@@ -335,7 +335,7 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
             Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope It
         }
 
-        It 'Treats a missing SendAttempted flag as indeterminate' {
+        It 'Treats a missing AcceptanceUncertain flag as indeterminate' {
             Mock -CommandName Send-DFeNotification -MockWith {
                 [pscustomobject]@{
                     Success      = $false
