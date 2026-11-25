@@ -1452,11 +1452,24 @@ function Send-SmtpMessage {
             Write-SmtpDataLine -Writer $writer -Line "--$boundary--"
         }
 
+        # Acceptance is uncertain until the server gives a definitive reply.
+        if ($null -ne $AcceptanceUncertain) {
+            $AcceptanceUncertain.Value = $true
+        }
+
         # DATA terminator.
         $writer.WriteLine('.')
         $writer.Flush()
 
         $dataResponse = Read-SmtpResponse -Stream $activeStream
+
+        if ($null -ne $AcceptanceUncertain -and (
+                $dataResponse.Code -eq 250 -or
+                ($dataResponse.Code -ge 400 -and $dataResponse.Code -le 599)
+            )
+        ) {
+            $AcceptanceUncertain.Value = $false
+        }
 
         Write-Verbose -Message "SMTP S: $($dataResponse.Text)"
 
