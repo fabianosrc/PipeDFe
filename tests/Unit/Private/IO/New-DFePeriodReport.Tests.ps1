@@ -42,30 +42,23 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
-        BeforeEach {
+        BeforeAll {
 
             $joinParamsOne = @{
                 Path      = $TestDrive
                 ChildPath = [guid]::NewGuid().ToString('N')
             }
 
-            $outputPath = Join-Path @joinParamsOne
+            $Script:BaseOutputPath = Join-Path @joinParamsOne
 
-            [void][System.IO.Directory]::CreateDirectory($outputPath)
-
-            $joinParamsTwo = @{
-                Path      = $outputPath
-                ChildPath = 'Relatorios'
-            }
-
-            $Script:ReportRoot = Join-Path @joinParamsTwo
+            [void][System.IO.Directory]::CreateDirectory($Script:BaseOutputPath)
 
             $Script:ReportParams = @{
                 Company = [PSCustomObject]@{
                     Cnpj         = '11222333000181'
                     NomeFantasia = 'Example'
                     RazaoSocial  = 'Example Ltda'
-                    OutputPath   = $outputPath
+                    OutputPath   = $Script:BaseOutputPath
                 }
                 DateRange = [PSCustomObject]@{
                     Start = [System.DateTimeOffset]'2026-01-01T00:00:00-03:00'
@@ -96,8 +89,32 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
         #region Successful publication
         Context 'Successful publication' {
 
+            BeforeEach {
+
+                $joinParams = @{
+                    Path      = $TestDrive
+                    ChildPath = [guid]::NewGuid().ToString('N')
+                }
+
+                $itOutputPath = Join-Path @joinParams
+
+                [void][System.IO.Directory]::CreateDirectory($itOutputPath)
+
+                $rootJoinParams = @{
+                    Path      = $itOutputPath
+                    ChildPath = 'Relatorios'
+                }
+
+                $Script:ReportRoot = Join-Path @rootJoinParams
+
+                $Script:ItParams = $Script:ReportParams.Clone()
+                $Script:ItParams.Company = $Script:ReportParams.Company.PSObject.Copy()
+                $Script:ItParams.Company.NomeFantasia = 'Example'
+                $Script:ItParams.Company.OutputPath   = $itOutputPath
+            }
+
             It 'Publishes the pair and returns only the HTML and XLSX paths in order' {
-                $paths = @(New-DFePeriodReport @Script:ReportParams)
+                $paths = @(New-DFePeriodReport @Script:ItParams)
 
                 $paths | Should -HaveCount 2
 
@@ -124,7 +141,7 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
             }
 
             It 'Queries the annual period once and forwards the period and report data' {
-                New-DFePeriodReport @Script:ReportParams | Out-Null
+                New-DFePeriodReport @Script:ItParams | Out-Null
 
                 $invokeParamsOne = @{
                     CommandName = 'Get-DFeNFeCfopReportData'
@@ -144,8 +161,12 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
                     ModuleName      = 'PipeDFe'
                     ParameterFilter = {
                         $Cnpj -eq '11222333000181' -and
-                        $StartDate.EqualsExact([System.DateTimeOffset]'2026-01-01T00:00:00-03:00') -and
-                        $EndDate.EqualsExact([System.DateTimeOffset]'2026-12-31T23:59:59-03:00')
+                        $StartDate.EqualsExact(
+                            [System.DateTimeOffset]'2026-01-01T00:00:00-03:00'
+                        ) -and
+                        $EndDate.EqualsExact(
+                            [System.DateTimeOffset]'2026-12-31T23:59:59-03:00'
+                        )
                     }
                 }
 
@@ -160,8 +181,12 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
                     ParameterFilter = {
                         $CompanyName -eq 'Example' -and
                         $Cnpj -eq '11222333000181' -and
-                        $StartDate.EqualsExact([System.DateTimeOffset]'2026-01-01T00:00:00-03:00') -and
-                        $EndDate.EqualsExact([System.DateTimeOffset]'2026-12-31T23:59:59-03:00') -and
+                        $StartDate.EqualsExact(
+                            [System.DateTimeOffset]'2026-01-01T00:00:00-03:00'
+                        ) -and
+                        $EndDate.EqualsExact(
+                            [System.DateTimeOffset]'2026-12-31T23:59:59-03:00'
+                        ) -and
                         $Summary[0].CFOP -eq '5102'
                     }
                 }
@@ -176,8 +201,12 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
                     ModuleName      = 'PipeDFe'
                     ParameterFilter = {
                         $Cnpj -eq '11222333000181' -and
-                        $StartDate.EqualsExact([System.DateTimeOffset]'2026-01-01T00:00:00-03:00') -and
-                        $EndDate.EqualsExact([System.DateTimeOffset]'2026-12-31T23:59:59-03:00') -and
+                        $StartDate.EqualsExact(
+                            [System.DateTimeOffset]'2026-01-01T00:00:00-03:00'
+                        ) -and
+                        $EndDate.EqualsExact(
+                            [System.DateTimeOffset]'2026-12-31T23:59:59-03:00'
+                        ) -and
                         $ReportData.ResumoPorCFOP[0].CFOP -eq '5102' -and
                         $DocumentEntries[0].Id -eq 'nfe' -and
                         $NFSeEntries[0].Id -eq 'nfse' -and
@@ -189,9 +218,9 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
             }
 
             It 'Uses the legal name when the trade name is blank' {
-                $Script:ReportParams.Company.NomeFantasia = ' '
+                $Script:ItParams.Company.NomeFantasia = ' '
 
-                New-DFePeriodReport @Script:ReportParams | Out-Null
+                New-DFePeriodReport @Script:ItParams | Out-Null
 
                 $invokeParams = @{
                     CommandName     = 'ConvertTo-DFeCfopReportHtml'
@@ -208,8 +237,8 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
             }
 
             It 'Publishes repeated calls to distinct directories without replacing files' {
-                $first  = @(New-DFePeriodReport @Script:ReportParams)
-                $second = @(New-DFePeriodReport @Script:ReportParams)
+                $first  = @(New-DFePeriodReport @Script:ItParams)
+                $second = @(New-DFePeriodReport @Script:ItParams)
 
                 (Split-Path -Parent $first[0]) |
                     Should -Not -Be (Split-Path -Parent $second[0])
@@ -227,69 +256,126 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
         #region Failures before staging
         Context 'Failures before staging' {
 
-            It 'Rejects an output path that resolves to a file before querying CFOP data' {
-                $joinParams = @{
-                    Path      = $Script:ReportParams.Company.OutputPath
-                    ChildPath = 'not-a-directory.txt'
+            Context 'Invalid output path' {
+
+                BeforeAll {
+
+                    $joinParams = @{
+                        Path      = $Script:BaseOutputPath
+                        ChildPath = 'not-a-directory.txt'
+                    }
+
+                    $filePath = Join-Path @joinParams
+
+                    [System.IO.File]::WriteAllText($filePath, 'Example')
+
+                    $Script:InvalidParams = $Script:ReportParams.Clone()
+                    $Script:InvalidParams.Company = $Script:ReportParams.Company.PSObject.Copy()
+                    $Script:InvalidParams.Company.OutputPath = $filePath
+
+                    $invalidRootJoinParams = @{
+                        Path      = $filePath
+                        ChildPath = 'Relatorios'
+                    }
+
+                    $Script:InvalidReportRoot = Join-Path @invalidRootJoinParams
+
+                    $Script:InvalidPathThrown = $null
+
+                    try {
+                        New-DFePeriodReport @Script:InvalidParams -ErrorAction Stop
+                    } catch {
+                        $Script:InvalidPathThrown = $_
+                    }
                 }
 
-                $filePath = Join-Path @joinParams
-
-                [System.IO.File]::WriteAllText($filePath, 'Example')
-
-                $Script:ReportParams.Company.OutputPath = $filePath
-
-                $thrown = $null
-
-                try {
-                    New-DFePeriodReport @Script:ReportParams -ErrorAction Stop
-                } catch {
-                    $thrown = $_
+                It 'Throws when the output path resolves to a file' {
+                    $Script:InvalidPathThrown | Should -Not -BeNullOrEmpty
                 }
 
-                $thrown                   | Should -Not -BeNullOrEmpty
-                $thrown.Exception.Message | Should -BeLike '*existing filesystem directory*'
-
-                Test-Path -LiteralPath $Script:ReportRoot | Should -BeFalse
-
-                $invokeParams = @{
-                    CommandName = 'Get-DFeNFeCfopReportData'
-                    Exactly     = $true
-                    Times       = 0
-                    Scope       = 'It'
-                    ModuleName  = 'PipeDFe'
+                It 'Exception message describes an existing filesystem directory' {
+                    $Script:InvalidPathThrown.Exception.Message |
+                        Should -BeLike '*existing filesystem directory*'
                 }
 
-                Should -Invoke @invokeParams
+                It 'Does not create the Relatorios directory on invalid path' {
+                    Test-Path -LiteralPath $Script:InvalidReportRoot | Should -BeFalse
+                }
+
+                It 'Does not call Get-DFeNFeCfopReportData on invalid path' {
+                    $invokeParams = @{
+                        CommandName = 'Get-DFeNFeCfopReportData'
+                        Exactly     = $true
+                        Times       = 0
+                        Scope       = 'Context'
+                        ModuleName  = 'PipeDFe'
+                    }
+
+                    Should -Invoke @invokeParams
+                }
             }
 
-            It 'Does not stage reports or call the exporter when the HTML is empty' {
-                Mock -CommandName ConvertTo-DFeCfopReportHtml -MockWith {
-                    ''
+            Context 'Empty HTML' {
+
+                BeforeAll {
+
+                    $emptyHtmlJoinParams = @{
+                        Path      = $TestDrive
+                        ChildPath = [guid]::NewGuid().ToString('N')
+                    }
+
+                    $emptyHtmlOutputPath = Join-Path @emptyHtmlJoinParams
+
+                    [void][System.IO.Directory]::CreateDirectory($emptyHtmlOutputPath)
+
+                    $Script:EmptyHtmlParams = $Script:ReportParams.Clone()
+                    $Script:EmptyHtmlParams.Company = $Script:ReportParams.Company.PSObject.Copy()
+                    $Script:EmptyHtmlParams.Company.OutputPath = $emptyHtmlOutputPath
+
+                    $emptyHtmlRootJoinParams = @{
+                        Path      = $emptyHtmlOutputPath
+                        ChildPath = 'Relatorios'
+                    }
+
+                    $Script:EmptyHtmlReportRoot = Join-Path @emptyHtmlRootJoinParams
+
+                    Mock -CommandName ConvertTo-DFeCfopReportHtml -MockWith {
+                        ''
+                    }
+
+                    $Script:EmptyHtmlThrown = $null
+
+                    try {
+                        New-DFePeriodReport @Script:EmptyHtmlParams -ErrorAction Stop
+                    } catch {
+                        $Script:EmptyHtmlThrown = $_
+                    }
                 }
 
-                $thrown = $null
-
-                try {
-                    New-DFePeriodReport @Script:ReportParams -ErrorAction Stop
-                } catch {
-                    $thrown = $_
+                It 'Throws when the HTML renderer returns empty' {
+                    $Script:EmptyHtmlThrown | Should -Not -BeNullOrEmpty
                 }
 
-                $thrown                   | Should -Not -BeNullOrEmpty
-                $thrown.Exception.Message | Should -BeLike '*HTML renderer did not produce a non-empty report*'
-
-                Test-Path -LiteralPath $Script:ReportRoot | Should -BeFalse
-
-                $invokeParams = @{
-                    CommandName = 'Export-DFeCfopReportXlsx'
-                    Exactly     = $true
-                    Times       = 0
-                    Scope       = 'It'
-                    ModuleName  = 'PipeDFe'
+                It 'Exception message names the HTML renderer' {
+                    $Script:EmptyHtmlThrown.Exception.Message |
+                        Should -BeLike '*HTML renderer did not produce a non-empty report*'
                 }
 
-                Should -Invoke @invokeParams
+                It 'Does not create the Relatorios directory on empty HTML' {
+                    Test-Path -LiteralPath $Script:EmptyHtmlReportRoot | Should -BeFalse
+                }
+
+                It 'Does not call Export-DFeCfopReportXlsx when HTML is empty' {
+                    $invokeParams = @{
+                        CommandName = 'Export-DFeCfopReportXlsx'
+                        Exactly     = $true
+                        Times       = 0
+                        Scope       = 'Context'
+                        ModuleName  = 'PipeDFe'
+                    }
+
+                    Should -Invoke @invokeParams
+                }
             }
         }
         #endregion
@@ -297,88 +383,198 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
         #region Workbook export failures
         Context 'Workbook export failures' {
 
-            It 'Removes staging and preserves the previous pair when export fails after writing' {
-                $previous = @(New-DFePeriodReport @Script:ReportParams)
+            Context 'Export throws after writing HTML' {
 
-                Mock -CommandName Export-DFeCfopReportXlsx -MockWith {
-                    $stagingDirectory = Split-Path -Parent $LiteralPath
+                BeforeAll {
 
-                    $joinParams = @{
-                        Path      = $stagingDirectory
-                        ChildPath = 'Resumo-CFOP.html'
+                    $wbJoinParams = @{
+                        Path      = $TestDrive
+                        ChildPath = [guid]::NewGuid().ToString('N')
                     }
 
-                    $stagedHtml = Join-Path @joinParams
+                    $wbExportPath = Join-Path @wbJoinParams
 
-                    if ([System.IO.File]::ReadAllText($stagedHtml) -ne '<html>CFOP report</html>') {
-                        throw 'Expected the rendered HTML to be staged before workbook export.'
+                    [void][System.IO.Directory]::CreateDirectory($wbExportPath)
+
+                    $Script:WbExportParams = $Script:ReportParams.Clone()
+                    $Script:WbExportParams.Company = $Script:ReportParams.Company.PSObject.Copy()
+                    $Script:WbExportParams.Company.OutputPath = $wbExportPath
+
+                    $wbRootJoinParams = @{
+                        Path      = $wbExportPath
+                        ChildPath = 'Relatorios'
                     }
 
-                    [System.IO.File]::WriteAllBytes($LiteralPath, [byte[]]@(2))
+                    $Script:WbReportRoot = Join-Path @wbRootJoinParams
 
-                    throw 'Simulated workbook export failure.'
+                    $Script:Previous = @(New-DFePeriodReport @Script:WbExportParams)
+
+                    Mock -CommandName Export-DFeCfopReportXlsx -MockWith {
+                        $stagingDirectory = Split-Path -Parent $LiteralPath
+
+                        $joinParams = @{
+                            Path      = $stagingDirectory
+                            ChildPath = 'Resumo-CFOP.html'
+                        }
+
+                        $stagedHtml = Join-Path @joinParams
+
+                        if ([System.IO.File]::ReadAllText($stagedHtml) -ne
+                            '<html>CFOP report</html>'
+                        ) {
+                            throw (
+                                'Expected the rendered HTML to be staged ' +
+                                'before workbook export.'
+                            )
+                        }
+
+                        [System.IO.File]::WriteAllBytes($LiteralPath, [byte[]]@(2))
+
+                        throw 'Simulated workbook export failure.'
+                    }
+
+                    $Script:ExportFailThrown = $null
+
+                    try {
+                        New-DFePeriodReport @Script:WbExportParams -ErrorAction Stop
+                    } catch {
+                        $Script:ExportFailThrown = $_
+                    }
                 }
 
-                $thrown = $null
-
-                try {
-                    New-DFePeriodReport @Script:ReportParams -ErrorAction Stop
-                } catch {
-                    $thrown = $_
+                It 'Throws when the exporter fails' {
+                    $Script:ExportFailThrown | Should -Not -BeNullOrEmpty
                 }
 
-                $thrown                   | Should -Not -BeNullOrEmpty
-                $thrown.Exception.Message | Should -BeLike '*Simulated workbook export failure*'
+                It 'Exception message propagates the exporter error' {
+                    $Script:ExportFailThrown.Exception.Message |
+                        Should -BeLike '*Simulated workbook export failure*'
+                }
 
-                $remaining = @(Get-ChildItem -LiteralPath $Script:ReportRoot -Force)
+                It 'Removes the failed staging directory' {
+                    $remaining = @(Get-ChildItem -LiteralPath $Script:WbReportRoot -Force)
 
-                $remaining             | Should -HaveCount 1
-                $remaining[0].FullName | Should -Be (Split-Path -Parent $previous[0])
+                    $remaining | Should -HaveCount 1
+                }
 
-                [System.IO.File]::ReadAllText($previous[0]) |
-                    Should -BeExactly '<html>CFOP report</html>'
+                It 'Preserves the previous publication after the failed export' {
+                    $remaining = @(Get-ChildItem -LiteralPath $Script:WbReportRoot -Force)
 
-                [System.IO.File]::ReadAllBytes($previous[1])[0] | Should -Be 1
+                    $remaining[0].FullName |
+                        Should -Be (Split-Path -Parent $Script:Previous[0])
+                }
+
+                It 'Previous HTML file is intact after the failed export' {
+                    [System.IO.File]::ReadAllText($Script:Previous[0]) |
+                        Should -BeExactly '<html>CFOP report</html>'
+                }
+
+                It 'Previous XLSX file is intact after the failed export' {
+                    [System.IO.File]::ReadAllBytes($Script:Previous[1])[0] |
+                        Should -Be 1
+                }
             }
 
-            It 'Does not publish if the exporter returns without creating a workbook' {
-                Mock -CommandName Export-DFeCfopReportXlsx -MockWith {
+            Context 'Exporter returns without creating a workbook' {
 
+                BeforeAll {
+
+                    $noWbJoinParams = @{
+                        Path      = $TestDrive
+                        ChildPath = [guid]::NewGuid().ToString('N')
+                    }
+
+                    $noWbOutputPath = Join-Path @noWbJoinParams
+
+                    [void][System.IO.Directory]::CreateDirectory($noWbOutputPath)
+
+                    $Script:NoWbParams = $Script:ReportParams.Clone()
+                    $Script:NoWbParams.Company = $Script:ReportParams.Company.PSObject.Copy()
+                    $Script:NoWbParams.Company.OutputPath = $noWbOutputPath
+
+                    $noWbRootJoinParams = @{
+                        Path      = $noWbOutputPath
+                        ChildPath = 'Relatorios'
+                    }
+
+                    $Script:NoWbReportRoot = Join-Path @noWbRootJoinParams
+
+                    Mock -CommandName Export-DFeCfopReportXlsx -MockWith { }
+
+                    $Script:NoWorkbookThrown = $null
+
+                    try {
+                        New-DFePeriodReport @Script:NoWbParams -ErrorAction Stop
+                    } catch {
+                        $Script:NoWorkbookThrown = $_
+                    }
                 }
 
-                $thrown = $null
-
-                try {
-                    New-DFePeriodReport @Script:ReportParams -ErrorAction Stop
-                } catch {
-                    $thrown = $_
+                It 'Throws when no workbook is created' {
+                    $Script:NoWorkbookThrown | Should -Not -BeNullOrEmpty
                 }
 
-                $thrown                   | Should -Not -BeNullOrEmpty
-                $thrown.Exception.Message | Should -BeLike '*did not create a non-empty workbook*'
+                It 'Exception message names the missing workbook' {
+                    $Script:NoWorkbookThrown.Exception.Message |
+                        Should -BeLike '*did not create a non-empty workbook*'
+                }
 
-                @(Get-ChildItem -LiteralPath $Script:ReportRoot -Force) |
-                    Should -HaveCount 0
+                It 'Does not publish when the exporter creates no workbook' {
+                    @(Get-ChildItem -LiteralPath $Script:NoWbReportRoot -Force) |
+                        Should -HaveCount 0
+                }
             }
 
-            It 'Does not publish if the exporter creates an empty workbook' {
-                Mock -CommandName Export-DFeCfopReportXlsx -MockWith {
-                    [System.IO.File]::WriteAllBytes($LiteralPath, [byte[]]@())
+            Context 'Exporter creates an empty workbook' {
+
+                BeforeAll {
+
+                    $emptyWbJoinParams = @{
+                        Path      = $TestDrive
+                        ChildPath = [guid]::NewGuid().ToString('N')
+                    }
+
+                    $emptyWbOutputPath = Join-Path @emptyWbJoinParams
+
+                    [void][System.IO.Directory]::CreateDirectory($emptyWbOutputPath)
+
+                    $Script:EmptyWbParams = $Script:ReportParams.Clone()
+                    $Script:EmptyWbParams.Company = $Script:ReportParams.Company.PSObject.Copy()
+                    $Script:EmptyWbParams.Company.OutputPath = $emptyWbOutputPath
+
+                    $emptyWbRootJoinParams = @{
+                        Path      = $emptyWbOutputPath
+                        ChildPath = 'Relatorios'
+                    }
+
+                    $Script:EmptyWbReportRoot = Join-Path @emptyWbRootJoinParams
+
+                    Mock -CommandName Export-DFeCfopReportXlsx -MockWith {
+                        [System.IO.File]::WriteAllBytes($LiteralPath, [byte[]]@())
+                    }
+
+                    $Script:EmptyWorkbookThrown = $null
+
+                    try {
+                        New-DFePeriodReport @Script:EmptyWbParams -ErrorAction Stop
+                    } catch {
+                        $Script:EmptyWorkbookThrown = $_
+                    }
                 }
 
-                $thrown = $null
-
-                try {
-                    New-DFePeriodReport @Script:ReportParams -ErrorAction Stop
-                } catch {
-                    $thrown = $_
+                It 'Throws when the workbook is empty' {
+                    $Script:EmptyWorkbookThrown | Should -Not -BeNullOrEmpty
                 }
 
-                $thrown                   | Should -Not -BeNullOrEmpty
-                $thrown.Exception.Message | Should -BeLike '*did not create a non-empty workbook*'
+                It 'Exception message names the empty workbook' {
+                    $Script:EmptyWorkbookThrown.Exception.Message |
+                        Should -BeLike '*did not create a non-empty workbook*'
+                }
 
-                @(Get-ChildItem -LiteralPath $Script:ReportRoot -Force) |
-                    Should -HaveCount 0
+                It 'Does not publish when the workbook is empty' {
+                    @(Get-ChildItem -LiteralPath $Script:EmptyWbReportRoot -Force) |
+                        Should -HaveCount 0
+                }
             }
         }
         #endregion

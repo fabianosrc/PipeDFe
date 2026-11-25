@@ -44,7 +44,7 @@ function New-DFePeriodReport {
         Justification = 'Confirmation belongs to the calling workflow.'
     )]
     [CmdletBinding()]
-    [OutputType([string], [string])]
+    [OutputType([string])]
     param (
         [Parameter(Mandatory)]
         [ValidateNotNull()]
