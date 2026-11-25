@@ -14,13 +14,12 @@ Owns the full delivery lifecycle:
      to Indeterminate to block automatic retry.
   5. Transitions Prepared or Failed to Sending.
   6. Delegates rendering and SMTP delivery to Send-DFeNotification.
-  7. Transitions to Delivered on success, to Failed when Send-Mail was
-     not yet called, or to Indeterminate when SMTP was already in progress
-     and the outcome cannot be confirmed.
+  7. Transitions to Delivered on success, to Failed when the message was
+     not accepted, or to Indeterminate when acceptance cannot be confirmed.
 
 The distinction between Failed and Indeterminate is derived from
-SendAttempted in the Send-Mail result. A missing SendAttempted property
-is treated conservatively as true (indeterminate), never as safe to retry.
+AcceptanceUncertain in the Send-Mail result. A missing property is
+treated conservatively as true (indeterminate), never as safe to retry.
 
 Never throws. All failures are returned as Success = $false with FailedAt
 identifying the stage.
@@ -192,10 +191,15 @@ function Invoke-DFeDelivery {
     }
 
     if ($delivery.DeliveryStatus -eq 'Indeterminate') {
+        $retryBlock = (
+            'A previous SMTP attempt has an indeterminate result. ' +
+            'Automatic retry is blocked.'
+        )
+
         $errorMessage = if (-not [string]::IsNullOrWhiteSpace($delivery.DeliveryError)) {
-            $delivery.DeliveryError
+            '{0} Previous attempt error: {1}' -f $retryBlock, $delivery.DeliveryError
         } else {
-            'Previous SMTP attempt has an indeterminate result. Automatic retry is blocked.'
+            $retryBlock
         }
 
         return [PSCustomObject]@{
@@ -335,11 +339,11 @@ function Invoke-DFeDelivery {
         # An unexpected exception from Send-DFeNotification is treated
         # conservatively as Indeterminate - the SMTP outcome is unknown.
         $notificationResult = [PSCustomObject]@{
-            Success       = $false
-            EmailsSent    = @()
-            ErrorMessage  = $_.Exception.Message
-            FailedAt      = 'Send'
-            SendAttempted = $true
+            Success             = $false
+            EmailsSent          = @()
+            ErrorMessage        = $_.Exception.Message
+            FailedAt            = 'Send'
+            AcceptanceUncertain = $true
         }
     }
     #endregion
@@ -381,21 +385,21 @@ function Invoke-DFeDelivery {
         }
     }
 
-    # Determine whether SMTP was already in progress when the failure occurred.
-    # A missing SendAttempted property is treated conservatively as true.
-    $sendAttemptedProp = $null
+    # Determine whether the server may have accepted the message before the failure.
+    # A missing AcceptanceUncertain property is treated conservatively as true.
+    $uncertainProp = $null
 
     if ($null -ne $notificationResult) {
-        $sendAttemptedProp = $notificationResult.PSObject.Properties['SendAttempted']
+        $uncertainProp = $notificationResult.PSObject.Properties['AcceptanceUncertain']
     }
 
-    $sendAttempted = if ($null -eq $sendAttemptedProp) {
+    $acceptanceUncertain = if ($null -eq $uncertainProp) {
         $true
     } else {
-        [bool]$sendAttemptedProp.Value
+        [bool]$uncertainProp.Value
     }
 
-    $targetStatus = if ($sendAttempted) { 'Indeterminate' } else { 'Failed' }
+    $targetStatus = if ($acceptanceUncertain) { 'Indeterminate' } else { 'Failed' }
 
     $mailError = if ($null -ne $notificationResult -and
         -not [string]::IsNullOrWhiteSpace($notificationResult.ErrorMessage)
@@ -420,7 +424,7 @@ function Invoke-DFeDelivery {
         return [PSCustomObject]@{
             Success        = $false
             EmailsSent     = @()
-            ErrorMessage = '{0} State persistence failed: {1}' -f $mailError, $_.Exception.Message
+            ErrorMessage   = '{0} State persistence failed: {1}' -f $mailError, $_.Exception.Message
             FailedAt       = 'Persistence'
             DeliveryId     = $delivery.DeliveryId
             DeliveryStatus = 'Sending'

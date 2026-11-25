@@ -18,7 +18,7 @@ Coverage includes:
   - Returns immediately with Success = true when status is Delivered.
   - Does not call Send-DFeNotification when status is Delivered.
   - Returns FailedAt = State when status is Indeterminate.
-  - Returns the stored DeliveryError when status is Indeterminate.
+  - Explains the retry block and includes the stored DeliveryError when available.
   - Returns a default error when Indeterminate has no stored error.
   - Transitions Sending to Indeterminate when an orphan is found.
   - Returns FailedAt = State when orphan transition fails.
@@ -29,14 +29,18 @@ Coverage includes:
   - Transitions to Delivered on successful notification.
   - Returns DeliveryStatus = Delivered on success.
   - Returns FailedAt = Persistence when Delivered cannot be persisted.
-  - Transitions to Failed when SendAttempted is false.
-  - Transitions to Indeterminate when SendAttempted is true.
-  - Transitions to Indeterminate when SendAttempted is missing.
+  - Transitions to Failed when AcceptanceUncertain is false.
+  - Transitions to Indeterminate when AcceptanceUncertain is true.
+  - Transitions to Indeterminate when AcceptanceUncertain is missing.
   - Returns the notification ErrorMessage on send failure.
   - Returns FailedAt = Persistence when failure state cannot be persisted.
   - Passes Archives DestPath as ZipFileDestination to Send-DFeNotification.
   - Passes Gaps to Send-DFeNotification.
   - Passes Entries to Send-DFeNotification.
+  - Calls New-DFePeriodReport when IncludeMonthlyReports is set.
+  - Does not call New-DFePeriodReport when IncludeMonthlyReports is absent.
+  - Returns FailedAt = Reports when New-DFePeriodReport throws.
+  - Passes ReportFilePaths from New-DFePeriodReport to Send-DFeNotification.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -109,7 +113,7 @@ Describe 'Invoke-DFeDelivery' {
                 DestPath = 'C:\Temp\NFe_11222333000181_202601.zip'
             }
 
-            $Script:DeliveryId = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
+            $Script:DeliveryId        = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
             $Script:DeliveryStartedAt = '2026-01-15T10:00:00.0000000+00:00'
 
             $Script:PreparedDelivery = [PSCustomObject]@{
@@ -154,9 +158,6 @@ Describe 'Invoke-DFeDelivery' {
                 Archives  = @($Script:ValidArchive)
                 Entries   = $Script:ValidEntries
             }
-        }
-
-        BeforeEach {
 
             Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
                 param (
@@ -180,6 +181,13 @@ Describe 'Invoke-DFeDelivery' {
 
             Mock -CommandName Send-DFeNotification -MockWith {
                 $Script:SuccessNotificationResult
+            }
+
+            Mock -CommandName New-DFePeriodReport -MockWith {
+                @(
+                    'C:\Reports\Resumo-CFOP.html',
+                    'C:\Reports\Fechamento.xlsx'
+                )
             }
         }
         #endregion
@@ -232,7 +240,7 @@ Describe 'Invoke-DFeDelivery' {
                         EmailsSent    = @()
                         ErrorMessage  = 'Connection refused'
                         FailedAt      = 'Send'
-                        SendAttempted = $false
+                        AcceptanceUncertain = $false
                     }
                 }
 
@@ -263,14 +271,6 @@ Describe 'Invoke-DFeDelivery' {
                         [Parameter()]
                         [object]$InputObject
                     )
-                }
-
-                Mock -CommandName New-DFeDelivery -MockWith {
-                    $Script:PreparedDelivery
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    $Script:SuccessNotificationResult
                 }
 
                 $Script:ValidationResult = Invoke-DFeDelivery @Script:BaseParams
@@ -311,24 +311,8 @@ Describe 'Invoke-DFeDelivery' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
                 Mock -CommandName New-DFeDelivery -MockWith {
                     throw 'index write failed'
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    $Script:SuccessNotificationResult
                 }
 
                 $Script:PersistenceResult = Invoke-DFeDelivery @Script:BaseParams
@@ -357,18 +341,6 @@ Describe 'Invoke-DFeDelivery' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
                 Mock -CommandName New-DFeDelivery -MockWith {
                     [PSCustomObject]@{
                         DeliveryId        = $Script:DeliveryId
@@ -383,10 +355,6 @@ Describe 'Invoke-DFeDelivery' {
                         )
                         Archives          = @($Script:ValidArchive)
                     }
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    $Script:SuccessNotificationResult
                 }
 
                 $Script:DeliveredResult = Invoke-DFeDelivery @Script:BaseParams
@@ -423,18 +391,6 @@ Describe 'Invoke-DFeDelivery' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
                 Mock -CommandName New-DFeDelivery -MockWith {
                     [PSCustomObject]@{
                         DeliveryId        = $Script:DeliveryId
@@ -444,10 +400,6 @@ Describe 'Invoke-DFeDelivery' {
                         Recipients        = @()
                         Archives          = @($Script:ValidArchive)
                     }
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    $Script:SuccessNotificationResult
                 }
 
                 $Script:IndeterminateResult = Invoke-DFeDelivery @Script:BaseParams
@@ -465,9 +417,14 @@ Describe 'Invoke-DFeDelivery' {
                 $Script:IndeterminateResult.DeliveryStatus | Should -Be 'Indeterminate'
             }
 
-            It 'Returns the stored DeliveryError' {
+            It 'Explains the retry block in the error message' {
                 $Script:IndeterminateResult.ErrorMessage |
-                    Should -Be 'SMTP acceptance could not be determined.'
+                    Should -Match 'Automatic retry is blocked'
+            }
+
+            It 'Includes the previous delivery error in the message' {
+                $Script:IndeterminateResult.ErrorMessage |
+                    Should -Match 'SMTP acceptance could not be determined'
             }
 
             It 'Does not call Send-DFeNotification for an Indeterminate delivery' {
@@ -481,7 +438,8 @@ Describe 'Invoke-DFeDelivery' {
 
         Context 'Indeterminate guard with no stored error' {
 
-            It 'Returns a default error message when DeliveryError is empty' {
+            BeforeAll {
+
                 Mock -CommandName New-DFeDelivery -MockWith {
                     [PSCustomObject]@{
                         DeliveryId        = $Script:DeliveryId
@@ -493,9 +451,17 @@ Describe 'Invoke-DFeDelivery' {
                     }
                 }
 
-                $result = Invoke-DFeDelivery @Script:BaseParams
+                $Script:IndeterminateNoErrorResult = Invoke-DFeDelivery @Script:BaseParams
+            }
 
-                $result.ErrorMessage | Should -Not -BeNullOrEmpty
+            It 'Returns a default error message when DeliveryError is empty' {
+                $Script:IndeterminateNoErrorResult.ErrorMessage |
+                    Should -Match 'Automatic retry is blocked'
+            }
+
+            It 'Does not append a previous attempt section when DeliveryError is empty' {
+                $Script:IndeterminateNoErrorResult.ErrorMessage |
+                    Should -Not -Match 'Previous attempt error'
             }
         }
         #endregion
@@ -504,18 +470,6 @@ Describe 'Invoke-DFeDelivery' {
         Context 'Orphan Sending recovery' {
 
             BeforeAll {
-
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
 
                 Mock -CommandName New-DFeDelivery -MockWith {
                     [PSCustomObject]@{
@@ -533,10 +487,6 @@ Describe 'Invoke-DFeDelivery' {
                         DeliveryId     = $Script:DeliveryId
                         DeliveryStatus = 'Indeterminate'
                     }
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    $Script:SuccessNotificationResult
                 }
 
                 $Script:OrphanResult = Invoke-DFeDelivery @Script:BaseParams
@@ -573,7 +523,8 @@ Describe 'Invoke-DFeDelivery' {
 
         Context 'Orphan Sending recovery failure' {
 
-            It 'Returns FailedAt = State when orphan transition throws' {
+            BeforeAll {
+
                 Mock -CommandName New-DFeDelivery -MockWith {
                     [PSCustomObject]@{
                         DeliveryId        = $Script:DeliveryId
@@ -589,10 +540,15 @@ Describe 'Invoke-DFeDelivery' {
                     throw 'concurrent state change'
                 }
 
-                $result = Invoke-DFeDelivery @Script:BaseParams
+                $Script:OrphanFailureResult = Invoke-DFeDelivery @Script:BaseParams
+            }
 
-                $result.FailedAt       | Should -Be 'State'
-                $result.DeliveryStatus | Should -Be 'Sending'
+            It 'Returns FailedAt = State when orphan transition throws' {
+                $Script:OrphanFailureResult.FailedAt | Should -Be 'State'
+            }
+
+            It 'Returns DeliveryStatus = Sending when orphan transition throws' {
+                $Script:OrphanFailureResult.DeliveryStatus | Should -Be 'Sending'
             }
         }
         #endregion
@@ -600,7 +556,8 @@ Describe 'Invoke-DFeDelivery' {
         #region Unsupported state guard
         Context 'Unsupported state guard' {
 
-            It 'Returns FailedAt = State for an unsupported delivery status' {
+            BeforeAll {
+
                 Mock -CommandName New-DFeDelivery -MockWith {
                     [PSCustomObject]@{
                         DeliveryId        = $Script:DeliveryId
@@ -612,10 +569,15 @@ Describe 'Invoke-DFeDelivery' {
                     }
                 }
 
-                $result = Invoke-DFeDelivery @Script:BaseParams
+                $Script:UnsupportedResult = Invoke-DFeDelivery @Script:BaseParams
+            }
 
-                $result.FailedAt | Should -Be 'State'
-                $result.Success  | Should -BeFalse
+            It 'Returns FailedAt = State for an unsupported delivery status' {
+                $Script:UnsupportedResult.FailedAt | Should -Be 'State'
+            }
+
+            It 'Returns Success = false for an unsupported delivery status' {
+                $Script:UnsupportedResult.Success | Should -BeFalse
             }
         }
         #endregion
@@ -666,25 +628,29 @@ Describe 'Invoke-DFeDelivery' {
                 Should -Invoke @assertParams
             }
 
-            It 'Returns FailedAt = State when transition to Sending fails' {
-                Mock -CommandName Set-DFeDeliveryState -MockWith {
-                    throw 'concurrent state change'
+            #region Transition to Sending fails
+            Context 'Transition to Sending fails' {
+
+                BeforeAll {
+
+                    Mock -CommandName Set-DFeDeliveryState -MockWith {
+                        throw 'concurrent state change'
+                    }
+
+                    $Script:ToSendingFailResult = Invoke-DFeDelivery @Script:BaseParams
                 }
 
-                $result = Invoke-DFeDelivery @Script:BaseParams
-
-                $result.FailedAt | Should -Be 'State'
-                $result.Success  | Should -BeFalse
-            }
-
-            It 'Does not call Send-DFeNotification when transition to Sending fails' {
-                Mock -CommandName Set-DFeDeliveryState -MockWith {
-                    throw 'concurrent state change'
+                It 'Returns FailedAt = State when transition to Sending fails' {
+                    $Script:ToSendingFailResult.FailedAt | Should -Be 'State'
                 }
 
-                Invoke-DFeDelivery @Script:BaseParams | Out-Null
+                It 'Returns Success = false when transition to Sending fails' {
+                    $Script:ToSendingFailResult.Success | Should -BeFalse
+                }
 
-                Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope It
+                It 'Does not call Send-DFeNotification when transition to Sending fails' {
+                    Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly
+                }
             }
         }
         #endregion
@@ -693,30 +659,6 @@ Describe 'Invoke-DFeDelivery' {
         Context 'Happy path' {
 
             BeforeAll {
-
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
-                Mock -CommandName New-DFeDelivery -MockWith {
-                    $Script:PreparedDelivery
-                }
-
-                Mock -CommandName Set-DFeDeliveryState -MockWith {
-                    $Script:SendingState
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    $Script:SuccessNotificationResult
-                }
 
                 $Script:HappyResult = Invoke-DFeDelivery @Script:BaseParams
             }
@@ -764,26 +706,6 @@ Describe 'Invoke-DFeDelivery' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
-                Mock -CommandName New-DFeDelivery -MockWith {
-                    $Script:PreparedDelivery
-                }
-
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    $Script:SuccessNotificationResult
-                }
-
                 $Script:StateCallCount = 0
 
                 Mock -CommandName Set-DFeDeliveryState -MockWith {
@@ -823,7 +745,10 @@ Describe 'Invoke-DFeDelivery' {
 
             It 'Returns FailedAt = Persistence when Delivered cannot be persisted' {
                 $Script:DeliveredPersistenceResult.FailedAt | Should -Be 'Persistence'
-                $Script:DeliveredPersistenceResult.Success  | Should -BeFalse
+            }
+
+            It 'Returns Success = false when Delivered cannot be persisted' {
+                $Script:DeliveredPersistenceResult.Success | Should -BeFalse
             }
 
             It 'Returns DeliveryStatus = Sending when Delivered cannot be persisted' {
@@ -837,33 +762,13 @@ Describe 'Invoke-DFeDelivery' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
-                Mock -CommandName New-DFeDelivery -MockWith {
-                    $Script:PreparedDelivery
-                }
-
-                Mock -CommandName Set-DFeDeliveryState -MockWith {
-                    $Script:SendingState
-                }
-
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
                         Success       = $false
                         EmailsSent    = @()
                         ErrorMessage  = 'Attachment not found.'
                         FailedAt      = 'Send'
-                        SendAttempted = $false
+                        AcceptanceUncertain = $false
                     }
                 }
 
@@ -874,7 +779,7 @@ Describe 'Invoke-DFeDelivery' {
                 $Script:PreSendFailureResult.Success | Should -BeFalse
             }
 
-            It 'Transitions to Failed when SendAttempted is false' {
+            It 'Transitions to Failed when AcceptanceUncertain is false' {
                 $assertParams = @{
                     CommandName     = 'Set-DFeDeliveryState'
                     Times           = 1
@@ -886,7 +791,7 @@ Describe 'Invoke-DFeDelivery' {
                 Should -Invoke @assertParams
             }
 
-            It 'Returns DeliveryStatus = Failed when SendAttempted is false' {
+            It 'Returns DeliveryStatus = Failed when AcceptanceUncertain is false' {
                 $Script:PreSendFailureResult.DeliveryStatus | Should -Be 'Failed'
             }
 
@@ -900,40 +805,20 @@ Describe 'Invoke-DFeDelivery' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
-                Mock -CommandName New-DFeDelivery -MockWith {
-                    $Script:PreparedDelivery
-                }
-
-                Mock -CommandName Set-DFeDeliveryState -MockWith {
-                    $Script:SendingState
-                }
-
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
                         Success       = $false
                         EmailsSent    = @()
                         ErrorMessage  = 'Connection reset by peer.'
                         FailedAt      = 'Send'
-                        SendAttempted = $true
+                        AcceptanceUncertain = $true
                     }
                 }
 
                 $Script:PostSendFailureResult = Invoke-DFeDelivery @Script:BaseParams
             }
 
-            It 'Transitions to Indeterminate when SendAttempted is true' {
+            It 'Transitions to Indeterminate when AcceptanceUncertain is true' {
                 $assertParams = @{
                     CommandName     = 'Set-DFeDeliveryState'
                     Times           = 1
@@ -945,7 +830,7 @@ Describe 'Invoke-DFeDelivery' {
                 Should -Invoke @assertParams
             }
 
-            It 'Returns DeliveryStatus = Indeterminate when SendAttempted is true' {
+            It 'Returns DeliveryStatus = Indeterminate when AcceptanceUncertain is true' {
                 $Script:PostSendFailureResult.DeliveryStatus | Should -Be 'Indeterminate'
             }
 
@@ -955,25 +840,9 @@ Describe 'Invoke-DFeDelivery' {
             }
         }
 
-        Context 'Send failure - SendAttempted missing' {
+        Context 'Send failure - AcceptanceUncertain missing' {
 
             BeforeAll {
-
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
-                Mock -CommandName New-DFeDelivery -MockWith {
-                    $Script:PreparedDelivery
-                }
 
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
@@ -1020,7 +889,7 @@ Describe 'Invoke-DFeDelivery' {
                 Invoke-DFeDelivery @Script:BaseParams | Out-Null
             }
 
-            It 'Transitions to Indeterminate when SendAttempted is absent' {
+            It 'Transitions to Indeterminate when AcceptanceUncertain is absent' {
                 $Script:CapturedStatus | Should -Be 'Indeterminate'
             }
         }
@@ -1029,29 +898,13 @@ Describe 'Invoke-DFeDelivery' {
 
             BeforeAll {
 
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    param (
-                        [Parameter()]
-                        [object]$InputObject
-                    )
-
-                    [PSCustomObject]@{
-                        Name  = 'Dest'
-                        Email = 'dest@example.com'
-                    }
-                }
-
-                Mock -CommandName New-DFeDelivery -MockWith {
-                    $Script:PreparedDelivery
-                }
-
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
                         Success       = $false
                         EmailsSent    = @()
                         ErrorMessage  = 'Connection refused.'
                         FailedAt      = 'Send'
-                        SendAttempted = $false
+                        AcceptanceUncertain = $false
                     }
                 }
 
@@ -1093,8 +946,13 @@ Describe 'Invoke-DFeDelivery' {
             }
 
             It 'Returns FailedAt = Persistence when failure state cannot be persisted' {
-                $Script:StatePersistenceFailResult.FailedAt       | Should -Be 'Persistence'
-                $Script:StatePersistenceFailResult.DeliveryStatus | Should -Be 'Sending'
+                $Script:StatePersistenceFailResult.FailedAt |
+                    Should -Be 'Persistence'
+            }
+
+            It 'Returns DeliveryStatus = Sending when failure state cannot be persisted' {
+                $Script:StatePersistenceFailResult.DeliveryStatus |
+                    Should -Be 'Sending'
             }
         }
         #endregion
@@ -1163,59 +1021,189 @@ Describe 'Invoke-DFeDelivery' {
         #region Dependency errors
         Context 'Unexpected dependency errors' {
 
-            It 'Returns Validation failure when recipient normalization throws' {
-                Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
-                    throw [System.InvalidOperationException]::new(
-                        'Recipient normalization failed.'
-                    )
+            Context 'Recipient normalization throws' {
+
+                BeforeAll {
+
+                    Mock -CommandName ConvertTo-NormalizedMailRecipient -MockWith {
+                        throw [System.InvalidOperationException]::new(
+                            'Recipient normalization failed.'
+                        )
+                    }
+
+                    $Script:NormalizationErrorResult = Invoke-DFeDelivery @Script:BaseParams
                 }
 
-                $result = Invoke-DFeDelivery @Script:BaseParams
+                It 'Returns Validation failure when recipient normalization throws' {
+                    $Script:NormalizationErrorResult.Success  | Should -BeFalse
+                    $Script:NormalizationErrorResult.FailedAt | Should -Be 'Validation'
+                }
 
-                $result.Success      | Should -BeFalse
-                $result.FailedAt     | Should -Be 'Validation'
-                $result.ErrorMessage | Should -Match 'Recipient normalization failed'
-                $result.DeliveryId   | Should -BeNullOrEmpty
+                It 'Includes the normalization error message' {
+                    $Script:NormalizationErrorResult.ErrorMessage |
+                        Should -Match 'Recipient normalization failed'
+                }
 
-                Should -Invoke -CommandName New-DFeDelivery      -Times 0 -Exactly
-                Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly
+                It 'Returns null DeliveryId when normalization throws' {
+                    $Script:NormalizationErrorResult.DeliveryId | Should -BeNullOrEmpty
+                }
+
+                It 'Does not call New-DFeDelivery when normalization throws' {
+                    Should -Invoke -CommandName New-DFeDelivery -Times 0 -Exactly
+                }
+
+                It 'Does not call Send-DFeNotification when normalization throws' {
+                    Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly
+                }
             }
 
-            It 'Returns Indeterminate when notification unexpectedly throws' {
-                Mock -CommandName Send-DFeNotification -MockWith {
-                    throw [System.InvalidOperationException]::new(
-                        'Unexpected notification failure.'
-                    )
-                }
+            Context 'Notification unexpectedly throws' {
 
-                Mock -CommandName Set-DFeDeliveryState -MockWith {
-                    if ($Status -eq 'Sending') {
-                        return $Script:SendingState
+                BeforeAll {
+
+                    Mock -CommandName Send-DFeNotification -MockWith {
+                        throw [System.InvalidOperationException]::new(
+                            'Unexpected notification failure.'
+                        )
                     }
 
-                    [PSCustomObject]@{
-                        DeliveryId     = $Script:DeliveryId
-                        DeliveryStatus = $Status
+                    Mock -CommandName Set-DFeDeliveryState -MockWith {
+                        if ($Status -eq 'Sending') {
+                            return $Script:SendingState
+                        }
+
+                        [PSCustomObject]@{
+                            DeliveryId     = $Script:DeliveryId
+                            DeliveryStatus = $Status
+                        }
                     }
+
+                    $Script:UnexpectedThrowResult = Invoke-DFeDelivery @Script:BaseParams
                 }
 
-                $result = Invoke-DFeDelivery @Script:BaseParams
-
-                $result.Success        | Should -BeFalse
-                $result.FailedAt       | Should -Be 'Send'
-                $result.DeliveryStatus | Should -Be 'Indeterminate'
-
-                $assertParams = @{
-                    CommandName     = 'Set-DFeDeliveryState'
-                    Times           = 1
-                    Exactly         = $true
-                    ParameterFilter = {
-                        $Status -eq 'Indeterminate' -and
-                        $ExpectedStatus -eq 'Sending'
-                    }
+                It 'Returns Indeterminate when notification unexpectedly throws' {
+                    $Script:UnexpectedThrowResult.Success        | Should -BeFalse
+                    $Script:UnexpectedThrowResult.FailedAt       | Should -Be 'Send'
+                    $Script:UnexpectedThrowResult.DeliveryStatus | Should -Be 'Indeterminate'
                 }
 
-                Should -Invoke @assertParams
+                It 'Transitions to Indeterminate after an unexpected throw' {
+                    $assertParams = @{
+                        CommandName     = 'Set-DFeDeliveryState'
+                        Times           = 1
+                        Exactly         = $true
+                        Scope           = 'Context'
+                        ParameterFilter = {
+                            $Status -eq 'Indeterminate' -and
+                            $ExpectedStatus -eq 'Sending'
+                        }
+                    }
+
+                    Should -Invoke @assertParams
+                }
+            }
+        }
+        #endregion
+
+        #region IncludeMonthlyReports
+        Context 'IncludeMonthlyReports' {
+
+            Context 'Reports generated successfully' {
+
+                BeforeAll {
+
+                    $reportParams = $Script:BaseParams.Clone()
+                    $reportParams.IncludeMonthlyReports = $true
+                    $reportParams.NFSeEntries           = @()
+
+                    $Script:ReportsResult = Invoke-DFeDelivery @reportParams
+                }
+
+                It 'Returns Success = true when reports succeed' {
+                    $Script:ReportsResult.Success | Should -BeTrue
+                }
+
+                It 'Calls New-DFePeriodReport once when IncludeMonthlyReports is set' {
+                    Should -Invoke -CommandName New-DFePeriodReport -Times 1 -Exactly -Scope Context
+                }
+
+                It 'Passes ReportFilePaths to Send-DFeNotification' {
+                    $assertParams = @{
+                        CommandName     = 'Send-DFeNotification'
+                        Times           = 1
+                        Exactly         = $true
+                        Scope           = 'Context'
+                        ParameterFilter = {
+                            $ReportFilePaths -contains 'C:\Reports\Resumo-CFOP.html'
+                        }
+                    }
+
+                    Should -Invoke @assertParams
+                }
+            }
+
+            Context 'Reports not requested' {
+
+                BeforeAll {
+
+                    $Script:NoReportsResult = Invoke-DFeDelivery @Script:BaseParams
+                }
+
+                It 'Does not call New-DFePeriodReport when IncludeMonthlyReports is absent' {
+                    Should -Invoke -CommandName New-DFePeriodReport -Times 0 -Exactly -Scope Context
+                }
+
+                It 'Passes empty ReportFilePaths to Send-DFeNotification' {
+                    $assertParams = @{
+                        CommandName     = 'Send-DFeNotification'
+                        Times           = 1
+                        Exactly         = $true
+                        Scope           = 'Context'
+                        ParameterFilter = { $ReportFilePaths.Count -eq 0 }
+                    }
+
+                    Should -Invoke @assertParams
+                }
+            }
+
+            Context 'Report generation fails' {
+
+                BeforeAll {
+
+                    Mock -CommandName New-DFePeriodReport -MockWith {
+                        throw 'XLSX export failed.'
+                    }
+
+                    $reportParams = $Script:BaseParams.Clone()
+                    $reportParams.IncludeMonthlyReports = $true
+                    $reportParams.NFSeEntries           = @()
+
+                    $Script:ReportsFailResult = Invoke-DFeDelivery @reportParams
+                }
+
+                It 'Returns FailedAt = Reports when New-DFePeriodReport throws' {
+                    $Script:ReportsFailResult.FailedAt | Should -Be 'Reports'
+                }
+
+                It 'Returns Success = false when report generation fails' {
+                    $Script:ReportsFailResult.Success | Should -BeFalse
+                }
+
+                It 'Does not call Send-DFeNotification when report generation fails' {
+                    Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope Context
+                }
+
+                It 'Does not transition to Sending when report generation fails' {
+                    $assertParams = @{
+                        CommandName     = 'Set-DFeDeliveryState'
+                        Times           = 0
+                        Exactly         = $true
+                        Scope           = 'Context'
+                        ParameterFilter = { $Status -eq 'Sending' }
+                    }
+
+                    Should -Invoke @assertParams
+                }
             }
         }
         #endregion
