@@ -70,7 +70,6 @@ and individual stream read/write operations.
 None.
 
 .EXAMPLE
-.EXAMPLE
 PS C:\> $msg = [System.Net.Mail.MailMessage]::new('from@mail.com', 'to@mail.com')
 PS C:\> $msg.Subject = 'Hello'
 PS C:\> $msg.Body = 'World'
@@ -79,7 +78,7 @@ PS C:\> Send-SmtpMessage -Server 'smtp.example.com'
 
 .NOTES
 Private. Depends on: New-TcpClientConnection, New-SmtpSslStream.
-Does NOT support: SASL PLAIN, XOAUTH2, multipart MIME, attachments.
+Supports multipart MIME file attachments. SASL PLAIN and XOAUTH2 are unsupported.
 #>
 function Send-SmtpMessage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -120,7 +119,10 @@ function Send-SmtpMessage {
 
         [Parameter(Mandatory)]
         [ValidateRange(1, 300)]
-        [int]$TimeoutSeconds
+        [int]$TimeoutSeconds,
+
+        [Parameter()]
+        [ref]$AcceptanceUncertain
     )
 
     $timeoutMs = $TimeoutSeconds * 1000
@@ -518,7 +520,9 @@ function Send-SmtpMessage {
                 $currentCharacter = $Value[$index]
 
                 if ([char]::IsHighSurrogate($currentCharacter)) {
-                    if (($index + 1) -ge $Value.Length -or -not [char]::IsLowSurrogate($Value[$index + 1])) {
+                    if (($index + 1) -ge $Value.Length -or -not
+                        [char]::IsLowSurrogate($Value[$index + 1])
+                    ) {
                         throw [System.FormatException]::new(
                             "Header '$FieldName' contains an unpaired high surrogate."
                         )
@@ -636,6 +640,7 @@ function Send-SmtpMessage {
                 [string]$FieldName,
 
                 [Parameter(Mandatory)]
+                [AllowEmptyCollection()]
                 [System.Collections.IEnumerable]$Recipients
             )
 
@@ -643,7 +648,31 @@ function Send-SmtpMessage {
 
             foreach ($recipient in $Recipients) {
                 Assert-NoCrLf -Value $recipient.Address -FieldName $FieldName
-                $addresses.Add("<$($recipient.Address)>")
+                if ([string]::IsNullOrEmpty($recipient.DisplayName)) {
+                    $addresses.Add("<$($recipient.Address)>")
+                    continue
+                }
+
+                Assert-NoCrLf -Value $recipient.DisplayName -FieldName $FieldName
+
+                if (Test-SmtpNonAscii -Value $recipient.DisplayName) {
+                    $params = @{
+                        FieldName = $FieldName
+                        Value     = $recipient.DisplayName
+                    }
+
+                    $header = @(ConvertTo-MimeHeaderLine @params)
+
+                    $displayName = (
+                        $header |
+                            Select-Object -Skip 1 |
+                            ForEach-Object { $_.Trim() }
+                    ) -join ' '
+
+                    $addresses.Add("$displayName <$($recipient.Address)>")
+                } else {
+                    $addresses.Add($recipient.ToString())
+                }
             }
 
             if ($addresses.Count -eq 0) {
@@ -674,12 +703,90 @@ function Send-SmtpMessage {
                     )
                 }
 
-                Write-SmtpDataLine -Writer $Writer -Line $current
+                Write-SmtpDataLine -Writer $Writer -Line ($current + ',')
 
                 $current = ' ' + $addresses[$index]
             }
 
             Write-SmtpDataLine -Writer $Writer -Line $current
+        }
+
+        function Write-SmtpBase64Content {
+            [CmdletBinding()]
+            [OutputType([void])]
+            param (
+                [Parameter(Mandatory)]
+                [System.IO.StreamWriter]$Writer,
+
+                [Parameter(Mandatory)]
+                [System.IO.Stream]$Content
+            )
+
+            $reader = [System.IO.BinaryReader]::new($Content, $utf8NoBom, $true)
+
+            try {
+                # 57 bytes produce one MIME Base64 line of at most 76 characters.
+                $bytes = $reader.ReadBytes(57)
+
+                while ($bytes.Length -gt 0) {
+                    Write-SmtpDataLine -Writer $Writer -Line ([Convert]::ToBase64String($bytes))
+                    $bytes = $reader.ReadBytes(57)
+                }
+            } finally {
+                $reader.Dispose()
+            }
+        }
+
+        function Write-SmtpAttachmentPart {
+            [CmdletBinding()]
+            [OutputType([void])]
+            param (
+                [Parameter(Mandatory)]
+                [System.IO.StreamWriter]$Writer,
+
+                [Parameter(Mandatory)]
+                [System.Net.Mail.Attachment]$Attachment
+            )
+
+            $name = $Attachment.Name
+            if ([string]::IsNullOrEmpty($name)) {
+                $name = 'attachment'
+            }
+
+            Assert-NoCrLf -Value $name -FieldName 'Attachment name'
+
+            Write-SmtpDataLine -Writer $Writer -Line 'Content-Type: application/octet-stream'
+            Write-SmtpDataLine -Writer $Writer -Line 'Content-Transfer-Encoding: base64'
+            Write-SmtpDataLine -Writer $Writer -Line 'Content-Disposition: attachment;'
+
+            # RFC 2231 continuations keep long UTF-8 filenames on short header lines.
+            $encodedName = -join @(
+                foreach ($byte in $utf8NoBom.GetBytes($name)) {
+                    '%{0:X2}' -f $byte
+                }
+            )
+            $segments = [regex]::Matches($encodedName, '(?:%[0-9A-Fa-f]{2}|[^%]){1,16}')
+
+            if ($segments.Count -eq 1) {
+                Write-SmtpDataLine -Writer $Writer -Line (" filename*=utf-8''" + $encodedName)
+            } else {
+                for ($index = 0; $index -lt $segments.Count; $index++) {
+                    $value = $segments[$index].Value
+
+                    if ($index -eq 0) {
+                        $value = "utf-8''" + $value
+                    }
+
+                    if ($index -lt ($segments.Count - 1)) {
+                        $value += ';'
+                    }
+
+                    Write-SmtpDataLine -Writer $Writer -Line (" filename*${index}*=" + $value)
+                }
+            }
+
+            Write-SmtpDataLine -Writer $Writer -Line ([string]::Empty)
+            Write-SmtpBase64Content -Writer $Writer -Content $Attachment.ContentStream
         }
 
         function ConvertTo-SmtpBodyLine {
@@ -757,6 +864,17 @@ function Send-SmtpMessage {
 
         Assert-SmtpPath -Address $Message.From.Address -FieldName 'From'
 
+        $envelopeSender = $Message.From
+
+        if ($null -ne $Message.Sender) {
+            Assert-SmtpPath -Address $Message.Sender.Address -FieldName 'Sender'
+            $envelopeSender = $Message.Sender
+        }
+
+        foreach ($recipient in $Message.ReplyToList) {
+            Assert-SmtpPath -Address $recipient.Address -FieldName 'Reply-To'
+        }
+
         foreach ($recipient in $Message.To) {
             Assert-SmtpPath -Address $recipient.Address -FieldName 'To'
         }
@@ -774,7 +892,14 @@ function Send-SmtpMessage {
 
         $bodyLines = ConvertTo-SmtpBodyLine -Body $body
 
-        $bodyContainsNonAscii = Test-SmtpBodyNonAscii -Lines $bodyLines
+        $hasAttachments = $Message.Attachments.Count -gt 0
+
+        $encodeBody = (
+            $hasAttachments -or
+            $Message.BodyTransferEncoding -eq [System.Net.Mime.TransferEncoding]::Base64
+        )
+
+        $bodyContainsNonAscii = -not $encodeBody -and (Test-SmtpBodyNonAscii -Lines $bodyLines)
         #endregion
 
         #region TCP connection
@@ -792,8 +917,8 @@ function Send-SmtpMessage {
             $networkStream.WriteTimeout = $timeoutMs
         } else {
             Write-Verbose -Message (
-                'Fluxo de rede não suporta timeout configurável. ' +
-                'Read/write podem bloquear indefinidamente em falha de rede.'
+                'Network stream does not support configurable timeouts. ' +
+                'Read/write may block indefinitely on network failure.'
             )
         }
         #endregion
@@ -802,7 +927,7 @@ function Send-SmtpMessage {
         $implicitTls = ($Port -eq 465) -and $EnableSsl
 
         if ($implicitTls) {
-            Write-Verbose -Message 'Iniciando TLS implícito (porta 465).'
+            Write-Verbose -Message 'Starting implicit TLS (port 465).'
 
             $sslParams = @{
                 InnerStream        = $networkStream
@@ -843,11 +968,14 @@ function Send-SmtpMessage {
         #endregion
 
         #region EHLO
-        $ehlo = Send-SmtpCommand `
-            -Writer $writer `
-            -Stream $activeStream `
-            -Command 'EHLO PipeDFe' `
-            -ExpectedCodes @(250)
+        $ehloParams = @{
+            Writer        = $writer
+            Stream        = $activeStream
+            Command       = 'EHLO PipeDFe'
+            ExpectedCodes = @(250)
+        }
+
+        $ehlo = Send-SmtpCommand @ehloParams
 
         #endregion
 
@@ -927,10 +1055,22 @@ function Send-SmtpMessage {
             $envelopeRecipients.Add($recipient)
         }
 
-        $requiresSmtpUtf8 = Test-SmtpNonAscii -Value $Message.From.Address
+        $requiresSmtpUtf8 = (
+            (Test-SmtpNonAscii -Value $Message.From.Address) -or
+            (Test-SmtpNonAscii -Value $envelopeSender.Address)
+        )
 
         if (-not $requiresSmtpUtf8) {
             foreach ($recipient in $envelopeRecipients) {
+                if (Test-SmtpNonAscii -Value $recipient.Address) {
+                    $requiresSmtpUtf8 = $true
+                    break
+                }
+            }
+        }
+
+        if (-not $requiresSmtpUtf8) {
+            foreach ($recipient in $Message.ReplyToList) {
                 if (Test-SmtpNonAscii -Value $recipient.Address) {
                     $requiresSmtpUtf8 = $true
                     break
@@ -980,7 +1120,7 @@ function Send-SmtpMessage {
             )
         }
 
-        Write-Verbose -Message 'Iniciando AUTH LOGIN.'
+        Write-Verbose -Message 'Starting AUTH LOGIN.'
 
         $cmdParams = @{
             Writer        = $writer
@@ -1068,7 +1208,7 @@ function Send-SmtpMessage {
         #endregion
 
         #region MAIL FROM
-        $mailFromCommand = "MAIL FROM:<$($Message.From.Address)>"
+        $mailFromCommand = "MAIL FROM:<$($envelopeSender.Address)>"
 
         if ($requiresSmtpUtf8) {
             $mailFromCommand += ' SMTPUTF8'
@@ -1092,22 +1232,31 @@ function Send-SmtpMessage {
         #region RCPT TO
         $recipientResults = [System.Collections.Generic.List[object]]::new()
 
+        $notifyOnFailure = (
+            ($Message.DeliveryNotificationOptions -band [System.Net.Mail.DeliveryNotificationOptions]::OnFailure) -ne 0 -and
+            (Test-SmtpCapability -Lines $ehlo.Lines -Capability 'DSN')
+        )
+
         foreach ($recipient in $envelopeRecipients) {
             Assert-SmtpPath -Address $recipient.Address -FieldName 'Recipient'
 
             $rcptCommand = "RCPT TO:<$($recipient.Address)>"
 
+            if ($notifyOnFailure) {
+                $rcptCommand += ' NOTIFY=FAILURE'
+            }
+
             Write-Verbose -Message "SMTP C: $rcptCommand"
 
+            $rcptBytes = $utf8NoBom.GetByteCount($rcptCommand)
+
+            if (($rcptBytes + 2) -gt 512) {
+                throw [System.FormatException]::new(
+                    'SMTP RCPT TO command exceeds the 512-octet limit.'
+                )
+            }
+
             try {
-                $rcptBytes = $utf8NoBom.GetByteCount($rcptCommand)
-
-                if (($rcptBytes + 2) -gt 512) {
-                    throw [System.FormatException]::new(
-                        'SMTP RCPT TO command exceeds the 512-octet limit.'
-                    )
-                }
-
                 $writer.WriteLine($rcptCommand)
                 $writer.Flush()
             } catch {
@@ -1138,7 +1287,7 @@ function Send-SmtpMessage {
                 )
             } elseif ($response.Code -ge 400 -and $response.Code -le 599) {
                 Write-Verbose -Message (
-                    "Destinatário '$($recipient.Address)' rejeitado: $($response.Text)"
+                    "Recipient '$($recipient.Address)' rejected: $($response.Text)"
                 )
 
                 $recipientResults.Add(
@@ -1157,16 +1306,17 @@ function Send-SmtpMessage {
             }
         }
 
-        $acceptedRecipients = @($recipientResults | Where-Object { $_.Accepted })
+        $rejectedRecipients = @($recipientResults | Where-Object { -not $_.Accepted })
 
-        if ($acceptedRecipients.Count -eq 0) {
-            $rejectedSummary = $recipientResults |
+        if ($rejectedRecipients.Count -gt 0) {
+            # Abort before DATA so a partial delivery cannot be reported as successful.
+            $rejectedSummary = $rejectedRecipients |
                 ForEach-Object {
                     "$($_.Address) [$($_.Code)] $($_.Response)"
                 }
 
             throw [System.Net.Mail.SmtpException]::new(
-                "SMTP server rejected all recipients: $($rejectedSummary -join '; ')"
+                "SMTP server rejected recipients: $($rejectedSummary -join '; ')"
             )
         }
         #endregion
@@ -1181,11 +1331,39 @@ function Send-SmtpMessage {
 
         $null = Send-SmtpCommand @cmdParams
 
-        Write-SmtpDataLine -Writer $writer -Line "From: <$($Message.From.Address)>"
+        Write-SmtpAddressHeader -Writer $writer -FieldName 'From' -Recipients @($Message.From)
 
-        Write-SmtpAddressHeader -Writer $writer -FieldName 'To'  -Recipients $Message.To
+        if ($null -ne $Message.Sender) {
+            $addressHeaderParams = @{
+                Writer     = $writer
+                FieldName  = 'Sender'
+                Recipients = @($Message.Sender)
+            }
 
-        Write-SmtpAddressHeader -Writer $writer -FieldName 'Cc'  -Recipients $Message.CC
+            Write-SmtpAddressHeader @addressHeaderParams
+        }
+
+        $replyAddressHeaderParams = @{
+            Writer     = $writer
+            FieldName  = 'Reply-To'
+            Recipients = $Message.ReplyToList
+        }
+
+        $toAddressHeaderParams = @{
+            Writer     = $writer
+            FieldName  = 'To'
+            Recipients = $Message.To
+        }
+
+        $ccAddressHeaderParams = @{
+            Writer     = $writer
+            FieldName  = 'Cc'
+            Recipients = $Message.CC
+        }
+
+        Write-SmtpAddressHeader @replyAddressHeaderParams
+        Write-SmtpAddressHeader @toAddressHeaderParams
+        Write-SmtpAddressHeader @ccAddressHeaderParams
 
         # Bcc is intentionally not emitted as a header.
         $subjectLines = ConvertTo-MimeHeaderLine -FieldName 'Subject' -Value $Message.Subject
@@ -1230,21 +1408,48 @@ function Send-SmtpMessage {
             'text/plain; charset=utf-8'
         }
 
+        if ($hasAttachments) {
+            $boundary = 'pipedfe-' + [Guid]::NewGuid().ToString('N')
+            Write-SmtpDataLine -Writer $writer -Line ('Content-Type: multipart/mixed; boundary="{0}"' -f $boundary)
+            Write-SmtpDataLine -Writer $writer -Line ([string]::Empty)
+            Write-SmtpDataLine -Writer $writer -Line "--$boundary"
+        }
+
         Write-SmtpDataLine -Writer $writer -Line "Content-Type: $contentType"
 
-        $contentTransferEncoding = if ($bodyContainsNonAscii) {
+        $contentTransferEncoding = if ($encodeBody) {
+            'base64'
+        } elseif ($bodyContainsNonAscii) {
             '8bit'
         } else {
             '7bit'
         }
 
         Write-SmtpDataLine -Writer $writer -Line "Content-Transfer-Encoding: $contentTransferEncoding"
+        Write-SmtpDataLine -Writer $writer -Line ([string]::Empty)
 
-        # Header/body separator.
-        Write-SmtpDataLine -Writer $writer -Line [string]::Empty
+        if ($encodeBody) {
+            $normalizedBody = $bodyLines -join ("{0}{1}" -f [char]13, [char]10)
+            $bodyStream = [System.IO.MemoryStream]::new($utf8NoBom.GetBytes($normalizedBody), $false)
 
-        foreach ($line in $bodyLines) {
-            Write-SmtpDataLine -Writer $writer -Line $line
+            try {
+                Write-SmtpBase64Content -Writer $writer -Content $bodyStream
+            } finally {
+                $bodyStream.Dispose()
+            }
+        } else {
+            foreach ($line in $bodyLines) {
+                Write-SmtpDataLine -Writer $writer -Line $line
+            }
+        }
+
+        if ($hasAttachments) {
+            foreach ($attachment in $Message.Attachments) {
+                Write-SmtpDataLine -Writer $writer -Line "--$boundary"
+                Write-SmtpAttachmentPart -Writer $writer -Attachment $attachment
+            }
+
+            Write-SmtpDataLine -Writer $writer -Line "--$boundary--"
         }
 
         # DATA terminator.
@@ -1275,13 +1480,13 @@ function Send-SmtpMessage {
 
             if ($quitResponse.Code -ne 221) {
                 Write-Verbose -Message (
-                    "Resposta inesperada ao QUIT (não fatal): $($quitResponse.Text)"
+                    "Unexpected QUIT response (non-fatal): $($quitResponse.Text)"
                 )
             }
         } catch {
             # DATA returned 250: the server accepted responsibility for the message.
             # A subsequent QUIT failure must not convert successful delivery into failure.
-            Write-Verbose -Message "SMTP QUIT falhou (não fatal): $($_.Exception.Message)"
+            Write-Verbose -Message "SMTP QUIT failed (non-fatal): $($_.Exception.Message)"
         }
         #endregion
 
@@ -1306,7 +1511,7 @@ function Send-SmtpMessage {
             try {
                 $writer.Dispose()
             } catch {
-                Write-Verbose -Message "Falha ao descartar writer SMTP: $($_.Exception.Message)"
+                Write-Verbose -Message "Failed to dispose SMTP writer: $($_.Exception.Message)"
             }
         }
 
@@ -1314,7 +1519,7 @@ function Send-SmtpMessage {
             try {
                 $sslStream.Dispose()
             } catch {
-                Write-Verbose -Message "Falha ao descartar SslStream: $($_.Exception.Message)"
+                Write-Verbose -Message "Failed to dispose SslStream: $($_.Exception.Message)"
             }
         }
 
@@ -1322,7 +1527,7 @@ function Send-SmtpMessage {
             try {
                 $networkStream.Dispose()
             } catch {
-                Write-Verbose -Message "Falha ao descartar NetworkStream: $($_.Exception.Message)"
+                Write-Verbose -Message "Failed to dispose NetworkStream: $($_.Exception.Message)"
             }
         }
 
@@ -1330,7 +1535,7 @@ function Send-SmtpMessage {
             try {
                 $tcpClient.Dispose()
             } catch {
-                Write-Verbose -Message "Falha ao descartar TcpClient: $($_.Exception.Message)"
+                Write-Verbose -Message "Failed to dispose TcpClient: $($_.Exception.Message)"
             }
         }
     }

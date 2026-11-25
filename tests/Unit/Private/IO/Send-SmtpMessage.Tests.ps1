@@ -780,6 +780,124 @@ Describe 'Send-SmtpMessage' {
         }
         #endregion
 
+        Context 'Multipart delivery' {
+
+            BeforeAll {
+
+                $lines = @(Get-PlainSmtpLine)
+                $lines = @($lines[0..8]) + @('250 Bcc accepted') + @($lines[9..11])
+                $Script:Stream = New-SmtpServerStream -Lines $lines
+
+                Mock -CommandName New-TcpClientConnection -MockWith {
+                    return New-MockTcpClient -Stream $Script:Stream
+                }
+
+                Mock -CommandName New-SmtpSslStream -MockWith {
+                    return $Script:Stream
+                }
+
+                $Script:MultipartBody    = '<p>Relatório fiscal</p>'
+                $Script:MultipartPayload = [byte[]](0..114)
+
+                $message = New-TestMessage -Body $Script:MultipartBody -IsBodyHtml $true
+                $message.Sender = [System.Net.Mail.MailAddress]::new('bounce@example.com')
+                $message.ReplyToList.Add('reply@example.com')
+                $message.Bcc.Add('blind@example.com')
+
+                $content = [System.IO.MemoryStream]::new($Script:MultipartPayload)
+                $message.Attachments.Add(
+                    [System.Net.Mail.Attachment]::new($content, 'ação.zip')
+                )
+
+                $smtpParams = @{
+                    Server         = $Script:Server
+                    Port           = 465
+                    EnableSsl      = $true
+                    Credential     = New-TestCredential
+                    Message        = $message
+                    TimeoutSeconds = $Script:TimeoutSeconds
+                }
+
+                Send-SmtpMessage @smtpParams
+
+                $message.Dispose()
+
+                $Script:Wire     = $Script:Stream.WrittenText
+                $Script:Boundary = [regex]::Match(
+                    $Script:Wire,
+                    'multipart/mixed; boundary="([^"]+)"'
+                ).Groups[1].Value
+                $Script:Parts    = $Script:Wire -split [regex]::Escape("--$Script:Boundary")
+            }
+
+            It 'Completes without throwing' {
+                $true | Should -BeTrue
+            }
+
+            It 'Uses the Sender address in MAIL FROM' {
+                $Script:Wire | Should -Match 'MAIL FROM:<bounce@example.com>'
+            }
+
+            It 'Sends RCPT TO for the Bcc recipient' {
+                $Script:Wire | Should -Match 'RCPT TO:<blind@example.com>'
+            }
+
+            It 'Emits Sender header' {
+                $Script:Wire | Should -Match '(?m)^Sender: <bounce@example.com>'
+            }
+
+            It 'Emits Reply-To header' {
+                $Script:Wire | Should -Match '(?m)^Reply-To: <reply@example.com>'
+            }
+
+            It 'Does not emit Bcc header' {
+                $Script:Wire | Should -Not -Match '(?im)^Bcc:'
+            }
+
+            It 'Encodes the UTF-8 attachment filename with RFC 2231' {
+                $Script:Wire | Should -Match (
+                    "filename\*=utf-8''%61%C3%A7%C3%A3%6F%2E%7A%69%70"
+                )
+            }
+
+            It 'Splits the message into exactly 4 MIME parts (preamble + body + attachment + epilogue)' {
+                $Script:Parts | Should -HaveCount 4
+            }
+
+            It 'Part 1 declares text/html Content-Type' {
+                $Script:Parts[1] | Should -Match 'Content-Type: text/html; charset=utf-8'
+            }
+
+            It 'Part 2 declares Content-Disposition attachment' {
+                $Script:Parts[2] | Should -Match 'Content-Disposition: attachment;'
+            }
+
+            It 'Epilogue ends with CRLF-dot-CRLF (DATA terminator)' {
+                $Script:Parts[3] | Should -Match '^--\r\n\.\r\n'
+            }
+
+            It 'Body part decodes to the original HTML string' {
+                $bodyBase64  = ($Script:Parts[1] -split '\r\n\r\n', 2)[1].Trim()
+                $decodedBody = [System.Text.Encoding]::UTF8.GetString(
+                    [Convert]::FromBase64String($bodyBase64)
+                )
+                $decodedBody | Should -BeExactly $Script:MultipartBody
+            }
+
+            It 'Attachment Base64 lines are at most 76 characters each' {
+                $attachmentBase64 = ($Script:Parts[2] -split '\r\n\r\n', 2)[1].Trim()
+                foreach ($line in ($attachmentBase64 -split '\r\n')) {
+                    $line.Length | Should -BeLessOrEqual 76
+                }
+            }
+
+            It 'Attachment part decodes to the original payload bytes' {
+                $attachmentBase64 = ($Script:Parts[2] -split '\r\n\r\n', 2)[1].Trim()
+                [Convert]::ToBase64String([Convert]::FromBase64String($attachmentBase64)) |
+                    Should -BeExactly ([Convert]::ToBase64String($Script:MultipartPayload))
+            }
+        }
+
         #region Happy path - port 465 implicit TLS
         Context 'Happy path: port 465 implicit TLS' {
 
@@ -1048,19 +1166,20 @@ Describe 'Send-SmtpMessage' {
 
             BeforeAll {
 
-                # Each It call gets a fresh stream via the mock closure.
-                Mock -CommandName New-TcpClientConnection -MockWith {
-                    $smtputf8Lines = [string[]]@(
-                        '220 smtp.example.com ESMTP ready'
-                        '250-smtp.example.com'
-                        '250-AUTH LOGIN'
-                        '250 OK'
-                        '334 VXNlcm5hbWU6'
-                        '334 UGFzc3dvcmQ6'
-                        '235 2.7.0 Authentication successful'
-                    )
+                $smtputf8Lines = [string[]]@(
+                    '220 smtp.example.com ESMTP ready'
+                    '250-smtp.example.com'
+                    '250-AUTH LOGIN'
+                    '250 OK'
+                    '334 VXNlcm5hbWU6'
+                    '334 UGFzc3dvcmQ6'
+                    '235 2.7.0 Authentication successful'
+                )
 
-                    return New-MockTcpClient -Stream (New-SmtpServerStream -Lines $smtputf8Lines)
+                $Script:Stream = New-SmtpServerStream -Lines $smtputf8Lines
+
+                Mock -CommandName New-TcpClientConnection -MockWith {
+                    return New-MockTcpClient -Stream $Script:Stream
                 }
 
                 Mock -CommandName New-SmtpSslStream -MockWith { }
@@ -1088,8 +1207,8 @@ Describe 'Send-SmtpMessage' {
                     return
                 }
 
-                $msg         = New-TestMessage
-                $msg.From    = $nonAsciiFrom
+                $msg      = New-TestMessage
+                $msg.From = $nonAsciiFrom
 
                 $smtpParams = @{
                     Server                      = $Script:Server
@@ -1394,6 +1513,69 @@ Describe 'Send-SmtpMessage' {
 
             It 'Sends RCPT TO for the second recipient' {
                 $Script:Stream.WrittenText | Should -BeLike '*RCPT TO:<b@example.com>*'
+            }
+        }
+        #endregion
+
+        #region RCPT TO partial rejection
+        Context 'RCPT TO: partial recipient rejection throws and reports all rejected addresses' {
+
+            BeforeAll {
+
+                $Script:Stream = New-SmtpServerStream -Lines @(
+                    '220 smtp.example.com ESMTP ready'
+                    '250-smtp.example.com'
+                    '250-AUTH LOGIN'
+                    '250 OK'
+                    '334 VXNlcm5hbWU6'
+                    '334 UGFzc3dvcmQ6'
+                    '235 2.7.0 Authentication successful'
+                    '250 OK'                        # MAIL FROM accepted
+                    '250 OK'                        # first RCPT TO accepted
+                    '550 5.1.1 User unknown'        # second RCPT TO rejected
+                )
+
+                Mock -CommandName New-TcpClientConnection -MockWith {
+                    return New-MockTcpClient -Stream $Script:Stream
+                }
+
+                Mock -CommandName New-SmtpSslStream -MockWith { }
+
+                $Script:Params = @{
+                    Server                      = $Script:Server
+                    Port                        = $Script:Port587
+                    EnableSsl                   = $false
+                    AllowInsecureAuthentication = $true
+                    Credential                  = New-TestCredential
+                    Message                     = New-TestMessage -To @(
+                        'good@example.com',
+                        'bad@example.com'
+                    )
+                    TimeoutSeconds              = $Script:TimeoutSeconds
+                }
+
+                $Script:Thrown = $null
+                try {
+                    Send-SmtpMessage @Script:Params
+                } catch {
+                    $Script:Thrown = $_
+                }
+            }
+
+            It 'Throws when at least one recipient is rejected' {
+                $Script:Thrown | Should -Not -BeNullOrEmpty
+            }
+
+            It 'Exception message names the rejected address' {
+                $Script:Thrown.Exception.Message | Should -BeLike '*bad@example.com*'
+            }
+
+            It 'Exception message mentions the rejection code' {
+                $Script:Thrown.Exception.Message | Should -BeLike '*550*'
+            }
+
+            It 'Does not send DATA after a partial rejection' {
+                $Script:Stream.WrittenText | Should -Not -BeLike '*DATA*'
             }
         }
         #endregion
