@@ -1,18 +1,17 @@
 ﻿<#
 .SYNOPSIS
-Sends an HTML email via System.Net.Mail.SmtpClient.
+Sends an HTML email through the shared SMTP transport.
 
 .DESCRIPTION
 Builds and sends an HTML email using the provided SMTP configuration.
 
-TLS 1.2 is explicitly enabled per project security policy.
+Uses implicit TLS on port 465 and STARTTLS on other ports when SSL is enabled.
 
 Never throws after parameter validation. Runtime failures are caught and
 returned as Success = $false with the error message in the Error property.
 
-Invalid recipients are skipped with a warning. Missing or invalid
-attachments are skipped with a warning. When no valid To recipients
-remain after filtering, the function returns Success = $false.
+Invalid recipients are skipped with a warning. Missing attachments and
+an empty To list after recipient validation fail before delivery.
 
 .PARAMETER SmtpConfig
 Resolved SMTP configuration object as returned by Resolve-DFeSmtp.
@@ -41,16 +40,18 @@ System.Management.Automation.PSCustomObject
 Success       [bool]     Whether delivery succeeded.
 EmailsSent    [string[]] Addresses of To recipients when successful.
 Error         [string]   Error message when Success is false. $null otherwise.
-SendAttempted [bool]     True when SmtpClient.Send was called, regardless of
-                         outcome. False when the failure occurred during
-                         preparation (decryption, attachment, recipient
-                         validation). Used by callers to distinguish retryable
-                         failures from indeterminate ones.
+AcceptanceUncertain [bool]
+                         False on success or when the failure is known to have
+                         occurred before the SMTP DATA terminator was sent.
+                         True when the terminator may have reached the server
+                         but no definitive response was received, meaning the
+                         server may or may not have accepted the message.
 
 .NOTES
 Private dependencies:
   Add-MailRecipient
   ConvertFrom-DpapiString
+  Send-SmtpMessage
 #>
 function Send-Mail {
     [CmdletBinding()]
@@ -88,10 +89,8 @@ function Send-Mail {
         [string[]]$Attachments = @()
     )
 
-    $message        = $null
-    $smtpClient     = $null
-    $sendAttempted  = $false
-    $attachmentList = [System.Collections.Generic.List[System.Net.Mail.Attachment]]::new()
+    $message             = $null
+    $acceptanceUncertain = $false
 
     try {
         $securePassword = ConvertFrom-DpapiString -Value $SmtpConfig.Password
@@ -173,6 +172,7 @@ function Send-Mail {
         $message.SubjectEncoding             = [System.Text.Encoding]::UTF8
         $message.Body                        = $Body
         $message.BodyEncoding                = [System.Text.Encoding]::UTF8
+        $message.BodyTransferEncoding        = [System.Net.Mime.TransferEncoding]::Base64
         $message.IsBodyHtml                  = $true
         $message.Priority                    = [System.Net.Mail.MailPriority]::Normal
         $message.DeliveryNotificationOptions = [System.Net.Mail.DeliveryNotificationOptions]::OnFailure
@@ -190,48 +190,37 @@ function Send-Mail {
             }
 
             $attachment = [System.Net.Mail.Attachment]::new($path)
-            $attachmentList.Add($attachment)
             $message.Attachments.Add($attachment)
         }
 
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        $smtpClient = [System.Net.Mail.SmtpClient]::new($SmtpConfig.Server, $SmtpConfig.Port)
+        $smtpParams = @{
+            Server              = $SmtpConfig.Server
+            Port                = [int]$SmtpConfig.Port
+            EnableSsl           = [bool]$SmtpConfig.Ssl
+            Credential          = $credential
+            Message             = $message
+            TimeoutSeconds      = [int]$SmtpConfig.Timeout
+            AcceptanceUncertain = [ref]$acceptanceUncertain
+        }
 
-        $smtpClient.EnableSsl             = [bool]$SmtpConfig.Ssl
-        $smtpClient.DeliveryMethod        = [System.Net.Mail.SmtpDeliveryMethod]::Network
-        $smtpClient.UseDefaultCredentials = $false
-        $smtpClient.Credentials           = $credential
-        $smtpClient.Timeout               = [int]$SmtpConfig.Timeout * 1000
-
-        $sendAttempted = $true
-        $smtpClient.Send($message)
+        Send-SmtpMessage @smtpParams
 
         [PSCustomObject]@{
-            Success       = $true
-            EmailsSent    = @($message.To | ForEach-Object { $_.Address })
-            Error         = $null
-            SendAttempted = $sendAttempted
+            Success             = $true
+            EmailsSent          = @($message.To | ForEach-Object { $_.Address })
+            Error               = $null
+            AcceptanceUncertain = $false
         }
     } catch {
         [PSCustomObject]@{
-            Success       = $false
-            EmailsSent    = @()
-            Error         = $_.Exception.Message
-            SendAttempted = $sendAttempted
+            Success             = $false
+            EmailsSent          = @()
+            Error               = $_.Exception.Message
+            AcceptanceUncertain = $acceptanceUncertain
         }
     } finally {
-        foreach ($attachment in $attachmentList) {
-            if ($null -ne $attachment) {
-                $attachment.Dispose()
-            }
-        }
-
         if ($null -ne $message) {
             $message.Dispose()
-        }
-
-        if ($null -ne $smtpClient) {
-            $smtpClient.Dispose()
         }
     }
 }

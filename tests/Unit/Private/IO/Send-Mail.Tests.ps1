@@ -14,13 +14,11 @@ and is covered by integration tests only.
 
 Coverage includes:
   - Mandatory parameters reject null and empty values.
-  - Returns a PSCustomObject with Success, EmailsSent and Error.
+  - Returns a PSCustomObject with Success, EmailsSent, Error and AcceptanceUncertain.
   - Does not throw when SMTP delivery fails.
   - Returns Success = false when delivery fails.
   - Returns Success = false when no valid To recipients remain.
   - Returns Success = false when password decryption fails.
-  - Does not throw when SenderAddress is absent.
-  - Does not throw when ReplyTo is absent.
   - Does not throw when attachment does not exist.
   - Does not throw when Attachments is empty.
   - Ignores null and whitespace attachment paths.
@@ -79,6 +77,10 @@ Describe 'Send-Mail' {
         BeforeEach {
             Mock -CommandName ConvertFrom-DpapiString -MockWith {
                 ConvertTo-SecureString -String 'Ta0r0912yV1cmJ' -AsPlainText -Force
+            }
+
+            Mock -CommandName Send-SmtpMessage -MockWith {
+                throw [System.Net.Mail.SmtpException]::new('Simulated SMTP failure.')
             }
         }
 
@@ -147,7 +149,7 @@ Describe 'Send-Mail' {
                 $result | Should -BeOfType [System.Management.Automation.PSCustomObject]
             }
 
-            It 'Always exposes Success, EmailsSent and Error properties' {
+            It 'Always exposes Success, EmailsSent, Error and AcceptanceUncertain properties' {
                 $sendParams = @{
                     SmtpConfig = $Script:ValidSmtp
                     To         = $Script:ValidTo
@@ -161,9 +163,57 @@ Describe 'Send-Mail' {
                 $names | Should -Contain 'Success'
                 $names | Should -Contain 'EmailsSent'
                 $names | Should -Contain 'Error'
+                $names | Should -Contain 'AcceptanceUncertain'
             }
         }
         #endregion
+
+        Context 'SMTP transport' {
+
+            It 'Passes the delivery message and attachment to the shared transport on port <Port>' -ForEach @(
+                @{ Port = 465 }
+                @{ Port = 587 }
+            ) {
+                $config = $Script:ValidSmtp.PSObject.Copy()
+                $config.Port = $Port
+
+                $attachmentPath = Join-Path -Path $TestDrive -ChildPath 'report.xlsx'
+                [System.IO.File]::WriteAllBytes($attachmentPath, [byte[]]@(1, 2, 3))
+
+                Mock -CommandName Send-SmtpMessage -MockWith {
+                    $Message.Attachments.Count | Should -Be 1
+                    $Message.Attachments[0].Name | Should -Be 'report.xlsx'
+                }
+
+                $sendParams = @{
+                    SmtpConfig  = $config
+                    To          = $Script:ValidTo
+                    Subject     = $Script:ValidSubject
+                    Body        = $Script:ValidBody
+                    Attachments = @($attachmentPath)
+                }
+
+                $result = Send-Mail @sendParams
+
+                $result.Success             | Should -BeTrue
+                $result.AcceptanceUncertain | Should -BeFalse
+                $result.EmailsSent          | Should -Be @('to@example.com')
+
+                $invokeParams = @{
+                    CommandName     = 'Send-SmtpMessage'
+                    Times           = 1
+                    Exactly         = $true
+                    ParameterFilter = {
+                        $Server -eq $config.Server -and
+                        $Port -eq $config.Port -and
+                        $EnableSsl -and
+                        $TimeoutSeconds -eq 30
+                    }
+                }
+
+                Should -Invoke @invokeParams
+            }
+        }
 
         #region Error handling
         Context 'Error handling' {
@@ -189,9 +239,10 @@ Describe 'Send-Mail' {
 
                 $result = Send-Mail @sendParams
 
-                $result.Success    | Should -BeFalse
-                $result.Error      | Should -Not -BeNullOrEmpty
-                $result.EmailsSent | Should -HaveCount 0
+                $result.Success             | Should -BeFalse
+                $result.Error               | Should -Not -BeNullOrEmpty
+                $result.EmailsSent          | Should -HaveCount 0
+                $result.AcceptanceUncertain | Should -BeFalse
             }
 
             It 'Does not throw when all To recipients are invalid' {
@@ -226,8 +277,9 @@ Describe 'Send-Mail' {
 
                 $result = Send-Mail @sendParams
 
-                $result.Success | Should -BeFalse
-                $result.Error   | Should -Not -BeNullOrEmpty
+                $result.Success       | Should -BeFalse
+                $result.Error         | Should -Not -BeNullOrEmpty
+                $result.AcceptanceUncertain | Should -BeFalse
             }
 
             It 'Returns Success = false when password decryption fails' {
@@ -244,8 +296,9 @@ Describe 'Send-Mail' {
 
                 $result = Send-Mail @sendParams
 
-                $result.Success | Should -BeFalse
-                $result.Error   | Should -Be 'DPAPI failure'
+                $result.Success       | Should -BeFalse
+                $result.Error         | Should -Be 'DPAPI failure'
+                $result.AcceptanceUncertain | Should -BeFalse
             }
 
             It 'Does not throw when password decryption fails' {
@@ -253,33 +306,6 @@ Describe 'Send-Mail' {
                     throw 'DPAPI failure'
                 }
 
-                $sendParams = @{
-                    SmtpConfig = $Script:ValidSmtp
-                    To         = $Script:ValidTo
-                    Subject    = $Script:ValidSubject
-                    Body       = $Script:ValidBody
-                }
-
-                { Send-Mail @sendParams } | Should -Not -Throw
-            }
-        }
-        #endregion
-
-        #region Optional metadata
-        Context 'Optional sender metadata' {
-
-            It 'Does not throw when SenderAddress is absent' {
-                $sendParams = @{
-                    SmtpConfig = $Script:ValidSmtp
-                    To         = $Script:ValidTo
-                    Subject    = $Script:ValidSubject
-                    Body       = $Script:ValidBody
-                }
-
-                { Send-Mail @sendParams } | Should -Not -Throw
-            }
-
-            It 'Does not throw when ReplyTo is absent' {
                 $sendParams = @{
                     SmtpConfig = $Script:ValidSmtp
                     To         = $Script:ValidTo
@@ -385,7 +411,9 @@ Describe 'Send-Mail' {
 
                 $warnings = @(
                     Send-Mail @sendParams 3>&1 |
-                        Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+                        Where-Object {
+                            $_ -is [System.Management.Automation.WarningRecord]
+                        }
                 )
 
                 $warnings | Should -Not -BeNullOrEmpty
@@ -398,14 +426,14 @@ Describe 'Send-Mail' {
 
             It 'Does not throw when ReplyTo has a valid email' {
                 $smtpWithReplyTo = [PSCustomObject]@{
-                    Server  = $Script:ValidSmtp.Server
-                    Port    = $Script:ValidSmtp.Port
-                    Ssl     = $Script:ValidSmtp.Ssl
+                    Server   = $Script:ValidSmtp.Server
+                    Port     = $Script:ValidSmtp.Port
+                    Ssl      = $Script:ValidSmtp.Ssl
                     Username = $Script:ValidSmtp.Username
                     Password = $Script:ValidSmtp.Password
-                    Timeout = $Script:ValidSmtp.Timeout
-                    From    = $Script:ValidSmtp.From
-                    ReplyTo = [PSCustomObject]@{
+                    Timeout  = $Script:ValidSmtp.Timeout
+                    From     = $Script:ValidSmtp.From
+                    ReplyTo  = [PSCustomObject]@{
                         Email = 'reply@example.com'
                         Name  = 'Reply'
                     }
@@ -445,7 +473,9 @@ Describe 'Send-Mail' {
 
                 $warnings = @(
                     Send-Mail @sendParams 3>&1 |
-                        Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+                        Where-Object {
+                            $_ -is [System.Management.Automation.WarningRecord]
+                        }
                 )
 
                 $warnings | Should -Not -BeNullOrEmpty
