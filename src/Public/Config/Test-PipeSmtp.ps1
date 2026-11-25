@@ -9,7 +9,7 @@ involved.
 
 When called without parameters, tests the global SMTP configuration.
 When called with -Cnpj, resolves the company SMTP via Resolve-DFeSmtp,
-falling back to the global configuration with a warning if none is found.
+falling back to the global configuration when no company SMTP is configured.
 When called with -SmtpConfig, tests the provided configuration directly.
 
 The -TimeoutSeconds parameter overrides the timeout configured in the
@@ -159,15 +159,16 @@ function Test-PipeSmtp {
                 $cnpjNormalized = ConvertTo-NormalizedCnpj -Value $Cnpj
                 $companyConfig  = Get-CompanyConfig -Cnpj $cnpjNormalized
 
-                $resolveWarnings = $null
+                $config = Resolve-DFeSmtp -Company $companyConfig
 
-                $resolveParams = @{
-                    Company         = $companyConfig
-                    WarningVariable = 'resolveWarnings'
+                $smtpProperty = $companyConfig.PSObject.Properties['Smtp']
+
+                $source = if ($null -ne $smtpProperty -and
+                    $null -ne $smtpProperty.Value) {
+                    'Company'
+                } else {
+                    'Global'
                 }
-
-                $config = Resolve-DFeSmtp @resolveParams
-                $source = if ($resolveWarnings) { 'Global' } else { 'Company' }
             }
 
             'ByConfig' {

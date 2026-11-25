@@ -545,14 +545,6 @@ Describe 'Test-PipeSmtp' {
                     return $Script:FakeCompanyWithoutSmtp
                 }
 
-                Mock -CommandName Resolve-DFeSmtp -MockWith {
-                    param ([pscustomobject]$Company)
-                    $null = $Company
-
-                    Write-Warning -Message 'No company SMTP found. Falling back to global.'
-                    return $Script:FakeSmtpConfig
-                }
-
                 Mock -CommandName ConvertFrom-DpapiString -MockWith {
                     return $Script:FakeSecurePassword
                 }
@@ -589,8 +581,11 @@ Describe 'Test-PipeSmtp' {
                 Should -Invoke Get-CompanyConfig @invokeParams
             }
 
-            It 'Uses Resolve-DFeSmtp to resolve the effective configuration' {
-                Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
+            It 'Reports Global when the company falls back to global SMTP' {
+                $result = Test-PipeSmtp -Cnpj 'AB12CD34000195'
+
+                $result.Success | Should -BeTrue
+                $result.Source  | Should -Be 'Global'
 
                 $invokeParams = @{
                     ModuleName = 'PipeDFe'
@@ -599,11 +594,7 @@ Describe 'Test-PipeSmtp' {
                     Times      = 1
                 }
 
-                Should -Invoke Resolve-DFeSmtp @invokeParams
-            }
-
-            It 'Returns Global as Source when Resolve-DFeSmtp emits a warning' {
-                (Test-PipeSmtp -Cnpj 'AB12CD34000195').Source | Should -Be 'Global'
+                Should -Invoke Get-SmtpConfig @invokeParams
             }
 
             It 'Successfully tests the fallback configuration' {
@@ -613,19 +604,6 @@ Describe 'Test-PipeSmtp' {
                 $result.Server        | Should -Be 'smtp.example.com'
                 $result.Port          | Should -Be 587
                 $result.Authenticated | Should -BeTrue
-            }
-
-            It 'Does not call Get-SmtpConfig during Resolve-DFeSmtp fallback' {
-                Test-PipeSmtp -Cnpj 'AB12CD34000195' | Out-Null
-
-                $invokeParams = @{
-                    ModuleName = 'PipeDFe'
-                    Scope      = 'It'
-                    Exactly    = $true
-                    Times      = 0
-                }
-
-                Should -Invoke Get-SmtpConfig @invokeParams
             }
         }
         #endregion
