@@ -177,6 +177,17 @@ function Invoke-PipeDFeCompany {
             "[$cnpj] $totalDocumentos documento(s) encontrado(s) no período."
         )
 
+        $scanOutput = if ($null -eq $scanResult) {
+            $null
+        } else {
+            [PSCustomObject]@{
+                FilesFound   = $scanResult.FilesFound
+                FilesIndexed = $scanResult.FilesIndexed
+                FilesSkipped = $scanResult.FilesSkipped
+                FilesIgnored = $scanResult.FilesIgnored
+            }
+        }
+
         if ($totalDocumentos -eq 0) {
             $aviso = (
                 "Nenhum documento encontrado no período de $periodoDisplay. " +
@@ -203,16 +214,7 @@ function Invoke-PipeDFeCompany {
                 Avisos          = $avisos.ToArray()
                 Erro            = $null
                 NFSeScan        = $nfseScanResult
-                Scan            = if ($null -eq $scanResult) {
-                    $null
-                } else {
-                    [PSCustomObject]@{
-                        FilesFound   = $scanResult.FilesFound
-                        FilesIndexed = $scanResult.FilesIndexed
-                        FilesSkipped = $scanResult.FilesSkipped
-                        FilesIgnored = $scanResult.FilesIgnored
-                    }
-                }
+                Scan            = $scanOutput
             }
         }
 
@@ -395,15 +397,18 @@ function Invoke-PipeDFeCompany {
         # Notification
         # -----------------------------------------------------------------
         $smtp = $null
+        $smtpFailure = $null
 
         try {
             $smtp = Resolve-DFeSmtp -Company $Company
         } catch {
-            $aviso = (
-                'SMTP não configurado - notificação por e-mail ignorada. ' +
-                'Execute Set-PipeSmtp para configurar.'
-            )
+            $smtpFailure = if ($_.FullyQualifiedErrorId -like 'SmtpNotConfigured*') {
+                'não há configuração SMTP para esta empresa. Execute Set-PipeSmtp para configurar.'
+            } else {
+                'a configuração SMTP não pôde ser carregada. ' + $_.Exception.Message
+            }
 
+            $aviso = "A entrega dos arquivos XML não foi concluída porque $smtpFailure"
             $avisos.Add($aviso)
 
             Write-Warning -Message "[$cnpj] $aviso"
@@ -459,6 +464,12 @@ function Invoke-PipeDFeCompany {
         # An execution with documents is not successful until delivery completes.
         # Invoke-DFeDelivery owns the persistent delivery state and retry policy.
         # Do not attempt another SMTP send here.
+        if ($null -ne $smtpFailure) {
+            throw [System.InvalidOperationException]::new(
+                "A entrega dos arquivos XML não foi concluída porque $smtpFailure"
+            )
+        }
+
         if (-not $emailEnviado) {
             throw [System.InvalidOperationException]::new(
                 'A entrega dos arquivos XML não foi concluída. ' +
@@ -482,16 +493,7 @@ function Invoke-PipeDFeCompany {
             Avisos          = $avisos.ToArray()
             Erro            = $null
             NFSeScan        = $nfseScanResult
-            Scan            = if ($null -eq $scanResult) {
-                $null
-            } else {
-                [PSCustomObject]@{
-                    FilesFound   = $scanResult.FilesFound
-                    FilesIndexed = $scanResult.FilesIndexed
-                    FilesSkipped = $scanResult.FilesSkipped
-                    FilesIgnored = $scanResult.FilesIgnored
-                }
-            }
+            Scan            = $scanOutput
         }
 
     } catch {
