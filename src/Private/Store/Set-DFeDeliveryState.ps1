@@ -5,11 +5,12 @@ Applies a guarded lifecycle transition to a persistent DFe delivery.
 .DESCRIPTION
 Applies only the supported delivery lifecycle transitions:
 
-    Prepared     -> Sending
-    Failed       -> Sending
-    Sending      -> Delivered
-    Sending      -> Failed
-    Sending      -> Indeterminate
+    Prepared      -> Sending
+    Failed        -> Sending
+    Sending       -> Delivered
+    Sending       -> Failed
+    Sending       -> Indeterminate
+    Indeterminate -> Delivered or Failed with an operator resolution reason
 
 The caller supplies the state and delivery_started_at value it observed.
 Both values are compared by the UPDATE statement, preventing stale operations
@@ -19,7 +20,8 @@ The delivery_started_at value is also used as an attempt token. A retry from
 Failed always receives a timestamp later than the previous attempt, preventing
 an ABA sequence from accepting a late result from an earlier send attempt.
 
-Indeterminate is terminal and cannot be retried through this function.
+An operator resolution preserves the previous SMTP error and the decision
+in the index database in the same transaction as the state update.
 
 All timestamps are stored as UTC ISO 8601 round-trip strings.
 
@@ -42,6 +44,10 @@ Target delivery status.
 .PARAMETER ErrorMessage
 Required when Status is Failed or Indeterminate. Not accepted for other
 target states.
+
+.PARAMETER ResolutionReason
+Required when resolving Indeterminate. Records why the operator confirmed
+acceptance or non-acceptance.
 
 .OUTPUTS
 System.Management.Automation.PSCustomObject
@@ -97,7 +103,7 @@ function Set-DFeDeliveryState {
         [string]$DeliveryId,
 
         [Parameter(Mandatory)]
-        [ValidateSet('Prepared', 'Sending', 'Failed')]
+        [ValidateSet('Prepared', 'Sending', 'Failed', 'Indeterminate')]
         [string]$ExpectedStatus,
 
         [Parameter(Mandatory)]
@@ -111,15 +117,20 @@ function Set-DFeDeliveryState {
         [Parameter()]
         [AllowNull()]
         [AllowEmptyString()]
-        [string]$ErrorMessage
+        [string]$ErrorMessage,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string]$ResolutionReason
     )
 
     # Normalize ValidateSet values before writing them to the case-sensitive
     # SQLite CHECK constraint.
     $ExpectedStatus = switch ($ExpectedStatus.ToLowerInvariant()) {
-        'prepared' { 'Prepared' }
-        'sending'  { 'Sending'  }
-        'failed'   { 'Failed'   }
+        'prepared'      { 'Prepared'      }
+        'sending'       { 'Sending'       }
+        'failed'        { 'Failed'        }
+        'indeterminate' { 'Indeterminate' }
     }
 
     $Status = switch ($Status.ToLowerInvariant()) {
@@ -142,6 +153,10 @@ function Set-DFeDeliveryState {
         'Sending' {
             $Status -in @('Delivered', 'Failed', 'Indeterminate')
         }
+
+        'Indeterminate' {
+            $Status -in @('Delivered', 'Failed')
+        }
     }
 
     if (-not $transitionAllowed) {
@@ -154,6 +169,22 @@ function Set-DFeDeliveryState {
                 [System.Management.Automation.ErrorCategory]::InvalidArgument,
                 $DeliveryId
             )
+        )
+    }
+
+    $isResolution = $ExpectedStatus -eq 'Indeterminate'
+
+    if ($isResolution -and [string]::IsNullOrWhiteSpace($ResolutionReason)) {
+        throw [System.ArgumentException]::new(
+            'ResolutionReason is required when resolving an Indeterminate delivery.',
+            'ResolutionReason'
+        )
+    }
+
+    if (-not $isResolution -and $PSBoundParameters.ContainsKey('ResolutionReason')) {
+        throw [System.ArgumentException]::new(
+            'ResolutionReason applies only to Indeterminate deliveries.',
+            'ResolutionReason'
         )
     }
 
@@ -341,13 +372,73 @@ WHERE
         $connection = Open-DFeIndexConnection -Cnpj $Cnpj
         $transaction = $connection.BeginTransaction()
 
+        if ($isResolution) {
+            # Provision the resolution log for existing v8 indexes in the same
+            # transaction as the first resolution.
+            $resolutionCommand = $connection.CreateCommand()
+
+            try {
+
+                $resolutionCommand.Transaction = $transaction
+                $resolutionCommand.CommandText = @'
+CREATE TABLE IF NOT EXISTS dfe_delivery_resolution (
+    delivery_id         TEXT NOT NULL,
+    delivery_started_at TEXT NOT NULL,
+    resolved_at         TEXT NOT NULL,
+    resolution_status   TEXT NOT NULL CHECK (resolution_status IN ('Delivered', 'Failed')),
+    reason              TEXT NOT NULL,
+    previous_error      TEXT,
+    PRIMARY KEY (delivery_id, delivery_started_at),
+    FOREIGN KEY (delivery_id) REFERENCES dfe_delivery (delivery_id)
+        ON DELETE CASCADE
+);
+'@
+
+                $null = $resolutionCommand.ExecuteNonQuery()
+
+                $resolutionCommand.CommandText = @'
+INSERT INTO dfe_delivery_resolution (
+    delivery_id,
+    delivery_started_at,
+    resolved_at,
+    resolution_status,
+    reason,
+    previous_error
+) SELECT
+    delivery_id,
+    delivery_started_at,
+    @resolved_at,
+    @status,
+    @reason,
+    delivery_error
+FROM dfe_delivery
+WHERE delivery_id = @delivery_id
+    AND delivery_status = 'Indeterminate'
+    AND delivery_started_at = @expected_started_at;
+'@
+
+                $resolutionCommand.Parameters.AddWithValue('@resolved_at', $timestamp)   | Out-Null
+                $resolutionCommand.Parameters.AddWithValue('@status', $Status)           | Out-Null
+                $resolutionCommand.Parameters.AddWithValue('@reason', $ResolutionReason) | Out-Null
+                $resolutionCommand.Parameters.AddWithValue('@delivery_id', $DeliveryId)  | Out-Null
+                $resolutionCommand.Parameters.AddWithValue(
+                    '@expected_started_at',
+                    $expectedStartedAtText
+                ) | Out-Null
+
+                $resolutionRows = [int]$resolutionCommand.ExecuteNonQuery()
+            } finally {
+                $resolutionCommand.Dispose()
+            }
+        }
+
         $command = $connection.CreateCommand()
         $command.Transaction = $transaction
         $command.CommandText = $updateSql
 
-        $command.Parameters.AddWithValue('@status', $Status) | Out-Null
-        $command.Parameters.AddWithValue('@updated_at', $updatedAt) | Out-Null
-        $command.Parameters.AddWithValue('@delivery_id', $DeliveryId) | Out-Null
+        $command.Parameters.AddWithValue('@status', $Status)                  | Out-Null
+        $command.Parameters.AddWithValue('@updated_at', $updatedAt)           | Out-Null
+        $command.Parameters.AddWithValue('@delivery_id', $DeliveryId)         | Out-Null
         $command.Parameters.AddWithValue('@expected_status', $ExpectedStatus) | Out-Null
 
         $expectedStartedParam = $command.Parameters.Add(
@@ -362,11 +453,17 @@ WHERE
         }
 
         if ($Status -in @('Sending', 'Delivered')) {
-            $command.Parameters.AddWithValue('@transition_at', $timestamp) | Out-Null
+            $command.Parameters.AddWithValue(
+                '@transition_at',
+                $timestamp
+            ) | Out-Null
         }
 
         if ($Status -in @('Failed', 'Indeterminate')) {
-            $command.Parameters.AddWithValue('@delivery_error', $ErrorMessage) | Out-Null
+            $command.Parameters.AddWithValue(
+                '@delivery_error',
+                $ErrorMessage
+            ) | Out-Null
         }
 
         $rowsAffected = [int]$command.ExecuteNonQuery()
@@ -380,8 +477,10 @@ FROM dfe_delivery
 WHERE delivery_id = @delivery_id;
 '@
 
-            $lookupCommand.Parameters.AddWithValue('@delivery_id', $DeliveryId) |
-                Out-Null
+            $lookupCommand.Parameters.AddWithValue(
+                '@delivery_id',
+                $DeliveryId
+            ) | Out-Null
 
             $currentStatus = $lookupCommand.ExecuteScalar()
 
@@ -406,6 +505,12 @@ WHERE delivery_id = @delivery_id;
             )
         }
 
+        if ($isResolution -and $resolutionRows -ne 1) {
+            throw [System.InvalidOperationException]::new(
+                "The resolution log did not record the state change for delivery '$DeliveryId'."
+            )
+        }
+
         $selectCommand = $connection.CreateCommand()
         $selectCommand.Transaction = $transaction
         $selectCommand.CommandText = @'
@@ -419,8 +524,10 @@ FROM dfe_delivery
 WHERE delivery_id = @delivery_id;
 '@
 
-        $selectCommand.Parameters.AddWithValue('@delivery_id', $DeliveryId) |
-            Out-Null
+        $selectCommand.Parameters.AddWithValue(
+            '@delivery_id',
+            $DeliveryId
+        ) | Out-Null
 
         $reader = $selectCommand.ExecuteReader()
 
@@ -449,7 +556,7 @@ WHERE delivery_id = @delivery_id;
                 $reader.GetString(4)
             }
 
-            $transitionResult = [PSCustomObject]@{
+            $transitionResult = [pscustomobject]@{
                 PSTypeName        = 'PipeDFe.DeliveryStateTransition'
                 Cnpj              = $Cnpj
                 DeliveryId        = $DeliveryId
