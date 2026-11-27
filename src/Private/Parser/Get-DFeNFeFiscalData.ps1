@@ -223,14 +223,15 @@ function Get-DFeNFeFiscalData {
             )
 
             [PSCustomObject]@{
-                Cnpj         = & $getText $Node 'dfe:CNPJ'
-                Cpf          = & $getText $Node 'dfe:CPF'
-                RazaoSocial  = & $getText $Node 'dfe:xNome'
-                NomeFantasia = & $getText $Node 'dfe:xFant'
-                IE           = & $getText $Node 'dfe:IE'
-                IndIEDest    = & $getText $Node 'dfe:indIEDest'
-                CRT          = & $getText $Node 'dfe:CRT'
-                Email        = & $getText $Node 'dfe:email'
+                Cnpj          = & $getText $Node 'dfe:CNPJ'
+                Cpf           = & $getText $Node 'dfe:CPF'
+                IdEstrangeiro = & $getText $Node 'dfe:idEstrangeiro'
+                RazaoSocial   = & $getText $Node 'dfe:xNome'
+                NomeFantasia  = & $getText $Node 'dfe:xFant'
+                IE            = & $getText $Node 'dfe:IE'
+                IndIEDest     = & $getText $Node 'dfe:indIEDest'
+                CRT           = & $getText $Node 'dfe:CRT'
+                Email         = & $getText $Node 'dfe:email'
 
                 Endereco = if ($null -eq $address) {
                     $null
@@ -271,8 +272,20 @@ function Get-DFeNFeFiscalData {
             $cofins  = $null
             $ipi     = $null
             $ibscbs  = $null
+            $ii      = $null
 
             if ($null -ne $imposto) {
+                $iiNode = $imposto.SelectSingleNode('dfe:II', $nsm)
+
+                if ($null -ne $iiNode) {
+                    $ii = [PSCustomObject]@{
+                        VBC      = & $getDecimal $iiNode 'dfe:vBC'
+                        VDespAdu = & $getDecimal $iiNode 'dfe:vDespAdu'
+                        VII      = & $getDecimal $iiNode 'dfe:vII'
+                        VIOF     = & $getDecimal $iiNode 'dfe:vIOF'
+                    }
+                }
+
                 $icmsContainer = $imposto.SelectSingleNode('dfe:ICMS', $nsm)
 
                 if ($null -ne $icmsContainer) {
@@ -296,14 +309,14 @@ function Get-DFeNFeFiscalData {
                             PRedBC     = & $getDecimal $icmsGroup 'dfe:pRedBC'
                             PICMS      = & $getDecimal $icmsGroup 'dfe:pICMS'
                             VICMS      = & $getDecimal $icmsGroup 'dfe:vICMS'
-                            ModBCST    = & $getText $icmsGroup 'dfe:modBCST'
+                            ModBCST    = & $getText    $icmsGroup 'dfe:modBCST'
                             PMVAST     = & $getDecimal $icmsGroup 'dfe:pMVAST'
                             PRedBCST   = & $getDecimal $icmsGroup 'dfe:pRedBCST'
                             VBCST      = & $getDecimal $icmsGroup 'dfe:vBCST'
                             PICMSST    = & $getDecimal $icmsGroup 'dfe:pICMSST'
                             VICMSST    = & $getDecimal $icmsGroup 'dfe:vICMSST'
                             VICMSDeson = & $getDecimal $icmsGroup 'dfe:vICMSDeson'
-                            MotDesICMS = & $getText $icmsGroup 'dfe:motDesICMS'
+                            MotDesICMS = & $getText    $icmsGroup 'dfe:motDesICMS'
                             VBCFCP     = & $getDecimal $icmsGroup 'dfe:vBCFCP'
                             PFCP       = & $getDecimal $icmsGroup 'dfe:pFCP'
                             VFCP       = & $getDecimal $icmsGroup 'dfe:vFCP'
@@ -375,8 +388,8 @@ function Get-DFeNFeFiscalData {
                     if ($null -ne $ipiGroup) {
                         $ipi = [PSCustomObject]@{
                             Grupo = $ipiGroup.LocalName
-                            CEnq  = & $getText $ipiContainer 'dfe:cEnq'
-                            CST   = & $getText $ipiGroup 'dfe:CST'
+                            CEnq  = & $getText    $ipiContainer 'dfe:cEnq'
+                            CST   = & $getText    $ipiGroup 'dfe:CST'
                             VBC   = & $getDecimal $ipiGroup 'dfe:vBC'
                             PIPI  = & $getDecimal $ipiGroup 'dfe:pIPI'
                             QUnid = & $getDecimal $ipiGroup 'dfe:qUnid'
@@ -392,8 +405,8 @@ function Get-DFeNFeFiscalData {
                     $ibscbsGroup = $ibscbsContainer.SelectSingleNode('dfe:gIBSCBS', $nsm)
 
                     $ibscbs = [PSCustomObject]@{
-                        CST        = & $getText $ibscbsContainer 'dfe:CST'
-                        CClassTrib = & $getText $ibscbsContainer 'dfe:cClassTrib'
+                        CST        = & $getText    $ibscbsContainer 'dfe:CST'
+                        CClassTrib = & $getText    $ibscbsContainer 'dfe:cClassTrib'
                         VBC        = & $getDecimal $ibscbsGroup 'dfe:vBC'
                         PIBSUF     = & $getDecimal $ibscbsGroup 'dfe:gIBSUF/dfe:pIBSUF'
                         VIBSUF     = & $getDecimal $ibscbsGroup 'dfe:gIBSUF/dfe:vIBSUF'
@@ -422,30 +435,31 @@ function Get-DFeNFeFiscalData {
                     Numero  = $nItem
 
                     Produto = [PSCustomObject]@{
-                        Codigo             = & $getText $produto 'dfe:cProd'
-                        EAN                = & $getText $produto 'dfe:cEAN'
-                        Descricao          = & $getText $produto 'dfe:xProd'
-                        NCM                = & $getText $produto 'dfe:NCM'
-                        CEST               = & $getText $produto 'dfe:CEST'
-                        CFOP               = & $getText $produto 'dfe:CFOP'
-                        Unidade            = & $getText $produto 'dfe:uCom'
+                        Codigo             = & $getText    $produto 'dfe:cProd'
+                        EAN                = & $getText    $produto 'dfe:cEAN'
+                        Descricao          = & $getText    $produto 'dfe:xProd'
+                        NCM                = & $getText    $produto 'dfe:NCM'
+                        CEST               = & $getText    $produto 'dfe:CEST'
+                        CFOP               = & $getText    $produto 'dfe:CFOP'
+                        Unidade            = & $getText    $produto 'dfe:uCom'
                         Quantidade         = & $getDecimal $produto 'dfe:qCom'
                         ValorUnitario      = & $getDecimal $produto 'dfe:vUnCom'
                         ValorProduto       = & $getDecimal $produto 'dfe:vProd'
-                        EANTrib            = & $getText $produto 'dfe:cEANTrib'
-                        UnidadeTrib        = & $getText $produto 'dfe:uTrib'
+                        EANTrib            = & $getText    $produto 'dfe:cEANTrib'
+                        UnidadeTrib        = & $getText    $produto 'dfe:uTrib'
                         QuantidadeTrib     = & $getDecimal $produto 'dfe:qTrib'
                         ValorUnitarioTrib  = & $getDecimal $produto 'dfe:vUnTrib'
                         ValorFrete         = & $getDecimal $produto 'dfe:vFrete'
                         ValorSeguro        = & $getDecimal $produto 'dfe:vSeg'
                         ValorDesconto      = & $getDecimal $produto 'dfe:vDesc'
                         OutrasDespesas     = & $getDecimal $produto 'dfe:vOutro'
-                        IndTotal           = & $getText $produto 'dfe:indTot'
+                        IndTotal           = & $getText    $produto 'dfe:indTot'
                     }
 
                     Tributos = [PSCustomObject]@{
                         ICMS   = $icms
                         IPI    = $ipi
+                        II     = $ii
                         PIS    = $pis
                         COFINS = $cofins
                         IBSCBS = $ibscbs
@@ -458,8 +472,7 @@ function Get-DFeNFeFiscalData {
             PSTypeName    = 'PipeDFe.Fiscal.NFeDocument'
             SchemaVersion = 1
             Modelo        = $documentInfo.Modelo
-            ChaveAcesso   = $chave
-
+            ChaveAcesso   = $chav
             Identificacao = [PSCustomObject]@{
                 CUF                        = & $getText $ide 'dfe:cUF'
                 NaturezaOperacao           = & $getText $ide 'dfe:natOp'
@@ -473,6 +486,7 @@ function Get-DFeNFeFiscalData {
                 CodigoMunicipioFatoGerador = & $getText $ide 'dfe:cMunFG'
                 TipoImpressao              = & $getText $ide 'dfe:tpImp'
                 TipoEmissao                = & $getText $ide 'dfe:tpEmis'
+                Ambiente                   = & $getText $ide 'dfe:tpAmb'
                 Finalidade                 = & $getText $ide 'dfe:finNFe'
                 ConsumidorFinal            = & $getText $ide 'dfe:indFinal'
                 IndicadorPresenca          = & $getText $ide 'dfe:indPres'
