@@ -3,10 +3,11 @@
 Exports the monthly DFe report to a standalone XLSX workbook.
 
 .DESCRIPTION
-Creates seven worksheets for the monthly closing. NF-e and NFC-e
-contain the supplied CFOP summary and item details. NFCom, CT-e,
+Creates a worksheet for each document model with report data. NF-e and
+NFC-e contain the supplied CFOP summary and item details. NFCom, CT-e,
 MDF-e, and national NFS-e contain one row per supplied document.
-The Ocorrências worksheet contains the supplied sequence ranges.
+Ocorrências is included when sequence ranges are supplied. A period with
+no data has one Resumo sheet describing the empty result.
 
 The exporter does not query the index, select a period, recalculate
 totals, or infer missing document numbers.
@@ -193,10 +194,18 @@ function Export-DFeCfopReportXlsx {
     $relationshipNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
     $packageNamespace      = 'http://schemas.openxmlformats.org/package/2006/relationships'
 
-    $startLabel = $StartDate.ToString('yyyy-MM-dd', $culture)
-    $endLabel   = $EndDate.ToString('yyyy-MM-dd', $culture)
+    $startLabel = $StartDate.ToString('dd/MM/yyyy', $culture)
+    $endLabel   = $EndDate.ToString('dd/MM/yyyy', $culture)
 
-    $sheets = @(
+    $cfopModels = @(
+        foreach ($row in $ReportData.Itens) { $row.Modelo }
+        foreach ($row in $ReportData.ResumoPorCFOP) { $row.Modelo }
+    )
+    $documentModels = @(
+        foreach ($entry in $DocumentEntries) { $entry.modelo }
+    )
+
+    $sheetDefinitions = @(
         @{
             Name  = 'NF-e'
             Model = 55
@@ -213,7 +222,7 @@ function Export-DFeCfopReportXlsx {
             Kind  = 'Document'
         }
         @{
-            Name  = 'CT-e';
+            Name  = 'CT-e'
             Model = 57
             Kind  = 'Document'
         }
@@ -231,6 +240,43 @@ function Export-DFeCfopReportXlsx {
             Kind = 'Gap'
         }
     )
+
+    $sheets = @(
+        foreach ($definition in $sheetDefinitions) {
+            $hasData = switch ($definition.Kind) {
+                'Cfop'     { $definition.Model -in $cfopModels }
+                'Document' { $definition.Model -in $documentModels }
+                'NFSe'     { $NFSeEntries.Count -gt 0 }
+                'Gap'      { $Gaps.Count -gt 0 }
+            }
+
+            if ($hasData) {
+                $definition
+            }
+        }
+    )
+
+    if ($sheets.Count -eq 0) {
+        $sheets = @(@{ Name = 'Resumo'; Kind = 'Empty' })
+    }
+
+    $columnWidths = @{
+        Cfop     = @(52, 34, 20, 30, 10, 20, 52, 12, 23, 12)
+        Document = @(52, 34, 18, 10)
+        NFSe     = @(57, 19, 34, 34, 18, 22, 25, 24)
+        Gap      = @(23, 15, 12, 22, 22)
+        Empty    = @(53, 19, 19)
+    }
+
+    # Indices in the cellXfs table below.
+    $cellStyles = @{
+        Title = 1
+        Section = 2
+        Header = 3
+        Alternate = 4
+        Currency = 5
+        AlternateCurrency = 6
+    }
 
     $sheetElements = @(
         for ($index = 0; $index -lt $sheets.Count; $index++) {
@@ -260,6 +306,7 @@ function Export-DFeCfopReportXlsx {
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 $sheetContentTypes
 </Types>
 "@
@@ -270,6 +317,7 @@ $sheetContentTypes
 "@
         'xl/workbook.xml' = @"
 <workbook xmlns="$sheetNamespace" xmlns:r="$relationshipNamespace">
+  <bookViews><workbookView/></bookViews>
   <sheets>
 $sheetElements
   </sheets>
@@ -278,8 +326,40 @@ $sheetElements
         'xl/_rels/workbook.xml.rels' = @"
 <Relationships xmlns="$packageNamespace">
 $sheetRelationships
+  <Relationship Id="rIdStyles" Type="$relationshipNamespace/styles" Target="styles.xml"/>
 </Relationships>
 "@
+        'xl/styles.xml' = @'
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;R$&quot; #,##0.00"/></numFmts>
+  <fonts count="4">
+    <font><sz val="11"/><color rgb="FF18283D"/><name val="Calibri"/></font>
+    <font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FF17375E"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="6">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF17375E"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE4EDF7"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF294D75"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF3F6FA"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="7">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="0" xfId="0" applyFill="1"/>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+    <xf numFmtId="164" fontId="0" fillId="5" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1"/>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>
+'@
     }
 
     $writeRow = {
@@ -291,12 +371,20 @@ $sheetRelationships
             [int]$RowNumber,
 
             [Parameter()]
-            [object[]]$Cells
+            [object[]]$Cells,
+
+            [Parameter()]
+            [int]$Style
         )
 
         $rowLabel = $RowNumber.ToString($culture)
         $Writer.WriteStartElement('row', $sheetNamespace)
         $Writer.WriteAttributeString('r', $rowLabel)
+
+        if ($Style -eq $cellStyles.Title -or $Style -eq $cellStyles.Header) {
+            $Writer.WriteAttributeString('ht', '28')
+            $Writer.WriteAttributeString('customHeight', '1')
+        }
 
         for ($index = 0; $index -lt $Cells.Count; $index++) {
             $value = $Cells[$index]
@@ -308,6 +396,24 @@ $sheetRelationships
             $column = [char]([int][char]'A' + $index)
             $Writer.WriteStartElement('c', $sheetNamespace)
             $Writer.WriteAttributeString('r', ([string]$column + $rowLabel))
+
+            $cellStyle = if ($Style -ne 0) {
+                $Style
+            } elseif ($value -is [decimal]) {
+                if ($RowNumber % 2 -eq 0) {
+                    $cellStyles.AlternateCurrency
+                } else {
+                    $cellStyles.Currency
+                }
+            } elseif ($RowNumber -gt 5 -and $RowNumber % 2 -eq 0) {
+                $cellStyles.Alternate
+            } else {
+                0
+            }
+
+            if ($cellStyle -ne 0) {
+                $Writer.WriteAttributeString('s', $cellStyle.ToString($culture))
+            }
 
             if ($value -is [int] -or $value -is [decimal]) {
                 $Writer.WriteElementString('v', $sheetNamespace, $value.ToString($culture))
@@ -357,7 +463,7 @@ $sheetRelationships
 
         switch ($Sheet.Kind) {
             'Document' {
-                & $writeRow $Writer 5 @('Chave de acesso', 'Emissão', 'Número', 'Série')
+                & $writeRow $Writer 5 @('Chave de acesso', 'Emissão', 'Número', 'Série') $cellStyles.Header
 
                 foreach ($record in $DocumentEntries) {
                     if ($record.modelo -ne $Sheet.Model) {
@@ -387,7 +493,7 @@ $sheetRelationships
                     'Chave de acesso', 'Número', 'Geração da NFS-e',
                     'Emissão da DPS', 'Competência', 'Código de situação',
                     'Valor dos serviços (R$)', 'Valor líquido (R$)'
-                )
+                ) $cellStyles.Header
 
                 $numberStyle = [System.Globalization.NumberStyles]::Float
 
@@ -415,7 +521,7 @@ $sheetRelationships
             }
 
             'Gap' {
-                & $writeRow $Writer 5 @('Tipo', 'Modelo', 'Série', 'Número inicial', 'Número final')
+                & $writeRow $Writer 5 @('Tipo', 'Modelo', 'Série', 'Número inicial', 'Número final') $cellStyles.Header
 
                 foreach ($record in $Gaps) {
                     & $writeRow $Writer $rowNumber @(
@@ -430,6 +536,8 @@ $sheetRelationships
                 }
             }
         }
+
+        return ($rowNumber - 1)
     }
 
     $tempName = '.pipedfe-{0}.tmp' -f [guid]::NewGuid().ToString('N')
@@ -478,20 +586,52 @@ $sheetRelationships
                         try {
                             $writer.WriteStartDocument()
                             $writer.WriteStartElement('worksheet', $sheetNamespace)
+                            $widths = $columnWidths[$sheet.Kind]
+                            $lastColumn = [char]([int][char]'A' + $widths.Count - 1)
+                            $frozenRows = if ($sheet.Kind -in @('Cfop', 'Empty')) { 3 } else { 5 }
+
+                            $writer.WriteStartElement('sheetViews', $sheetNamespace)
+                            $writer.WriteStartElement('sheetView', $sheetNamespace)
+                            $writer.WriteAttributeString('workbookViewId', '0')
+                            $writer.WriteAttributeString('showGridLines', '0')
+                            $writer.WriteStartElement('pane', $sheetNamespace)
+                            $writer.WriteAttributeString('ySplit', $frozenRows.ToString($culture))
+                            $writer.WriteAttributeString('topLeftCell', ('A{0}' -f ($frozenRows + 1)))
+                            $writer.WriteAttributeString('activePane', 'bottomLeft')
+                            $writer.WriteAttributeString('state', 'frozen')
+                            $writer.WriteEndElement()
+                            $writer.WriteEndElement()
+                            $writer.WriteEndElement()
+
+                            $writer.WriteStartElement('cols', $sheetNamespace)
+                            for ($column = 0; $column -lt $widths.Count; $column++) {
+                                $position = ($column + 1).ToString($culture)
+                                $writer.WriteStartElement('col', $sheetNamespace)
+                                $writer.WriteAttributeString('min', $position)
+                                $writer.WriteAttributeString('max', $position)
+                                $writer.WriteAttributeString('width', $widths[$column].ToString($culture))
+                                $writer.WriteAttributeString('customWidth', '1')
+                                $writer.WriteEndElement()
+                            }
+                            $writer.WriteEndElement()
+
                             $writer.WriteStartElement('sheetData', $sheetNamespace)
 
-                            & $writeRow $writer 1 @('Relatório de fechamento fiscal')
+                            & $writeRow $writer 1 @('Relatório de fechamento fiscal') $cellStyles.Title
                             & $writeRow $writer 2 @('CNPJ', $Cnpj)
                             & $writeRow $writer 3 @('Período', $startLabel, $endLabel)
+
+                            $filterHeader = 0
+                            $lastDataRow = 0
 
                             if ($sheet.Kind -eq 'Cfop') {
                                 $model = $sheet.Model
 
-                                & $writeRow $writer 5 @('Resumo por CFOP')
+                                & $writeRow $writer 5 @('Resumo por CFOP') $cellStyles.Section
                                 & $writeRow $writer 6 @(
                                     'CFOP', 'Itens', 'Itens sem valor',
                                     'Valor bruto dos produtos (R$)'
-                                )
+                                ) $cellStyles.Header
 
                                 $rowNumber = 7
 
@@ -530,13 +670,14 @@ $sheetRelationships
                                 }
 
                                 $rowNumber++
-                                & $writeRow $writer $rowNumber @('Detalhamento por item')
+                                & $writeRow $writer $rowNumber @('Detalhamento por item') $cellStyles.Section
                                 $rowNumber++
 
+                                $filterHeader = $rowNumber
                                 & $writeRow $writer $rowNumber @(
                                     'Chave de acesso', 'Emissão', 'Número', 'Série', 'Item'
                                     'Código do produto', 'Descrição', 'CFOP', 'Valor bruto (R$)', 'indTot'
-                                )
+                                ) $cellStyles.Header
 
                                 $rowNumber++
 
@@ -581,11 +722,31 @@ $sheetRelationships
 
                                     $rowNumber++
                                 }
+                                $lastDataRow = $rowNumber - 1
+                            } elseif ($sheet.Kind -eq 'Empty') {
+                                & $writeRow $writer 5 @('Nenhum documento ou ocorrência no período.')
                             } else {
-                                & $writeSupplementalSheet $writer $sheet $DocumentEntries $NFSeEntries $Gaps
+                                $filterHeader = 5
+                                $lastDataRow = & $writeSupplementalSheet $writer $sheet $DocumentEntries $NFSeEntries $Gaps
                             }
 
                             $writer.WriteEndElement()
+
+                            if ($filterHeader -gt 0 -and $lastDataRow -gt $filterHeader) {
+                                $writer.WriteStartElement('autoFilter', $sheetNamespace)
+                                $writer.WriteAttributeString(
+                                    'ref', ('A{0}:{1}{2}' -f $filterHeader, $lastColumn, $lastDataRow)
+                                )
+                                $writer.WriteEndElement()
+                            }
+
+                            $writer.WriteStartElement('mergeCells', $sheetNamespace)
+                            $writer.WriteAttributeString('count', '1')
+                            $writer.WriteStartElement('mergeCell', $sheetNamespace)
+                            $writer.WriteAttributeString('ref', ('A1:{0}1' -f $lastColumn))
+                            $writer.WriteEndElement()
+                            $writer.WriteEndElement()
+
                             $writer.WriteEndElement()
                             $writer.WriteEndDocument()
                         } finally {

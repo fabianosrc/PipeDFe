@@ -14,7 +14,8 @@ Coverage includes:
   - Multiple CFOPs on the same invoice and preservation of supplied subtotals.
   - Exact text identifiers, numeric counts and amounts, and blank missing values.
   - Formula-like descriptions stored as text.
-  - Empty reports and summaries without a CFOP.
+  - Omission of empty worksheets and a readable workbook for an empty period.
+  - Summaries without a CFOP.
   - Relative literal paths and rejection of non-filesystem destinations.
   - Rejection of invalid periods, paths, and report data.
   - Preservation of an existing destination.
@@ -351,13 +352,13 @@ Describe 'Export-DFeCfopReportXlsx' -Tag 'Integration' {
                         Sheet   = $nfe
                         Address = 'B3'
                         Type    = 'inlineStr'
-                        Text    = '2026-11-01'
+                        Text    = '01/11/2026'
                     }
                     @{
                         Sheet   = $nfe
                         Address = 'C3'
                         Type    = 'inlineStr'
-                        Text    = '2026-11-30'
+                        Text    = '30/11/2026'
                     }
                     @{
                         Sheet   = $nfe
@@ -646,74 +647,86 @@ Describe 'Export-DFeCfopReportXlsx' -Tag 'Integration' {
                     Should -BeExactly 'Não informado'
             }
 
-            It 'Keeps both worksheet sections without fabricating fiscal rows for an empty report' {
-                $params = @{
-                    LiteralPath = $Script:WorkbookPath
-                    Cnpj        = '12345678000199'
-                    StartDate   = [System.DateTimeOffset]'2026-11-01T00:00:00-03:00'
-                    EndDate     = [System.DateTimeOffset]'2026-11-30T23:59:59-03:00'
-                    ReportData  = [PSCustomObject]@{
-                        Itens         = @()
-                        ResumoPorCFOP = @()
+            It 'Publishes only a no-data Resumo sheet for an empty period' {
+                $params = $Script:WorkbookExportParams.Clone()
+                $params.ReportData = [PSCustomObject]@{ Itens = @(); ResumoPorCFOP = @() }
+                $params.DocumentEntries = @()
+                $params.NFSeEntries = @()
+                $params.Gaps = @()
+
+                Export-DFeCfopReportXlsx @params | Out-Null
+
+                $part = @{
+                    Path     = $Script:WorkbookPath
+                    PartName = 'xl/workbook.xml'
+                }
+
+                $workbook = Read-TestWorkbookPart @part
+                $sheets = $workbook.SelectNodes("//*[local-name()='sheet']")
+                $sheets | Should -HaveCount 1
+                $sheets[0].GetAttribute('name') | Should -BeExactly 'Resumo'
+
+                $part.PartName = 'xl/worksheets/sheet1.xml'
+                $sheet = Read-TestWorkbookPart @part
+                (Get-TestWorkbookCell -Sheet $sheet -Address 'A5').InnerText |
+                    Should -BeExactly 'Nenhum documento ou ocorrência no período.'
+            }
+
+            It 'Creates only <SheetName> when that is the only report data' -ForEach @(
+                @{ SheetName = 'NF-e'; Kind = 'Cfop'; Model = 55 }
+                @{ SheetName = 'NFC-e'; Kind = 'Cfop'; Model = 65 }
+                @{ SheetName = 'NFCom'; Kind = 'Document'; Model = 62 }
+                @{ SheetName = 'CT-e'; Kind = 'Document'; Model = 57 }
+                @{ SheetName = 'MDF-e'; Kind = 'Document'; Model = 58 }
+                @{ SheetName = 'NFS-e'; Kind = 'NFSe' }
+                @{ SheetName = 'Ocorrências'; Kind = 'Gap' }
+            ) {
+                $params = $Script:WorkbookExportParams.Clone()
+                $params.ReportData = [PSCustomObject]@{ Itens = @(); ResumoPorCFOP = @() }
+                $params.DocumentEntries = @()
+                $params.NFSeEntries = @()
+                $params.Gaps = @()
+
+                switch ($Kind) {
+                    'Cfop' {
+                        $report = $Script:WorkbookExportParams.ReportData
+                        $params.ReportData.Itens = @($report.Itens | Where-Object { $_.Modelo -eq $Model })
+                        $params.ReportData.ResumoPorCFOP = @(
+                            $report.ResumoPorCFOP | Where-Object { $_.Modelo -eq $Model }
+                        )
                     }
+                    'Document' {
+                        $params.DocumentEntries = @(
+                            $Script:WorkbookExportParams.DocumentEntries |
+                                Where-Object { $_.modelo -eq $Model }
+                        )
+                    }
+                    'NFSe' { $params.NFSeEntries = $Script:WorkbookExportParams.NFSeEntries }
+                    'Gap' { $params.Gaps = $Script:WorkbookExportParams.Gaps }
                 }
 
                 Export-DFeCfopReportXlsx @params | Out-Null
 
-                # Sheets 1 (NF-e) and 2 (NFC-e) have both CFOP and item sections.
-                foreach ($number in 1, 2) {
-                    $part = @{
-                        Path     = $Script:WorkbookPath
-                        PartName = 'xl/worksheets/sheet{0}.xml' -f $number
-                    }
-
-                    $sheet = Read-TestWorkbookPart @part
-
-                    (Get-TestWorkbookCell -Sheet $sheet -Address 'A6').InnerText |
-                        Should -BeExactly 'CFOP'
-
-                    (Get-TestWorkbookCell -Sheet $sheet -Address 'A7') |
-                        Should -BeNullOrEmpty
-
-                    (Get-TestWorkbookCell -Sheet $sheet -Address 'A9').InnerText |
-                        Should -BeExactly 'Chave de acesso'
-
-                    (Get-TestWorkbookCell -Sheet $sheet -Address 'A10') |
-                        Should -BeNullOrEmpty
+                $part = @{
+                    Path     = $Script:WorkbookPath
+                    PartName = 'xl/workbook.xml'
                 }
 
-                # Sheets 3–7 are supplemental: they write column headers in row 5
-                # and no data rows when the supplied collections are empty.
-                foreach ($number in 3, 4, 5) {
-                    $part = @{
-                        Path     = $Script:WorkbookPath
-                        PartName = 'xl/worksheets/sheet{0}.xml' -f $number
-                    }
+                $workbook = Read-TestWorkbookPart @part
+                $sheets = $workbook.SelectNodes("//*[local-name()='sheet']")
+                $sheets | Should -HaveCount 1
+                $sheets[0].GetAttribute('name') | Should -BeExactly $SheetName
 
-                    $sheet = Read-TestWorkbookPart @part
+                $part.PartName = 'xl/worksheets/sheet1.xml'
+                $sheet = Read-TestWorkbookPart @part
+                (Get-TestWorkbookCell -Sheet $sheet -Address 'A5') | Should -Not -BeNullOrEmpty
 
-                    (Get-TestWorkbookCell -Sheet $sheet -Address 'A5').InnerText |
-                        Should -BeExactly 'Chave de acesso'
-
-                    (Get-TestWorkbookCell -Sheet $sheet -Address 'A6') |
-                        Should -BeNullOrEmpty
+                $archive = [System.IO.Compression.ZipFile]::OpenRead($Script:WorkbookPath)
+                try {
+                    $archive.GetEntry('xl/worksheets/sheet2.xml') | Should -BeNullOrEmpty
+                } finally {
+                    $archive.Dispose()
                 }
-
-                $nfseSheet = Read-TestWorkbookPart -Path $Script:WorkbookPath -PartName 'xl/worksheets/sheet6.xml'
-
-                (Get-TestWorkbookCell -Sheet $nfseSheet -Address 'A5').InnerText |
-                    Should -BeExactly 'Chave de acesso'
-
-                (Get-TestWorkbookCell -Sheet $nfseSheet -Address 'A6') |
-                    Should -BeNullOrEmpty
-
-                $gapSheet = Read-TestWorkbookPart -Path $Script:WorkbookPath -PartName 'xl/worksheets/sheet7.xml'
-
-                (Get-TestWorkbookCell -Sheet $gapSheet -Address 'A5').InnerText |
-                    Should -BeExactly 'Tipo'
-
-                (Get-TestWorkbookCell -Sheet $gapSheet -Address 'A6') |
-                    Should -BeNullOrEmpty
             }
         }
 
