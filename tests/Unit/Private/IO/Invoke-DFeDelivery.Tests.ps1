@@ -1147,7 +1147,7 @@ Describe 'Invoke-DFeDelivery' -Tag 'Unit' {
                         Scope           = 'Context'
                         ParameterFilter = {
                             $ReportFilePaths.Count -eq 1 -and
-                            $ReportFilePaths[0] -eq 'C:\Reports\Relatorio-Analitico.html'
+                            $ReportFilePaths[0] -eq 'C:\Reports\RelatorioAnalitico.html'
                         }
                     }
 
