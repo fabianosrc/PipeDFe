@@ -68,6 +68,7 @@
         'Invoke-PipeDFe'
         'New-PipeCompany'
         'Remove-PipeCompany'
+        'Resolve-PipeDFeDelivery'
         'Set-PipeCompany'
         'Set-PipeSmtp'
         'Test-PipeSmtp'
