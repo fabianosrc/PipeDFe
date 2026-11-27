@@ -472,7 +472,7 @@ function Get-DFeNFeFiscalData {
             PSTypeName    = 'PipeDFe.Fiscal.NFeDocument'
             SchemaVersion = 1
             Modelo        = $documentInfo.Modelo
-            ChaveAcesso   = $chav
+            ChaveAcesso   = $chave
             Identificacao = [PSCustomObject]@{
                 CUF                        = & $getText $ide 'dfe:cUF'
                 NaturezaOperacao           = & $getText $ide 'dfe:natOp'
