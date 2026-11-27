@@ -81,7 +81,7 @@ Describe 'New-DFePeriodReport' -Tag 'Unit' {
             $first[0] | Should -Not -Be $second[0]
 
             [System.IO.Path]::GetFileName($first[0]) |
-                Should -BeExactly 'Relatorio-Analitico.html'
+                Should -BeExactly 'RelatorioAnalitico.html'
 
             [System.IO.File]::ReadAllText($first[0]) |
                 Should -BeExactly '<html>Relatório</html>'
