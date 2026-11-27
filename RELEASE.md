@@ -119,7 +119,7 @@ Use **synthetic or authorized test data** and a controlled email environment.
 - [ ] Verify the default previous-calendar-month period and an explicit date range.
 - [ ] Verify one ZIP is generated per applicable document model and document events are handled correctly.
 - [ ] Verify source XML files are not modified and archive integrity checks behave as intended.
-- [ ] Verify monthly HTML and XLSX reports are separate from ZIP archives.
+- [ ] Verify that the NF-e/NFC-e HTML report is attached separately from the ZIP archives and omitted when neither model is present.
 - [ ] Verify the index schema is current and `Get-PipeDFeHealth` returns expected results.
 - [ ] Verify sequence-gap behavior, including known inutilizations.
 - [ ] Validate SMTP configuration and a test send to a controlled mailbox.
