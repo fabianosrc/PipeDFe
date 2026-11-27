@@ -37,16 +37,11 @@ MONTHLY CLOSING
 
     Para cada empresa, o módulo examina os XMLs configurados, consulta o
     índice SQLite e organiza um ZIP para cada modelo presente no período.
-    Os relatórios HTML e XLSX são arquivos separados dos ZIPs e também
-    acompanham o e-mail de fechamento.
+    Quando há NF-e ou NFC-e, o e-mail também inclui um relatório HTML
+    independente. O resumo por CFOP usa os valores dos itens e o relatório
+    apresenta os cancelamentos em seção própria.
 
-    O XLSX contém as abas NF-e, NFC-e, NFCom, CT-e, MDF-e, NFS-e e
-    Ocorrências. O resumo por CFOP considera os itens das NF-e e NFC-e,
-    evitando atribuir o valor integral de uma nota a vários CFOPs.
-
-    Para NFS-e Nacional, a seleção do período utiliza a data de geração
-    da nota. A data de emissão da DPS e a competência são informações
-    distintas, preservadas no relatório.
+    Para NFS-e Nacional, o período é selecionado pela data de geração da nota.
 
 ARCHIVE ORGANIZATION
     Os XMLs são agrupados por modelo e período. Não são criadas pastas

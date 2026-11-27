@@ -9,11 +9,11 @@
             <command:verb>Get</command:verb>
             <command:noun>PipeCompany</command:noun>
             <maml:description>
-                <maml:para>Consulta empresas cadastradas e opcionalmente filtra por CNPJ ou situação ativa.</maml:para>
+                <maml:para>Retrieves registered companies, optionally filtering by CNPJ or active status.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Retorna as configurações de empresas registradas. Quando informado, IsActive filtra os resultados.</maml:para>
+            <maml:para>Returns registered company configurations. When provided, IsActive filters the results.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -32,7 +32,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>CNPJ da empresa. Aceita o formato informado pelo comando, conforme suas regras de validação.</maml:para>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -42,7 +42,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>IsActive</maml:name>
                 <maml:description>
-                    <maml:para>Filtra empresas por situação ativa ou inativa.</maml:para>
+                    <maml:para>Filters companies by active or inactive status.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Boolean</command:parameterValue>
                 <dev:type>
@@ -66,9 +66,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Get-PipeCompany -IsActive $true</dev:code>
                 <dev:remarks/>
@@ -76,7 +76,7 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -87,11 +87,11 @@
             <command:verb>New</command:verb>
             <command:noun>PipeCompany</command:noun>
             <maml:description>
-                <maml:para>Cadastra uma empresa para o processamento fiscal.</maml:para>
+                <maml:para>Registers a company for fiscal document processing.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Valida os dados, registra a empresa e persiste sua configuração. XmlPath deve existir; OutputPath é criado quando necessário. O módulo não altera a pasta de XML de origem.</maml:para>
+            <maml:para>Validates inputs, registers the company, and persists its configuration. XmlPath must exist; OutputPath is created when necessary. The module does not modify the source XML directory.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -166,7 +166,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>CNPJ da empresa. Aceita o formato informado pelo comando, conforme suas regras de validação.</maml:para>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -176,7 +176,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>RazaoSocial</maml:name>
                 <maml:description>
-                    <maml:para>Razão social da empresa.</maml:para>
+                    <maml:para>Company legal name.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -186,7 +186,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Uf</maml:name>
                 <maml:description>
-                    <maml:para>Sigla da unidade federativa.</maml:para>
+                    <maml:para>Brazilian state abbreviation (UF).</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -196,7 +196,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Ambiente</maml:name>
                 <maml:description>
-                    <maml:para>Ambiente fiscal: Homologacao ou Producao.</maml:para>
+                    <maml:para>Fiscal environment: Homologacao (test) or Producao (production).</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">Ambiente</command:parameterValue>
                 <dev:type>
@@ -206,7 +206,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>XmlPath</maml:name>
                 <maml:description>
-                    <maml:para>Pasta existente dos XMLs de saída do ERP.</maml:para>
+                    <maml:para>Existing directory containing XML files generated by the ERP.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -216,7 +216,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>XmlPathNfse</maml:name>
                 <maml:description>
-                    <maml:para>Pasta opcional de XMLs de NFS-e Nacional.</maml:para>
+                    <maml:para>Optional directory containing national NFS-e XML files.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -226,7 +226,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>XmlPathEntrada</maml:name>
                 <maml:description>
-                    <maml:para>Pasta opcional de XMLs de entrada; não é varrida pelo fechamento atual.</maml:para>
+                    <maml:para>Optional inbound XML directory; not scanned by the current closing workflow.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -236,7 +236,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>NomeFantasia</maml:name>
                 <maml:description>
-                    <maml:para>Nome fantasia opcional.</maml:para>
+                    <maml:para>Optional trade name.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -246,7 +246,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Ie</maml:name>
                 <maml:description>
-                    <maml:para>Inscrição estadual opcional.</maml:para>
+                    <maml:para>Optional state tax registration number.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -256,7 +256,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>OutputPath</maml:name>
                 <maml:description>
-                    <maml:para>Destino dos arquivos de fechamento.</maml:para>
+                    <maml:para>Destination for fiscal closing files.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -266,7 +266,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>CertPath</maml:name>
                 <maml:description>
-                    <maml:para>Caminho de certificado A1 (.pfx).</maml:para>
+                    <maml:para>Path to an A1 certificate (.pfx).</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -276,7 +276,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>CertPassword</maml:name>
                 <maml:description>
-                    <maml:para>Senha do certificado A1 como SecureString.</maml:para>
+                    <maml:para>A1 certificate password as a SecureString.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
                 <dev:type>
@@ -286,7 +286,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EmailPara</maml:name>
                 <maml:description>
-                    <maml:para>Destinatários principais do fechamento.</maml:para>
+                    <maml:para>Primary recipients of the fiscal closing email.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object[]</command:parameterValue>
                 <dev:type>
@@ -296,7 +296,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EmailCc</maml:name>
                 <maml:description>
-                    <maml:para>Destinatários em cópia.</maml:para>
+                    <maml:para>Carbon copy (Cc) recipients.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object[]</command:parameterValue>
                 <dev:type>
@@ -306,7 +306,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EmailCco</maml:name>
                 <maml:description>
-                    <maml:para>Destinatários em cópia oculta.</maml:para>
+                    <maml:para>Blind carbon copy (Bcc) recipients.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object[]</command:parameterValue>
                 <dev:type>
@@ -316,7 +316,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Smtp</maml:name>
                 <maml:description>
-                    <maml:para>Configuração SMTP específica da empresa.</maml:para>
+                    <maml:para>Company-specific SMTP configuration.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object</command:parameterValue>
                 <dev:type>
@@ -340,17 +340,17 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
-                <dev:code>$p = @{ Cnpj = '11222333000181'; RazaoSocial = 'EMPRESA TESTE LTDA'; Uf = 'SP'; Ambiente = 'Homologacao'; XmlPath = 'C:\ERP\XML' }; New-PipeCompany @p</dev:code>
+                <dev:code>$p = @{ Cnpj = '11222333000181'; RazaoSocial = 'TEST COMPANY LTD'; Uf = 'SP'; Ambiente = 'Homologacao'; XmlPath = 'C:\ERP\XML' }; New-PipeCompany @p</dev:code>
                 <dev:remarks/>
             </command:example>
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -361,11 +361,11 @@
             <command:verb>Set</command:verb>
             <command:noun>PipeCompany</command:noun>
             <maml:description>
-                <maml:para>Atualiza a configuração de uma empresa cadastrada.</maml:para>
+                <maml:para>Updates the configuration of a registered company.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Altera os campos informados e preserva os omitidos, sujeito às validações de cadastro.</maml:para>
+            <maml:para>Updates the supplied fields and preserves omitted values, subject to company registration validation.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -444,7 +444,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>CNPJ da empresa. Aceita o formato informado pelo comando, conforme suas regras de validação.</maml:para>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -454,7 +454,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>RazaoSocial</maml:name>
                 <maml:description>
-                    <maml:para>Nova razão social.</maml:para>
+                    <maml:para>New company legal name.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -464,7 +464,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>NomeFantasia</maml:name>
                 <maml:description>
-                    <maml:para>Nome fantasia.</maml:para>
+                    <maml:para>Trade name.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -474,7 +474,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Ie</maml:name>
                 <maml:description>
-                    <maml:para>Inscrição estadual.</maml:para>
+                    <maml:para>State tax registration number.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -484,7 +484,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Uf</maml:name>
                 <maml:description>
-                    <maml:para>Unidade federativa.</maml:para>
+                    <maml:para>Brazilian state (UF).</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -494,7 +494,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Ambiente</maml:name>
                 <maml:description>
-                    <maml:para>Ambiente fiscal.</maml:para>
+                    <maml:para>Fiscal environment.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">Ambiente</command:parameterValue>
                 <dev:type>
@@ -504,7 +504,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>XmlPath</maml:name>
                 <maml:description>
-                    <maml:para>Pasta de XMLs de saída.</maml:para>
+                    <maml:para>Directory containing outgoing XML files.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -514,7 +514,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>XmlPathNfse</maml:name>
                 <maml:description>
-                    <maml:para>Pasta de NFS-e Nacional.</maml:para>
+                    <maml:para>Directory containing national NFS-e XML files.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -524,7 +524,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>XmlPathEntrada</maml:name>
                 <maml:description>
-                    <maml:para>Pasta opcional de XMLs de entrada.</maml:para>
+                    <maml:para>Optional directory containing inbound XML files.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -534,7 +534,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>OutputPath</maml:name>
                 <maml:description>
-                    <maml:para>Diretório dos arquivos de saída.</maml:para>
+                    <maml:para>Directory for output files.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -544,7 +544,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>CertPath</maml:name>
                 <maml:description>
-                    <maml:para>Caminho do certificado A1.</maml:para>
+                    <maml:para>Path to the A1 certificate.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -554,7 +554,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>CertPassword</maml:name>
                 <maml:description>
-                    <maml:para>Senha do certificado.</maml:para>
+                    <maml:para>Certificate password.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
                 <dev:type>
@@ -564,7 +564,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EmailPara</maml:name>
                 <maml:description>
-                    <maml:para>Destinatários principais.</maml:para>
+                    <maml:para>Primary recipients.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object[]</command:parameterValue>
                 <dev:type>
@@ -574,7 +574,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EmailCc</maml:name>
                 <maml:description>
-                    <maml:para>Destinatários em cópia.</maml:para>
+                    <maml:para>Carbon copy (Cc) recipients.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object[]</command:parameterValue>
                 <dev:type>
@@ -584,7 +584,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EmailCco</maml:name>
                 <maml:description>
-                    <maml:para>Destinatários em cópia oculta.</maml:para>
+                    <maml:para>Blind carbon copy (Bcc) recipients.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object[]</command:parameterValue>
                 <dev:type>
@@ -594,7 +594,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Smtp</maml:name>
                 <maml:description>
-                    <maml:para>Configuração SMTP específica.</maml:para>
+                    <maml:para>Specific SMTP configuration.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object</command:parameterValue>
                 <dev:type>
@@ -604,7 +604,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>IsActive</maml:name>
                 <maml:description>
-                    <maml:para>Define se a empresa está ativa.</maml:para>
+                    <maml:para>Sets whether the company is active.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Boolean</command:parameterValue>
                 <dev:type>
@@ -628,9 +628,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Set-PipeCompany -Cnpj '11222333000181' -IsActive $true</dev:code>
                 <dev:remarks/>
@@ -638,7 +638,7 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -649,11 +649,11 @@
             <command:verb>Remove</command:verb>
             <command:noun>PipeCompany</command:noun>
             <maml:description>
-                <maml:para>Remove o cadastro de uma empresa inativa.</maml:para>
+                <maml:para>Removes the registration of an inactive company.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Remove a configuração de uma empresa inativa. A remoção de arquivos é opcional e depende de DeleteFiles.</maml:para>
+            <maml:para>Removes the configuration of an inactive company. Associated file deletion is optional and controlled by DeleteFiles.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -672,7 +672,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>CNPJ da empresa. Aceita o formato informado pelo comando, conforme suas regras de validação.</maml:para>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -682,7 +682,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>DeleteFiles</maml:name>
                 <maml:description>
-                    <maml:para>Solicita também a exclusão de arquivos associados, conforme o contrato do comando.</maml:para>
+                    <maml:para>Also requests deletion of associated files, as defined by the command contract.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Management.Automation.SwitchParameter</command:parameterValue>
                 <dev:type>
@@ -706,9 +706,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Remove-PipeCompany -Cnpj '11222333000181' -WhatIf</dev:code>
                 <dev:remarks/>
@@ -716,7 +716,7 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -727,11 +727,11 @@
             <command:verb>Get</command:verb>
             <command:noun>PipeSmtp</command:noun>
             <maml:description>
-                <maml:para>Consulta a configuração SMTP global.</maml:para>
+                <maml:para>Retrieves the global SMTP configuration.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Lê a configuração SMTP global persistida pelo PipeDFe.</maml:para>
+            <maml:para>Reads the global SMTP configuration persisted by PipeDFe.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -754,9 +754,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Get-PipeSmtp</dev:code>
                 <dev:remarks/>
@@ -764,7 +764,7 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -775,11 +775,11 @@
             <command:verb>Set</command:verb>
             <command:noun>PipeSmtp</command:noun>
             <maml:description>
-                <maml:para>Configura e atualiza os parâmetros SMTP globais.</maml:para>
+                <maml:para>Creates or updates global SMTP settings.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Persiste a configuração SMTP global. Na primeira gravação exige Server, Port, Ssl, Username, Password e From. Em atualizações, preserva campos omitidos.</maml:para>
+            <maml:para>Persists global SMTP settings. Initial configuration requires Server, Port, Ssl, Username, Password, and From. Subsequent updates preserve omitted fields.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -826,7 +826,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Server</maml:name>
                 <maml:description>
-                    <maml:para>Endereço do servidor SMTP.</maml:para>
+                    <maml:para>SMTP server address.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -836,7 +836,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Port</maml:name>
                 <maml:description>
-                    <maml:para>Porta de conexão SMTP.</maml:para>
+                    <maml:para>SMTP server port.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Int32</command:parameterValue>
                 <dev:type>
@@ -846,7 +846,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Ssl</maml:name>
                 <maml:description>
-                    <maml:para>Habilita SSL/TLS.</maml:para>
+                    <maml:para>Enables SSL/TLS.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Boolean</command:parameterValue>
                 <dev:type>
@@ -856,7 +856,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Username</maml:name>
                 <maml:description>
-                    <maml:para>Usuário de autenticação SMTP.</maml:para>
+                    <maml:para>SMTP authentication username.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -866,7 +866,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Password</maml:name>
                 <maml:description>
-                    <maml:para>Senha SMTP como SecureString.</maml:para>
+                    <maml:para>SMTP password as a SecureString.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Security.SecureString</command:parameterValue>
                 <dev:type>
@@ -876,7 +876,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>From</maml:name>
                 <maml:description>
-                    <maml:para>Endereço de remetente.</maml:para>
+                    <maml:para>Sender email address.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -886,7 +886,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>SenderAddress</maml:name>
                 <maml:description>
-                    <maml:para>Endereço técnico de envio opcional.</maml:para>
+                    <maml:para>Optional technical sender address.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -896,7 +896,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>ReplyTo</maml:name>
                 <maml:description>
-                    <maml:para>Endereço de resposta opcional.</maml:para>
+                    <maml:para>Optional reply-to address.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -906,7 +906,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Timeout</maml:name>
                 <maml:description>
-                    <maml:para>Tempo limite, em segundos.</maml:para>
+                    <maml:para>Timeout in seconds.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Int32</command:parameterValue>
                 <dev:type>
@@ -930,17 +930,17 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
-                <dev:code>$senha = Read-Host 'Senha SMTP' -AsSecureString; $smtp = @{ Server = 'smtp.example.com'; Port = 587; Ssl = $true; Username = 'conta@example.com'; Password = $senha; From = 'conta@example.com' }; Set-PipeSmtp @smtp</dev:code>
+                <dev:code>$password = Read-Host 'SMTP password' -AsSecureString; $smtp = @{ Server = 'smtp.example.com'; Port = 587; Ssl = $true; Username = 'account@example.com'; Password = $password; From = 'account@example.com' }; Set-PipeSmtp @smtp</dev:code>
                 <dev:remarks/>
             </command:example>
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -951,11 +951,11 @@
             <command:verb>Test</command:verb>
             <command:noun>PipeSmtp</command:noun>
             <maml:description>
-                <maml:para>Testa conexão e autenticação SMTP.</maml:para>
+                <maml:para>Tests SMTP connectivity and authentication.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Realiza teste TCP e tenta enviar uma mensagem ao próprio remetente. Pode utilizar a configuração global, a configuração da empresa ou uma configuração fornecida.</maml:para>
+            <maml:para>Probes TCP connectivity and attempts to send a test message to the sender address. Can use global, company-specific, or directly supplied SMTP settings.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -978,7 +978,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>CNPJ da empresa cuja configuração será testada.</maml:para>
+                    <maml:para>CNPJ of the company whose configuration will be tested.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -988,7 +988,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>SmtpConfig</maml:name>
                 <maml:description>
-                    <maml:para>Configuração SMTP informada diretamente.</maml:para>
+                    <maml:para>SMTP configuration supplied directly.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Object</command:parameterValue>
                 <dev:type>
@@ -998,7 +998,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>TimeoutSeconds</maml:name>
                 <maml:description>
-                    <maml:para>Tempo limite do teste, em segundos.</maml:para>
+                    <maml:para>Test timeout in seconds.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.Int32</command:parameterValue>
                 <dev:type>
@@ -1022,9 +1022,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Test-PipeSmtp</dev:code>
                 <dev:remarks/>
@@ -1032,7 +1032,7 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -1043,11 +1043,11 @@
             <command:verb>Get</command:verb>
             <command:noun>PipeDFeSequenceGap</command:noun>
             <maml:description>
-                <maml:para>Identifica lacunas de numeração em documentos fiscais indexados.</maml:para>
+                <maml:para>Detects numbering gaps in indexed fiscal documents.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Pesquisa a numeração por modelo e série no período especificado. Lacunas não comprovam a emissão de documentos nem irregularidades.</maml:para>
+            <maml:para>Checks document numbers by model and series within the specified period. Numbering gaps do not prove that documents were issued or that an irregularity occurred.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -1070,7 +1070,7 @@
             <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>CNPJ da empresa. Aceita o formato informado pelo comando, conforme suas regras de validação.</maml:para>
+                    <maml:para>Company CNPJ. Accepts the formats supported by this command and its validation rules.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -1080,7 +1080,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>StartDate</maml:name>
                 <maml:description>
-                    <maml:para>Início opcional do período.</maml:para>
+                    <maml:para>Optional period start.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -1090,7 +1090,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EndDate</maml:name>
                 <maml:description>
-                    <maml:para>Fim opcional do período; exige StartDate quando fornecido.</maml:para>
+                    <maml:para>Optional period end; requires StartDate when specified.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -1114,9 +1114,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Get-PipeDFeSequenceGap -Cnpj '11222333000181'</dev:code>
                 <dev:remarks/>
@@ -1124,7 +1124,7 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -1135,11 +1135,11 @@
             <command:verb>Invoke</command:verb>
             <command:noun>PipeDFe</command:noun>
             <maml:description>
-                <maml:para>Executa o fechamento de documentos fiscais de uma ou mais empresas.</maml:para>
+                <maml:para>Runs the fiscal document closing workflow for one or more companies.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Por padrão, processa o mês civil anterior e todas as empresas ativas. Cria índices e arquivos de fechamento, gera relatórios para entrega e coordena a notificação SMTP com controle persistente contra reenvios duplicados.</maml:para>
+            <maml:para>By default, processes the previous full calendar month for all active companies. Creates indexes and closing archives, generates delivery reports, and coordinates SMTP notifications with persistent duplicate-send protection.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -1162,7 +1162,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>Um ou mais CNPJs a processar.</maml:para>
+                    <maml:para>One or more company CNPJs to process.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String[]</command:parameterValue>
                 <dev:type>
@@ -1172,7 +1172,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>StartDate</maml:name>
                 <maml:description>
-                    <maml:para>Início opcional do período.</maml:para>
+                    <maml:para>Optional period start.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -1182,7 +1182,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>EndDate</maml:name>
                 <maml:description>
-                    <maml:para>Fim opcional do período; exige StartDate quando fornecido.</maml:para>
+                    <maml:para>Optional period end; requires StartDate when specified.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -1206,9 +1206,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Invoke-PipeDFe -Cnpj '11222333000181' -WhatIf</dev:code>
                 <dev:remarks/>
@@ -1216,7 +1216,7 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>
@@ -1227,11 +1227,11 @@
             <command:verb>Get</command:verb>
             <command:noun>PipeDFeHealth</command:noun>
             <maml:description>
-                <maml:para>Verifica a saúde dos índices SQLite das empresas.</maml:para>
+                <maml:para>Checks the health of company SQLite indexes.</maml:para>
             </maml:description>
         </command:details>
         <maml:description>
-            <maml:para>Inspeciona a existência do índice SQLite e sua compatibilidade com a versão esperada. Retorna estados Healthy, Degraded ou Unhealthy. Não verifica o servidor SMTP.</maml:para>
+            <maml:para>Checks whether the SQLite index exists and whether its schema version matches the expected version. Returns Healthy, Degraded, or Unhealthy status. Does not check SMTP connectivity.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>
@@ -1246,7 +1246,7 @@
             <command:parameter required="false" globbing="false" pipelineInput="false" position="named">
                 <maml:name>Cnpj</maml:name>
                 <maml:description>
-                    <maml:para>CNPJ opcional da empresa. Sem CNPJ, verifica as empresas ativas.</maml:para>
+                    <maml:para>Optional company CNPJ. When omitted, checks all active companies.</maml:para>
                 </maml:description>
                 <command:parameterValue required="false">System.String</command:parameterValue>
                 <dev:type>
@@ -1270,9 +1270,9 @@
         </command:returnValues>
         <command:examples>
             <command:example>
-                <maml:title>Exemplo 1</maml:title>
+                <maml:title>Example 1</maml:title>
                 <maml:introduction>
-                    <maml:para>PS C:\&gt; </maml:para>
+                    <maml:para>PS C:\&gt;</maml:para>
                 </maml:introduction>
                 <dev:code>Get-PipeDFeHealth -Cnpj '11222333000181'</dev:code>
                 <dev:remarks/>
@@ -1280,7 +1280,115 @@
         </command:examples>
         <command:relatedLinks>
             <maml:navigationLink>
-                <maml:linkText>PipeDFe no GitHub</maml:linkText>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Resolve-PipeDFeDelivery</command:name>
+            <command:verb>Resolve</command:verb>
+            <command:noun>PipeDFeDelivery</command:noun>
+            <maml:description>
+                <maml:para>Records the verified SMTP outcome of an indeterminate delivery.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Use the delivery ID and the exact UTC attempt timestamp shown in the warning. Resolve only after verifying acceptance with the SMTP provider or recipient. Accepted marks the delivery as Delivered. NotAccepted marks it as Failed and the next normal closing can retry. The reason and previous error are recorded with the state change. This command sends no email.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Resolve-PipeDFeDelivery</maml:name>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>DeliveryId</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>AttemptStartedAt</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Outcome</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Reason</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Company CNPJ.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>DeliveryId</maml:name>
+                <maml:description>
+                    <maml:para>Delivery identifier shown in the warning.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>AttemptStartedAt</maml:name>
+                <maml:description>
+                    <maml:para>Exact UTC attempt timestamp shown in the warning.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Outcome</maml:name>
+                <maml:description>
+                    <maml:para>Accepted for confirmed acceptance, or NotAccepted for confirmed non-acceptance.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Reason</maml:name>
+                <maml:description>
+                    <maml:para>Evidence supporting the decision. Keep credentials and fiscal data out of the reason.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Resolve-PipeDFeDelivery -Cnpj '11222333000181' -DeliveryId '0123456789abcdef0123456789abcdef' -AttemptStartedAt '2026-11-24T22:06:08.4349348+00:00' -Outcome NotAccepted -Reason 'SMTP logs confirm non-acceptance.' -WhatIf</dev:code>
+                <dev:remarks>
+                    <maml:para>Simulates resolving an attempt after SMTP logs confirm non-acceptance.</maml:para>
+                </dev:remarks>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
                 <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
             </maml:navigationLink>
         </command:relatedLinks>

@@ -37,16 +37,11 @@ MONTHLY CLOSING
 
     For each company, the module scans configured XML directories, queries
     its SQLite index, and creates a separate ZIP for each document model
-    present in the period. HTML and XLSX reports are separate from the
-    ZIP archives and are also attached to the closing email.
-
-    The XLSX workbook includes NF-e, NFC-e, NFCom, CT-e, MDF-e, NFS-e,
-    and Occurrences worksheets. CFOP summaries use NF-e and NFC-e item
-    values instead of assigning an entire invoice value to multiple CFOPs.
+    present in the period. When NF-e or NFC-e are present, the closing
+    email also includes a separate analytical HTML report. CFOP summaries
+    use item values and the report lists cancellations separately.
 
     For national NFS-e, period selection uses the invoice generation date.
-    The DPS issue date and service tax period (competencia) are distinct
-    fields that are preserved in the report.
 
 ARCHIVE ORGANIZATION
     XML files are grouped by document model and period. Additional folders

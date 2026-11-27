@@ -1285,4 +1285,112 @@
             </maml:navigationLink>
         </command:relatedLinks>
     </command:command>
+    <command:command>
+        <command:details>
+            <command:name>Resolve-PipeDFeDelivery</command:name>
+            <command:verb>Resolve</command:verb>
+            <command:noun>PipeDFeDelivery</command:noun>
+            <maml:description>
+                <maml:para>Records the verified SMTP outcome of an indeterminate delivery.</maml:para>
+            </maml:description>
+        </command:details>
+        <maml:description>
+            <maml:para>Use the delivery ID and the exact UTC attempt timestamp shown in the warning. Resolve only after verifying acceptance with the SMTP provider or recipient. Accepted marks the delivery as Delivered. NotAccepted marks it as Failed and the next normal closing can retry. The reason and previous error are recorded with the state change. This command sends no email.</maml:para>
+        </maml:description>
+        <command:syntax>
+            <command:syntaxItem>
+                <maml:name>Resolve-PipeDFeDelivery</maml:name>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Cnpj</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>DeliveryId</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>AttemptStartedAt</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Outcome</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+                <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                    <maml:name>Reason</maml:name>
+                    <command:parameterValue required="true">System.String</command:parameterValue>
+                </command:parameter>
+            </command:syntaxItem>
+        </command:syntax>
+        <command:parameters>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Cnpj</maml:name>
+                <maml:description>
+                    <maml:para>Company CNPJ.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>DeliveryId</maml:name>
+                <maml:description>
+                    <maml:para>Delivery identifier shown in the warning.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>AttemptStartedAt</maml:name>
+                <maml:description>
+                    <maml:para>Exact UTC attempt timestamp shown in the warning.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Outcome</maml:name>
+                <maml:description>
+                    <maml:para>Accepted for confirmed acceptance, or NotAccepted for confirmed non-acceptance.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+            <command:parameter required="true" globbing="false" pipelineInput="false" position="named">
+                <maml:name>Reason</maml:name>
+                <maml:description>
+                    <maml:para>Evidence supporting the decision. Keep credentials and fiscal data out of the reason.</maml:para>
+                </maml:description>
+                <command:parameterValue required="true">System.String</command:parameterValue>
+                <dev:type>
+                    <maml:name>System.String</maml:name>
+                </dev:type>
+            </command:parameter>
+        </command:parameters>
+        <command:examples>
+            <command:example>
+                <maml:title>Example 1</maml:title>
+                <maml:introduction>
+                    <maml:para>PS C:\&gt;</maml:para>
+                </maml:introduction>
+                <dev:code>Resolve-PipeDFeDelivery -Cnpj '11222333000181' -DeliveryId '0123456789abcdef0123456789abcdef' -AttemptStartedAt '2026-11-24T22:06:08.4349348+00:00' -Outcome NotAccepted -Reason 'SMTP logs confirm non-acceptance.' -WhatIf</dev:code>
+                <dev:remarks>
+                    <maml:para>Simulates resolving an attempt after SMTP logs confirm non-acceptance.</maml:para>
+                </dev:remarks>
+            </command:example>
+        </command:examples>
+        <command:relatedLinks>
+            <maml:navigationLink>
+                <maml:linkText>PipeDFe on GitHub</maml:linkText>
+                <maml:uri>https://github.com/fabianosrc/PipeDFe</maml:uri>
+            </maml:navigationLink>
+        </command:relatedLinks>
+    </command:command>
 </helpItems>
