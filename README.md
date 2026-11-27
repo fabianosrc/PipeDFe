@@ -18,7 +18,7 @@ O processamento é feito por empresa e por período, sem depender de um ERP espe
 - Processamento dos documentos conforme as regras implementadas para cada modelo.
 - Identificação de lacunas de numeração nos modelos aplicáveis, considerando inutilizações conhecidas.
 - Geração de arquivos ZIP separados por modelo fiscal e período.
-- Geração de relatórios HTML e XLSX, separados dos arquivos ZIP.
+- Geração de relatório analítico HTML para NF-e e NFC-e, separado dos arquivos ZIP.
 - Envio por SMTP para os destinatários cadastrados, com configuração global ou específica por empresa.
 - Registro persistente das execuções e dos estados de entrega para controlar reprocessamentos e evitar envios duplicados.
 - Diagnóstico dos índices SQLite utilizados pelo módulo.
@@ -38,7 +38,7 @@ O PipeDFe **não emite documentos fiscais nem realiza a captura ou o download de
 
 A NFS-e Nacional utiliza a origem opcional `XmlPathNfse`. Empresas que emitem apenas NFS-e também são atendidas pelo fluxo, embora o cadastro da empresa ainda exija um diretório principal em `XmlPath`.
 
-Os ZIPs são gerados por modelo. Quando há eventos associados a um documento, os arquivos relacionados podem ser agrupados pela chave de acesso. Os relatórios HTML e XLSX permanecem fora dos ZIPs, como arquivos independentes.
+Os ZIPs são gerados por modelo. Quando há eventos associados a um documento, os arquivos relacionados podem ser agrupados pela chave de acesso. O relatório HTML de NF-e e NFC-e permanece fora dos ZIPs e acompanha o e-mail de fechamento quando há documentos desses modelos.
 
 ## Requisitos
 
