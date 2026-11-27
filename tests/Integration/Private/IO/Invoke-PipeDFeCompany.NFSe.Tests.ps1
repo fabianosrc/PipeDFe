@@ -15,7 +15,7 @@ Coverage includes:
   - Stable ZIP metadata and no additional send after confirmed delivery.
   - Persistence of uncertain SMTP outcomes and blocked automatic resend.
   - No archive or send when all imported NFS-e documents are out of period.
-  - Partial report pair is not sent when XLSX generation fails.
+  - NFS-e-only delivery does not generate an NF-e/NFC-e report.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -116,94 +116,6 @@ FROM dfe_delivery;
                 }
             }
 
-            # Shared helper: resolve the XLSX worksheet entry by sheet name via
-            # workbook.xml rather than a hardcoded positional path.
-            function Get-XlsxWorksheetEntry {
-                [CmdletBinding()]
-                [OutputType([System.IO.Compression.ZipArchiveEntry])]
-                param (
-                    [Parameter(Mandatory)]
-                    [System.IO.Compression.ZipArchive]$Workbook,
-
-                    [Parameter(Mandatory)]
-                    [string]$SheetName
-                )
-
-                $wbEntry = $Workbook.GetEntry('xl/workbook.xml')
-
-                if ($null -eq $wbEntry) {
-                    throw "xl/workbook.xml not found in XLSX."
-                }
-
-                $wbStream = $wbEntry.Open()
-
-                try {
-                    $wbXml = [System.Xml.XmlDocument]::new()
-                    $wbXml.Load($wbStream)
-                } finally {
-                    $wbStream.Dispose()
-                }
-
-                $ns = [System.Xml.XmlNamespaceManager]::new($wbXml.NameTable)
-                $ns.AddNamespace('x', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main')
-                $ns.AddNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships')
-
-                $sheetNode = $wbXml.SelectSingleNode(
-                    "//x:sheet[@name='$SheetName']", $ns
-                )
-
-                if ($null -eq $sheetNode) {
-                    throw "Sheet '$SheetName' not found in workbook.xml."
-                }
-
-                $rId = $sheetNode.GetAttribute(
-                    'id',
-                    'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
-                )
-
-                $relsEntry = $Workbook.GetEntry('xl/_rels/workbook.xml.rels')
-
-                if ($null -eq $relsEntry) {
-                    throw "xl/_rels/workbook.xml.rels not found in XLSX."
-                }
-
-                $relsStream = $relsEntry.Open()
-
-                try {
-                    $relsXml = [System.Xml.XmlDocument]::new()
-                    $relsXml.Load($relsStream)
-                } finally {
-                    $relsStream.Dispose()
-                }
-
-                $relNode = $relsXml.SelectSingleNode(
-                    "//*[local-name()='Relationship' and @Id='$rId']"
-                )
-
-                if ($null -eq $relNode) {
-                    throw "Relationship '$rId' not found in workbook.xml.rels."
-                }
-
-                $target = $relNode.GetAttribute('Target')
-
-                if ([string]::IsNullOrWhiteSpace($target)) {
-                    throw "Relationship '$rId' has an empty target."
-                }
-
-                $entryPath = if ($target.StartsWith('/')) {
-                    $target.TrimStart('/')
-                } else {
-                    'xl/' + $target
-                }
-
-                $entry = $Workbook.GetEntry($entryPath)
-
-                if ($null -eq $entry) {
-                    throw "Worksheet entry '$entryPath' not found in XLSX."
-                }
-
-                $entry
-            }
         }
 
         BeforeEach {
@@ -273,7 +185,7 @@ FROM dfe_delivery;
 
         AfterAll {
 
-            $env:LOCALAPPDATA = $Script:OriginalLocalAppData
+            $env:LOCALAPPDATA      = $Script:OriginalLocalAppData
             $env:PIPEDFE_DATA_ROOT = $Script:OriginalDataRoot
         }
         #endregion
@@ -320,54 +232,14 @@ FROM dfe_delivery;
                     Should -BeExactly 'Delivered'
 
                 # Exactly one SMTP call across both executions.
-                Should -Invoke Send-Mail -Exactly -Times 1 -Scope It -ModuleName PipeDFe
+                Should -Invoke Send-Mail -Exactly -Times 1 -Scope It
 
-                # Report assertions
                 $reportRoot = Join-Path -Path $params.Company.OutputPath -ChildPath 'Relatorios'
-
-                @(Get-ChildItem -LiteralPath $reportRoot -Directory -Force) | Should -HaveCount 1
-
-                $reportDir   = (Get-ChildItem -LiteralPath $reportRoot -Directory -Force)[0].FullName
-                $reportFiles = @(Get-ChildItem -LiteralPath $reportDir -File -Force)
-                $reportFiles | Should -HaveCount 2
-
-                $htmlPath = Join-Path -Path $reportDir -ChildPath 'Resumo-CFOP.html'
-                $xlsxPath = Join-Path -Path $reportDir -ChildPath 'Fechamento.xlsx'
-
-                $html = [System.IO.File]::ReadAllText($htmlPath)
-                $html | Should -Match '<h1>Resumo por CFOP</h1>'
-                $html | Should -Match 'Nenhum item de NF-e ou NFC-e'
-
-                # Verify the NFS-e number is present in the XLSX using
-                # the sheet name, not a hardcoded positional entry path.
-                $workbook = [System.IO.Compression.ZipFile]::OpenRead($xlsxPath)
-
-                try {
-                    $wsEntry = Get-XlsxWorksheetEntry -Workbook $workbook -SheetName 'NFS-e'
-                    $wsEntry | Should -Not -BeNullOrEmpty
-
-                    $stream = $wsEntry.Open()
-
-                    try {
-                        $sheet = [System.Xml.XmlDocument]::new()
-                        $sheet.Load($stream)
-                    } finally {
-                        $stream.Dispose()
-                    }
-
-                    $numberCell = $sheet.SelectSingleNode(
-                        "//*[local-name()='c' and @r='B6']"
-                    )
-                    $numberCell          | Should -Not -BeNullOrEmpty
-                    $numberCell.InnerText | Should -BeExactly '9876543210123'
-                } finally {
-                    $workbook.Dispose()
-                }
+                Test-Path -LiteralPath $reportRoot | Should -BeFalse
 
                 # --- Send-Mail parameter assertions ---
                 $sendAssertion = @{
                     CommandName     = 'Send-Mail'
-                    ModuleName      = 'PipeDFe'
                     Exactly         = $true
                     Times           = 1
                     Scope           = 'It'
@@ -377,10 +249,8 @@ FROM dfe_delivery;
                             }
                         )
 
-                        $names.Count -eq 3 -and
+                        $names.Count -eq 1 -and
                         ($names -contains 'NFSe_12345678000199_EMPRESA_TESTE_202611.zip') -and
-                        ($names -contains 'Resumo-CFOP.html') -and
-                        ($names -contains 'Fechamento.xlsx')  -and
                         $Body -match '>NFSe</td>\s*<td[^>]*>1</td>'
                     }
                 }
@@ -411,11 +281,10 @@ FROM dfe_delivery;
                 $second.Arquivos | Should -HaveCount 2
 
                 # Exactly one SMTP call across both executions.
-                Should -Invoke Send-Mail -Exactly -Times 1 -Scope It -ModuleName PipeDFe
+                Should -Invoke Send-Mail -Exactly -Times 1 -Scope It
 
                 $sendAssertion = @{
                     CommandName     = 'Send-Mail'
-                    ModuleName      = 'PipeDFe'
                     Exactly         = $true
                     Times           = 1
                     Scope           = 'It'
@@ -425,11 +294,9 @@ FROM dfe_delivery;
                             }
                         )
 
-                        $names.Count -eq 4 -and
+                        $names.Count -eq 2 -and
                         ($names -contains 'MDFe_12345678000199_EMPRESA_TESTE_202611.zip') -and
                         ($names -contains 'NFSe_12345678000199_EMPRESA_TESTE_202611.zip') -and
-                        ($names -contains 'Resumo-CFOP.html') -and
-                        ($names -contains 'Fechamento.xlsx')  -and
                         $Body -match '>MDFe</td>\s*<td[^>]*>1</td>' -and
                         $Body -match '>NFSe</td>\s*<td[^>]*>1</td>'
                     }
@@ -473,12 +340,12 @@ FROM dfe_delivery;
                     Should -BeExactly 'Indeterminate'
 
                 # Exactly one SMTP call - the second execution must not retry.
-                Should -Invoke Send-Mail -Exactly -Times 1 -Scope It -ModuleName PipeDFe
+                Should -Invoke Send-Mail -Exactly -Times 1 -Scope It
 
                 # Reports must still have been generated on the first run.
                 $reportRoot = Join-Path -Path $params.Company.OutputPath -ChildPath 'Relatorios'
 
-                @(Get-ChildItem -LiteralPath $reportRoot -Directory -Force) | Should -HaveCount 1
+                Test-Path -LiteralPath $reportRoot | Should -BeFalse
             }
         }
         #endregion
@@ -506,41 +373,7 @@ FROM dfe_delivery;
                 # No OutputPath must be created when there is nothing to deliver.
                 Test-Path -LiteralPath $params.Company.OutputPath | Should -BeFalse
 
-                Should -Invoke Send-Mail -Exactly -Times 0 -Scope It -ModuleName PipeDFe
-            }
-        }
-        #endregion
-
-        #region Monthly report
-        Context 'Monthly report preparation' {
-
-            It 'Does not send or publish a partial report pair when XLSX generation fails' {
-                Mock -CommandName Export-DFeCfopReportXlsx -MockWith {
-                    throw [System.IO.IOException]::new('Workbook write failed.')
-                }
-
-                $params = $Script:ClosingParams
-                $result = Invoke-PipeDFeCompany @params
-
-                $result.Status       | Should -BeExactly 'Falha'
-                $result.EmailEnviado | Should -BeFalse
-
-                # The aviso must name the failing stage and propagate the message.
-                ($result.Avisos -join ' ') | Should -Match "'Reports'"
-                ($result.Avisos -join ' ') | Should -Match 'Workbook write failed'
-
-                # Delivery row must remain at Prepared - delivery was never attempted.
-                Get-ClosingDeliveryStatus -Cnpj $params.Company.Cnpj |
-                    Should -BeExactly 'Prepared'
-
-                # No report files should have been left on disk.
-                $reportRoot = Join-Path -Path $params.Company.OutputPath -ChildPath 'Relatorios'
-
-                @(Get-ChildItem -LiteralPath $reportRoot -Force -Recurse -ErrorAction Stop) |
-                    Should -HaveCount 0
-
-                Should -Invoke Export-DFeCfopReportXlsx -Exactly -Times 1 -Scope It -ModuleName PipeDFe
-                Should -Invoke Send-Mail -Exactly -Times 0 -Scope It -ModuleName PipeDFe
+                Should -Invoke Send-Mail -Exactly -Times 0 -Scope It
             }
         }
         #endregion

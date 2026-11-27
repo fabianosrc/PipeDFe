@@ -428,7 +428,6 @@ function Invoke-PipeDFeCompany {
                 Archives              = $archives
                 Entries               = $entries
                 IncludeMonthlyReports = $true
-                NFSeEntries           = $nfseEntries
             }
 
             if ($nfseEntries.Count -gt 0) {
