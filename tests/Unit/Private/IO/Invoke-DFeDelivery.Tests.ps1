@@ -185,7 +185,7 @@ Describe 'Invoke-DFeDelivery' -Tag 'Unit' {
             }
 
             Mock -CommandName New-DFePeriodReport -MockWith {
-                @('C:\Reports\Relatorio-Analitico.html')
+                @('C:\Reports\RelatorioAnalitico.html')
             }
         }
         #endregion
