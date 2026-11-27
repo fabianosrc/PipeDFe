@@ -1,11 +1,10 @@
 ﻿<#
 .SYNOPSIS
-Publishes standalone HTML and XLSX reports for a selected period.
+Publishes a standalone analytical HTML report for the selected period.
 
 .DESCRIPTION
-Reads the CFOP projection once and uses it for both reports. Writes
-the reports to a staging directory and publishes the pair only after
-the HTML has been written and a non-empty workbook exists.
+Uses the selected NF-e and NFC-e XML files. Skips publication when
+neither model is present. Publishes the HTML through a staging directory.
 
 Each publication uses a unique directory under Relatorios in the
 company's OutputPath. Existing publications are not replaced. This
@@ -21,21 +20,14 @@ Inclusive report period with Start and End DateTimeOffset values.
 .PARAMETER Entries
 Indexed fiscal documents selected for the period.
 
-.PARAMETER NFSeEntries
-Indexed National NFS-e documents selected for the period.
-
-.PARAMETER Gaps
-Sequence ranges selected for the period.
-
 .OUTPUTS
 System.String
-The full paths of the published HTML and XLSX files, in that order.
+The published HTML path, or no output when no supported documents were selected.
 
 .NOTES
 Private dependencies:
-  Get-DFeNFeCfopReportData
+  Get-DFeAnalyticalReportData
   ConvertTo-DFeCfopReportHtml
-  Export-DFeCfopReportXlsx
 #>
 function New-DFePeriodReport {
     [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -56,16 +48,14 @@ function New-DFePeriodReport {
 
         [Parameter(Mandatory)]
         [AllowEmptyCollection()]
-        [pscustomobject[]]$Entries,
-
-        [Parameter(Mandatory)]
-        [AllowEmptyCollection()]
-        [pscustomobject[]]$NFSeEntries,
-
-        [Parameter(Mandatory)]
-        [AllowEmptyCollection()]
-        [pscustomobject[]]$Gaps
+        [pscustomobject[]]$Entries
     )
+
+    $selected = @($Entries | Where-Object { [int]$_.modelo -in @(55, 65) })
+
+    if ($selected.Count -eq 0) {
+        return
+    }
 
     $output = Resolve-Path -LiteralPath $Company.OutputPath -ErrorAction Stop
 
@@ -77,28 +67,27 @@ function New-DFePeriodReport {
         )
     }
 
-    $queryParams = @{
+    $dataParams = @{
         Cnpj        = [string]$Company.Cnpj
-        StartDate   = $DateRange.Start
-        EndDate     = $DateRange.End
+        Entries     = $selected
         ErrorAction = 'Stop'
     }
 
-    $reportData = Get-DFeNFeCfopReportData @queryParams
-
-    $companyName = if ([string]::IsNullOrWhiteSpace($Company.NomeFantasia)) {
-        [string]$Company.RazaoSocial
-    } else {
-        [string]$Company.NomeFantasia
-    }
+    $documents = @(Get-DFeAnalyticalReportData @dataParams)
 
     $htmlParams = @{
-        Cnpj        = $queryParams.Cnpj
-        StartDate   = $queryParams.StartDate
-        EndDate     = $queryParams.EndDate
-        CompanyName = $companyName
-        Summary     = $reportData.ResumoPorCFOP
+        Cnpj        = $dataParams.Cnpj
+        StartDate   = $DateRange.Start
+        EndDate     = $DateRange.End
+        CompanyName = [string]$Company.RazaoSocial
+        Documents   = $documents
         ErrorAction = 'Stop'
+    }
+
+    $ieProperty = $Company.PSObject.Properties['Ie']
+
+    if ($null -ne $ieProperty) {
+        $htmlParams.Ie = [string]$ieProperty.Value
     }
 
     $html = ConvertTo-DFeCfopReportHtml @htmlParams
@@ -114,8 +103,9 @@ function New-DFePeriodReport {
     $endLabel   = $DateRange.End.ToString('yyyyMMdd', $culture)
 
     $publicationId = [guid]::NewGuid().ToString('N')
+
     $directoryName = '{0}_{1}-{2}_{3}' -f (
-        $queryParams.Cnpj,
+        $dataParams.Cnpj,
         $startLabel,
         $endLabel,
         $publicationId
@@ -126,38 +116,15 @@ function New-DFePeriodReport {
     $stagingPath = [System.IO.Path]::Combine($root, ".$publicationId.tmp")
     $destination = [System.IO.Path]::Combine($root, $directoryName)
 
-    $htmlName = 'Resumo-CFOP.html'
-    $xlsxName = 'Fechamento.xlsx'
-    $htmlPath = [System.IO.Path]::Combine($stagingPath, $htmlName)
-    $xlsxPath = [System.IO.Path]::Combine($stagingPath, $xlsxName)
+    $htmlName = 'RelatorioAnalitico.html'
 
-    $xlsxParams = @{
-        Cnpj            = $queryParams.Cnpj
-        StartDate       = $queryParams.StartDate
-        EndDate         = $queryParams.EndDate
-        LiteralPath     = $xlsxPath
-        ReportData      = $reportData
-        DocumentEntries = $Entries
-        NFSeEntries     = $NFSeEntries
-        Gaps            = $Gaps
-        ErrorAction     = 'Stop'
-    }
+    $htmlPath = [System.IO.Path]::Combine($stagingPath, $htmlName)
 
     try {
         [void][System.IO.Directory]::CreateDirectory($stagingPath)
 
         $encoding = [System.Text.UTF8Encoding]::new($false)
         [System.IO.File]::WriteAllText($htmlPath, $html, $encoding)
-
-        Export-DFeCfopReportXlsx @xlsxParams | Out-Null
-
-        $workbook = [System.IO.FileInfo]::new($xlsxPath)
-
-        if (-not $workbook.Exists -or $workbook.Length -eq 0) {
-            throw [System.IO.IOException]::new(
-                "The XLSX exporter did not create a non-empty workbook at '$xlsxPath'."
-            )
-        }
 
         [System.IO.Directory]::Move($stagingPath, $destination)
     } finally {
@@ -167,5 +134,4 @@ function New-DFePeriodReport {
     }
 
     [System.IO.Path]::Combine($destination, $htmlName)
-    [System.IO.Path]::Combine($destination, $xlsxName)
 }
