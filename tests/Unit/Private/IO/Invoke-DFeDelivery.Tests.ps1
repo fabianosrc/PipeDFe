@@ -18,7 +18,8 @@ Coverage includes:
   - Returns immediately with Success = true when status is Delivered.
   - Does not call Send-DFeNotification when status is Delivered.
   - Returns FailedAt = State when status is Indeterminate.
-  - Explains the retry block and includes the stored DeliveryError when available.
+  - Explains the retry block and includes the stored DeliveryError when
+    available.
   - Returns a default error when Indeterminate has no stored error.
   - Transitions Sending to Indeterminate when an orphan is found.
   - Returns FailedAt = State when orphan transition fails.
@@ -58,18 +59,18 @@ Coverage includes:
 param ()
 
 BeforeDiscovery {
-    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-    # because that's when Context/It are executed to register the test tree. If the
-    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-    # BeforeEach ever runs.
-    $moduleRoot = (Get-Item $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery
+    # phase, because that is when Context/It are executed to register the test
+    # tree. If the module is not loaded at that point, InModuleScope fails
+    # before any BeforeAll or BeforeEach ever runs.
+    $moduleRoot = (Get-Item -LiteralPath $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
     $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
 
     Import-Module -Name $moduleName -Force -Global -ErrorAction Stop
 }
 
-Describe 'Invoke-DFeDelivery' {
+Describe 'Invoke-DFeDelivery' -Tag 'Unit' {
 
     InModuleScope -ModuleName PipeDFe {
 
@@ -184,10 +185,7 @@ Describe 'Invoke-DFeDelivery' {
             }
 
             Mock -CommandName New-DFePeriodReport -MockWith {
-                @(
-                    'C:\Reports\Resumo-CFOP.html',
-                    'C:\Reports\Fechamento.xlsx'
-                )
+                @('C:\Reports\Relatorio-Analitico.html')
             }
         }
         #endregion
@@ -213,9 +211,7 @@ Describe 'Invoke-DFeDelivery' {
                     'DeliveryStatus'
                 )
 
-                $actual = @($result.PSObject.Properties.Name)
-
-                $actual | Should -Be $expected
+                @($result.PSObject.Properties.Name) | Should -Be $expected
             }
         }
         #endregion
@@ -228,25 +224,21 @@ Describe 'Invoke-DFeDelivery' {
                     throw 'persistence error'
                 }
 
-                $scriptBlock = { Invoke-DFeDelivery @Script:BaseParams }
-
-                $scriptBlock | Should -Not -Throw
+                { Invoke-DFeDelivery @Script:BaseParams } | Should -Not -Throw
             }
 
             It 'Does not throw when Send-DFeNotification returns failure' {
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
-                        Success       = $false
-                        EmailsSent    = @()
-                        ErrorMessage  = 'Connection refused'
-                        FailedAt      = 'Send'
+                        Success             = $false
+                        EmailsSent          = @()
+                        ErrorMessage        = 'Connection refused'
+                        FailedAt            = 'Send'
                         AcceptanceUncertain = $false
                     }
                 }
 
-                $scriptBlock = { Invoke-DFeDelivery @Script:BaseParams }
-
-                $scriptBlock | Should -Not -Throw
+                { Invoke-DFeDelivery @Script:BaseParams } | Should -Not -Throw
             }
 
             It 'Does not throw when Set-DFeDeliveryState throws' {
@@ -254,9 +246,7 @@ Describe 'Invoke-DFeDelivery' {
                     throw 'state error'
                 }
 
-                $scriptBlock = { Invoke-DFeDelivery @Script:BaseParams }
-
-                $scriptBlock | Should -Not -Throw
+                { Invoke-DFeDelivery @Script:BaseParams } | Should -Not -Throw
             }
         }
         #endregion
@@ -517,7 +507,15 @@ Describe 'Invoke-DFeDelivery' {
             }
 
             It 'Does not call Send-DFeNotification for an orphan Sending delivery' {
-                Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope Context
+                $invokeParams = @{
+                    CommandName = 'Send-DFeNotification'
+                    Times       = 0
+                    Exactly     = $true
+                    Scope       = 'Context'
+                    ModuleName  = 'PipeDFe'
+                }
+
+                Should -Invoke @invokeParams
             }
         }
 
@@ -628,7 +626,6 @@ Describe 'Invoke-DFeDelivery' {
                 Should -Invoke @assertParams
             }
 
-            #region Transition to Sending fails
             Context 'Transition to Sending fails' {
 
                 BeforeAll {
@@ -649,7 +646,15 @@ Describe 'Invoke-DFeDelivery' {
                 }
 
                 It 'Does not call Send-DFeNotification when transition to Sending fails' {
-                    Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly
+                    $invokeParams = @{
+                        CommandName = 'Send-DFeNotification'
+                        Times       = 0
+                        Exactly     = $true
+                        Scope       = 'Context'
+                        ModuleName  = 'PipeDFe'
+                    }
+
+                    Should -Invoke @invokeParams
                 }
             }
         }
@@ -764,10 +769,10 @@ Describe 'Invoke-DFeDelivery' {
 
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
-                        Success       = $false
-                        EmailsSent    = @()
-                        ErrorMessage  = 'Attachment not found.'
-                        FailedAt      = 'Send'
+                        Success             = $false
+                        EmailsSent          = @()
+                        ErrorMessage        = 'Attachment not found.'
+                        FailedAt            = 'Send'
                         AcceptanceUncertain = $false
                     }
                 }
@@ -807,10 +812,10 @@ Describe 'Invoke-DFeDelivery' {
 
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
-                        Success       = $false
-                        EmailsSent    = @()
-                        ErrorMessage  = 'Connection reset by peer.'
-                        FailedAt      = 'Send'
+                        Success             = $false
+                        EmailsSent          = @()
+                        ErrorMessage        = 'Connection reset by peer.'
+                        FailedAt            = 'Send'
                         AcceptanceUncertain = $true
                     }
                 }
@@ -831,7 +836,8 @@ Describe 'Invoke-DFeDelivery' {
             }
 
             It 'Returns DeliveryStatus = Indeterminate when AcceptanceUncertain is true' {
-                $Script:PostSendFailureResult.DeliveryStatus | Should -Be 'Indeterminate'
+                $Script:PostSendFailureResult.DeliveryStatus |
+                    Should -Be 'Indeterminate'
             }
 
             It 'Returns the notification ErrorMessage' {
@@ -883,7 +889,6 @@ Describe 'Invoke-DFeDelivery' {
                     }
 
                     $Script:CapturedStatus = $Status
-                    return $Script:SendingState
                 }
 
                 Invoke-DFeDelivery @Script:BaseParams | Out-Null
@@ -900,10 +905,10 @@ Describe 'Invoke-DFeDelivery' {
 
                 Mock -CommandName Send-DFeNotification -MockWith {
                     [PSCustomObject]@{
-                        Success       = $false
-                        EmailsSent    = @()
-                        ErrorMessage  = 'Connection refused.'
-                        FailedAt      = 'Send'
+                        Success             = $false
+                        EmailsSent          = @()
+                        ErrorMessage        = 'Connection refused.'
+                        FailedAt            = 'Send'
                         AcceptanceUncertain = $false
                     }
                 }
@@ -986,8 +991,8 @@ Describe 'Invoke-DFeDelivery' {
                     }
                 )
 
-                $gapParams = $Script:BaseParams.Clone()
-                $gapParams.Gaps = $gaps
+                $gapParams         = $Script:BaseParams.Clone()
+                $gapParams.Gaps    = $gaps
 
                 $assertParams = @{
                     CommandName     = 'Send-DFeNotification'
@@ -1112,9 +1117,8 @@ Describe 'Invoke-DFeDelivery' {
 
                 BeforeAll {
 
-                    $reportParams = $Script:BaseParams.Clone()
+                    $reportParams                       = $Script:BaseParams.Clone()
                     $reportParams.IncludeMonthlyReports = $true
-                    $reportParams.NFSeEntries           = @()
 
                     $Script:ReportsResult = Invoke-DFeDelivery @reportParams
                 }
@@ -1124,7 +1128,15 @@ Describe 'Invoke-DFeDelivery' {
                 }
 
                 It 'Calls New-DFePeriodReport once when IncludeMonthlyReports is set' {
-                    Should -Invoke -CommandName New-DFePeriodReport -Times 1 -Exactly -Scope Context
+                    $invokeParams = @{
+                        CommandName = 'New-DFePeriodReport'
+                        Times       = 1
+                        Exactly     = $true
+                        Scope       = 'Context'
+                        ModuleName  = 'PipeDFe'
+                    }
+
+                    Should -Invoke @invokeParams
                 }
 
                 It 'Passes ReportFilePaths to Send-DFeNotification' {
@@ -1134,7 +1146,8 @@ Describe 'Invoke-DFeDelivery' {
                         Exactly         = $true
                         Scope           = 'Context'
                         ParameterFilter = {
-                            $ReportFilePaths -contains 'C:\Reports\Resumo-CFOP.html'
+                            $ReportFilePaths.Count -eq 1 -and
+                            $ReportFilePaths[0] -eq 'C:\Reports\Relatorio-Analitico.html'
                         }
                     }
 
@@ -1150,7 +1163,15 @@ Describe 'Invoke-DFeDelivery' {
                 }
 
                 It 'Does not call New-DFePeriodReport when IncludeMonthlyReports is absent' {
-                    Should -Invoke -CommandName New-DFePeriodReport -Times 0 -Exactly -Scope Context
+                    $invokeParams = @{
+                        CommandName = 'New-DFePeriodReport'
+                        Times       = 0
+                        Exactly     = $true
+                        Scope       = 'Context'
+                        ModuleName  = 'PipeDFe'
+                    }
+
+                    Should -Invoke @invokeParams
                 }
 
                 It 'Passes empty ReportFilePaths to Send-DFeNotification' {
@@ -1174,9 +1195,8 @@ Describe 'Invoke-DFeDelivery' {
                         throw 'XLSX export failed.'
                     }
 
-                    $reportParams = $Script:BaseParams.Clone()
+                    $reportParams                       = $Script:BaseParams.Clone()
                     $reportParams.IncludeMonthlyReports = $true
-                    $reportParams.NFSeEntries           = @()
 
                     $Script:ReportsFailResult = Invoke-DFeDelivery @reportParams
                 }
@@ -1190,7 +1210,15 @@ Describe 'Invoke-DFeDelivery' {
                 }
 
                 It 'Does not call Send-DFeNotification when report generation fails' {
-                    Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope Context
+                    $invokeParams = @{
+                        CommandName = 'Send-DFeNotification'
+                        Times       = 0
+                        Exactly     = $true
+                        Scope       = 'Context'
+                        ModuleName  = 'PipeDFe'
+                    }
+
+                    Should -Invoke @invokeParams
                 }
 
                 It 'Does not transition to Sending when report generation fails' {

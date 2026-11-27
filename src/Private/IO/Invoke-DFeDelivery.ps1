@@ -48,11 +48,8 @@ to build the fiscal document summary in the email body.
 Number of national NFS-e documents in the period, for the email summary.
 
 .PARAMETER IncludeMonthlyReports
-Publishes and attaches standalone HTML and XLSX reports before entering
-Sending. Already delivered or blocked deliveries do not generate reports.
-
-.PARAMETER NFSeEntries
-National NFS-e entries selected for the monthly XLSX report.
+Publishes and attaches the analytical HTML for NF-e and NFC-e before
+entering Sending. Already delivered or blocked deliveries do not generate reports.
 
 .OUTPUTS
 System.Management.Automation.PSCustomObject
@@ -104,11 +101,7 @@ function Invoke-DFeDelivery {
         [int]$NFSeCount = 0,
 
         [Parameter()]
-        [switch]$IncludeMonthlyReports,
-
-        [Parameter()]
-        [AllowEmptyCollection()]
-        [pscustomobject[]]$NFSeEntries = @()
+        [switch]$IncludeMonthlyReports
     )
 
     $cnpj = [string]$Company.Cnpj
@@ -151,8 +144,8 @@ function Invoke-DFeDelivery {
     try {
         $deliveryParams = @{
             Cnpj        = $cnpj
-            PeriodStart = [DateTimeOffset]$DateRange.Start
-            PeriodEnd   = [DateTimeOffset]$DateRange.End
+            PeriodStart = [System.DateTimeOffset]$DateRange.Start
+            PeriodEnd   = [System.DateTimeOffset]$DateRange.End
             Archives    = $Archives
             To          = $para
             Cc          = $cc
@@ -193,8 +186,9 @@ function Invoke-DFeDelivery {
     if ($delivery.DeliveryStatus -eq 'Indeterminate') {
         $retryBlock = (
             'A previous SMTP attempt has an indeterminate result. ' +
-            'Automatic retry is blocked.'
-        )
+            'Automatic retry is blocked. DeliveryId: {0}. AttemptStartedAt: {1}. ' +
+            'After verifying the SMTP outcome, use Resolve-PipeDFeDelivery.'
+        ) -f $delivery.DeliveryId, $delivery.DeliveryStartedAt
 
         $errorMessage = if (-not [string]::IsNullOrWhiteSpace($delivery.DeliveryError)) {
             '{0} Previous attempt error: {1}' -f $retryBlock, $delivery.DeliveryError
@@ -273,8 +267,6 @@ function Invoke-DFeDelivery {
                 Company     = $Company
                 DateRange   = $DateRange
                 Entries     = $Entries
-                NFSeEntries = $NFSeEntries
-                Gaps        = $Gaps
                 ErrorAction = 'Stop'
             }
 

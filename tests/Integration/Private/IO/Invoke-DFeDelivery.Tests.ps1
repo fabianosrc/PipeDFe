@@ -21,7 +21,11 @@ Coverage includes:
   - Persists an uncertain SMTP outcome as Indeterminate.
   - Blocks a second send attempt when status is Indeterminate.
   - Recovers an interrupted Sending record to Indeterminate without SMTP.
-  - Treats a missing SendAttempted flag as indeterminate.
+  - Resolves confirmed SMTP outcomes and preserves the original failure in
+    the resolution log.
+  - Preserves the delivery under WhatIf and rejects a decision for a stale
+    attempt.
+  - Treats a missing AcceptanceUncertain flag as indeterminate.
   - Treats an unexpected notification exception as indeterminate.
 #>
 
@@ -34,10 +38,10 @@ Coverage includes:
 param ()
 
 BeforeDiscovery {
-    # InModuleScope needs to resolve the PipeDFe module during the Discovery phase,
-    # because that's when Context/It are executed to register the test tree. If the
-    # module isn't loaded at that point, InModuleScope fails before any BeforeAll or
-    # BeforeEach ever runs.
+    # InModuleScope needs to resolve the PipeDFe module during the Discovery
+    # phase, because that is when Context/It are executed to register the test
+    # tree. If the module is not loaded at that point, InModuleScope fails
+    # before any BeforeAll or BeforeEach ever runs.
     $moduleRoot = (Get-Item -LiteralPath $PSScriptRoot).Parent.Parent.Parent.Parent.FullName
 
     $moduleName = Join-Path -Path $moduleRoot -ChildPath 'PipeDFe.psd1'
@@ -64,7 +68,8 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
                 'PipeDFe.DeliveryLifecycle.Tests-{0}' -f $testID
             )
 
-            New-Item -ItemType Directory -Path $Script:TempRoot -Force | Out-Null
+            New-Item -ItemType Directory -Path $Script:TempRoot -Force |
+                Out-Null
 
             $env:LOCALAPPDATA      = $Script:TempRoot
             $env:PIPEDFE_DATA_ROOT = $null
@@ -83,8 +88,8 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
             }
 
             $Script:DateRange = [pscustomobject]@{
-                Start = [DateTimeOffset]::Parse('2026-11-01T00:00:00-03:00')
-                End   = [DateTimeOffset]::Parse('2026-11-30T23:59:59-03:00')
+                Start = [System.DateTimeOffset]::Parse('2026-11-01T00:00:00-03:00')
+                End   = [System.DateTimeOffset]::Parse('2026-11-30T23:59:59-03:00')
             }
 
             $Script:Smtp = [pscustomobject]@{
@@ -102,7 +107,10 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
                 $fileName = 'NFe_{0}.zip' -f [guid]::NewGuid().ToString('N')
                 $path     = Join-Path -Path $Script:TempRoot -ChildPath $fileName
 
-                [System.IO.File]::WriteAllText($path, [guid]::NewGuid().ToString('N'))
+                [System.IO.File]::WriteAllText(
+                    $path,
+                    [guid]::NewGuid().ToString('N')
+                )
 
                 [pscustomobject]@{
                     TipoDFe  = 'NFe'
@@ -145,9 +153,10 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
                     [string]$ErrorMessage
                 )
 
-                # $Delivery must be the object returned by Set-DFeDeliveryState or
-                # New-DFeDelivery. When transitioning out of Sending, pass the object
-                # returned by the Sending transition so DeliveryStartedAt is populated.
+                # $Delivery must be the object returned by Set-DFeDeliveryState
+                # or New-DFeDelivery. When transitioning out of Sending, pass
+                # the object returned by the Sending transition so that
+                # DeliveryStartedAt is populated.
                 $params = @{
                     Cnpj                      = $Script:Company.Cnpj
                     DeliveryId                = $Delivery.DeliveryId
@@ -191,18 +200,18 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             Mock -CommandName Send-DFeNotification -MockWith {
                 [pscustomobject]@{
-                    Success       = $true
-                    EmailsSent    = @('dest@example.com')
-                    ErrorMessage  = $null
-                    FailedAt      = $null
-                    SendAttempted = $true
+                    Success             = $true
+                    EmailsSent          = @('dest@example.com')
+                    ErrorMessage        = $null
+                    FailedAt            = $null
+                    AcceptanceUncertain = $false
                 }
             }
         }
 
         AfterAll {
 
-            # Always restore PIPEDFE_DATA_ROOT, even when tests fail.
+            # Always restore both env vars, even when tests fail.
             $env:LOCALAPPDATA      = $Script:OriginalLocalAppData
             $env:PIPEDFE_DATA_ROOT = $Script:OriginalDataRoot
 
@@ -236,7 +245,15 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
             $second.Success    | Should -BeTrue
             $second.DeliveryId | Should -Be $first.DeliveryId
 
-            Should -Invoke -CommandName Send-DFeNotification -Times 1 -Exactly -Scope It
+            $invokeParams = @{
+                CommandName = 'Send-DFeNotification'
+                Times       = 1
+                Exactly     = $true
+                Scope       = 'It'
+                ModuleName  = 'PipeDFe'
+            }
+
+            Should -Invoke @invokeParams
         }
 
         It 'Persists pre-SMTP failure as Failed and allows a controlled retry' {
@@ -260,7 +277,9 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
             $stored.DeliveryStatus | Should -Be 'Failed'
             $stored.DeliveryError  | Should -Be 'Attachment validation failed.'
 
-            $previousAttempt = [DateTimeOffset]::Parse($stored.DeliveryStartedAt)
+            $previousAttempt = [System.DateTimeOffset]::Parse(
+                $stored.DeliveryStartedAt
+            )
 
             Mock -CommandName Send-DFeNotification -MockWith {
                 [pscustomobject]@{
@@ -280,8 +299,9 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             $stored = Get-LifecycleDelivery -Archive $Script:Archive
 
-            ([DateTimeOffset]::Parse($stored.DeliveryStartedAt) -gt $previousAttempt) |
-                Should -BeTrue
+            ([DateTimeOffset]::Parse(
+                $stored.DeliveryStartedAt) -gt $previousAttempt
+            ) | Should -BeTrue
 
             $stored.DeliveryError | Should -BeNullOrEmpty
         }
@@ -310,8 +330,168 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             $second.Success        | Should -BeFalse
             $second.DeliveryStatus | Should -Be 'Indeterminate'
+            $second.ErrorMessage   | Should -Match ([regex]::Escape($stored.DeliveryStartedAt))
+            $second.ErrorMessage   | Should -Match ([regex]::Escape($stored.DeliveryId))
 
-            Should -Invoke -CommandName Send-DFeNotification -Times 1 -Exactly -Scope It
+            $invokeParams = @{
+                CommandName = 'Send-DFeNotification'
+                Times       = 1
+                Exactly     = $true
+                Scope       = 'It'
+                ModuleName  = 'PipeDFe'
+            }
+
+            Should -Invoke @invokeParams
+        }
+
+        Context 'Operator resolution of an indeterminate delivery' {
+
+            BeforeEach {
+                $prepared = Get-LifecycleDelivery -Archive $Script:Archive
+                $sending  = Set-LifecycleState -Delivery $prepared -Status 'Sending'
+
+                $indeterminateParams = @{
+                    Delivery     = $sending
+                    Status       = 'Indeterminate'
+                    ErrorMessage = 'Final SMTP response unavailable.'
+                }
+
+                $Script:UncertainDelivery = Set-LifecycleState @indeterminateParams
+
+                $Script:ResolutionParams = @{
+                    Cnpj             = $Script:Company.Cnpj
+                    DeliveryId       = $Script:UncertainDelivery.DeliveryId
+                    AttemptStartedAt = $Script:UncertainDelivery.DeliveryStartedAt
+                    Reason           = 'Verified against the SMTP provider logs.'
+                    Confirm          = $false
+                }
+            }
+
+            It 'Resolves <Outcome> as <Status> and honors that state on the next closing' -ForEach @(
+                @{
+                    Outcome   = 'Accepted'
+                    Status    = 'Delivered'
+                    SendCount = 0
+                }
+                @{
+                    Outcome   = 'NotAccepted'
+                    Status    = 'Failed'
+                    SendCount = 1
+                }
+            ) {
+                $resolution = Resolve-PipeDFeDelivery @Script:ResolutionParams -Outcome $Outcome
+
+                $resolution.PreviousStatus    | Should -Be 'Indeterminate'
+                $resolution.DeliveryStatus    | Should -Be $Status
+
+                $resolution.DeliveryStartedAt |
+                    Should -Be $Script:UncertainDelivery.DeliveryStartedAt
+
+                Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope It
+
+                $next = Invoke-DFeDelivery @Script:Params
+
+                $next.DeliveryId     | Should -Be $resolution.DeliveryId
+                $next.DeliveryStatus | Should -Be 'Delivered'
+
+                $invokeParams = @{
+                    CommandName = 'Send-DFeNotification'
+                    Times       = $SendCount
+                    Exactly     = $true
+                    Scope       = 'It'
+                    ModuleName  = 'PipeDFe'
+                }
+
+                Should -Invoke @invokeParams
+
+                $connection = Open-DFeIndexConnection -Cnpj $Script:Company.Cnpj
+
+                try {
+
+                    $command = $connection.CreateCommand()
+                    try {
+                        $command.CommandText = @'
+SELECT resolution_status || '|' || reason || '|' || previous_error
+FROM dfe_delivery_resolution
+WHERE delivery_id = @delivery_id AND delivery_started_at = @started_at;
+'@
+
+                        $null = $command.Parameters.AddWithValue(
+                            '@delivery_id',
+                            $resolution.DeliveryId
+                        )
+
+                        $null = $command.Parameters.AddWithValue(
+                            '@started_at',
+                            $resolution.DeliveryStartedAt
+                        )
+
+                        $expected = '{0}|{1}|Final SMTP response unavailable.' -f (
+                            $Status,
+                            $Script:ResolutionParams.Reason
+                        )
+
+                        $command.ExecuteScalar() | Should -BeExactly $expected
+                    } finally {
+                        $command.Dispose()
+                    }
+                } finally {
+                    $connection.Dispose()
+                }
+            }
+
+            It 'Leaves the attempt indeterminate under WhatIf' {
+                $whatIfParams = $Script:ResolutionParams.Clone()
+                $whatIfParams.Outcome = 'NotAccepted'
+
+                Resolve-PipeDFeDelivery @whatIfParams -WhatIf
+
+                $stored = Get-LifecycleDelivery -Archive $Script:Archive
+
+                $stored.DeliveryStatus    | Should -Be 'Indeterminate'
+                $stored.DeliveryStartedAt |
+                    Should -Be $Script:UncertainDelivery.DeliveryStartedAt
+
+                $stored.DeliveryError     | Should -Be 'Final SMTP response unavailable.'
+
+                Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope It
+            }
+
+            It 'Rejects a decision for an older attempt of the same delivery' {
+                Resolve-PipeDFeDelivery @Script:ResolutionParams -Outcome NotAccepted |
+                    Out-Null
+
+                $failed = Get-LifecycleDelivery -Archive $Script:Archive
+
+                $newAttempt = Set-LifecycleState -Delivery $failed -Status 'Sending'
+
+                $staleParams = @{
+                    Delivery     = $newAttempt
+                    Status       = 'Indeterminate'
+                    ErrorMessage = 'Second attempt was not confirmed.'
+                }
+
+                $newState = Set-LifecycleState @staleParams
+
+                { Resolve-PipeDFeDelivery @Script:ResolutionParams -Outcome Accepted } |
+                    Should -Throw -ErrorId 'ConcurrentDeliveryStateChange*'
+
+                $stored = Get-LifecycleDelivery -Archive $Script:Archive
+
+                $stored.DeliveryStatus    | Should -Be 'Indeterminate'
+                $stored.DeliveryStartedAt | Should -Be $newState.DeliveryStartedAt
+                $stored.DeliveryError     | Should -Be $newState.DeliveryError
+
+                $invokeParams = @{
+                    CommandName = 'Send-DFeNotification'
+                    Times       = 0
+                    Exactly     = $true
+                    Scope       = 'It'
+                    ModuleName  = 'PipeDFe'
+                }
+
+                Should -Invoke @invokeParams
+            }
         }
 
         It 'Recovers an interrupted Sending record to Indeterminate without SMTP' {
@@ -325,14 +505,18 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
             $result.Success        | Should -BeFalse
             $result.DeliveryStatus | Should -Be 'Indeterminate'
 
-            $storedParams = @{
-                Archive = $Script:Archive
-            }
-
-            (Get-LifecycleDelivery @storedParams).DeliveryStatus |
+            (Get-LifecycleDelivery -Archive $Script:Archive).DeliveryStatus |
                 Should -Be 'Indeterminate'
 
-            Should -Invoke -CommandName Send-DFeNotification -Times 0 -Exactly -Scope It
+            $invokeParams = @{
+                CommandName = 'Send-DFeNotification'
+                Times       = 0
+                Exactly     = $true
+                Scope       = 'It'
+                ModuleName  = 'PipeDFe'
+            }
+
+            Should -Invoke @invokeParams
         }
 
         It 'Treats a missing AcceptanceUncertain flag as indeterminate' {
@@ -349,12 +533,10 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
 
             $result.DeliveryStatus | Should -Be 'Indeterminate'
 
-            $storedParams = @{
-                Archive = $Script:Archive
-            }
+            $stored = Get-LifecycleDelivery -Archive $Script:Archive
 
-            (Get-LifecycleDelivery @storedParams).DeliveryStatus |
-                Should -Be 'Indeterminate'
+            $stored.DeliveryStatus | Should -Be 'Indeterminate'
+            $stored.DeliveryError  | Should -Be 'Unknown send outcome.'
         }
 
         It 'Treats an unexpected notification exception as indeterminate' {
@@ -369,11 +551,7 @@ Describe 'Invoke-DFeDelivery SQLite lifecycle' -Tag 'Integration' {
             $result.Success        | Should -BeFalse
             $result.DeliveryStatus | Should -Be 'Indeterminate'
 
-            $storedParams = @{
-                Archive = $Script:Archive
-            }
-
-            (Get-LifecycleDelivery @storedParams).DeliveryStatus |
+            (Get-LifecycleDelivery -Archive $Script:Archive).DeliveryStatus |
                 Should -Be 'Indeterminate'
         }
     }
