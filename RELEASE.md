@@ -15,7 +15,7 @@ This document describes the release checklist for PipeDFe. It is intended for ma
 - [ ] Confirm the intended release scope and close or explicitly defer outstanding blockers.
 - [ ] Confirm the working tree is clean and all intended changes are committed.
 - [ ] Check that `README.md`, `CHANGELOG.md`, `RELEASE.md` and localized MAML/about help match the source code.
-- [ ] Confirm `FunctionsToExport` in `PipeDFe.psd1` lists all ten public commands, including `Get-PipeDFeHealth`.
+- [ ] Confirm `FunctionsToExport` in `PipeDFe.psd1` lists all eleven public commands, including `Get-PipeDFeHealth` and `Resolve-PipeDFeDelivery`.
 - [ ] Confirm `ModuleVersion`, module metadata, and licensing information are accurate.
 - [ ] Confirm no test credentials, personal data, customer XMLs, database files, or other secrets are included in the release.
 - [ ] Confirm required managed and native SQLite dependencies are included for supported PowerShell editions and process architectures.
@@ -124,6 +124,8 @@ Use **synthetic or authorized test data** and a controlled email environment.
 - [ ] Verify sequence-gap behavior, including known inutilizations.
 - [ ] Validate SMTP configuration and a test send to a controlled mailbox.
 - [ ] Verify persistent delivery behavior, including no duplicate sending after `Delivered` and no automatic retry after `Indeterminate`.
+- [ ] Verify manual resolution of an indeterminate delivery using the matching attempt timestamp, documented evidence, and an explicit reason.
+- [ ] Complete the production deployment and recovery checks in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 - [ ] Verify a failure in one company does not silently hide or incorrectly report results for other companies.
 
 Do not use real accounting recipients or customer data in release smoke tests without authorization.
