@@ -355,7 +355,13 @@ SELECT COUNT(*) FROM dfe_delivery WHERE delivery_status = @status;
             BeforeEach {
                 Initialize-DFeAudit -Cnpj $Script:Cnpj | Out-Null
                 $Script:AuditParams = $Script:ClosingParams.Clone()
-                $Script:AuditParams.AuditExecutionId = Start-DFeAuditExecution -Cnpj $Script:Cnpj -Mode 'Test'
+                $startAuditParams = @{
+                    Cnpj          = $Script:Cnpj
+                    Mode          = 'Test'
+                    ModuleVersion = '0.1.0'
+                }
+
+                $Script:AuditParams.AuditExecutionId = Start-DFeAuditExecution @startAuditParams
 
                 Mock -CommandName New-DFePeriodReport -MockWith {
                     'C:\Reports\RelatorioAnalitico.html'
