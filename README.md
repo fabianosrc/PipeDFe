@@ -179,6 +179,8 @@ Get-PipeDFeHealth
 
 `Get-PipeDFeHealth` verifica a presença e a versão do schema dos índices SQLite das empresas cadastradas. Os diagnósticos são classificados como `Healthy`, `Degraded` ou `Unhealthy`. Esse comando não testa a conectividade SMTP.
 
+Um índice no schema 7 precisa de migração explícita para o schema 8. O fechamento não faz essa migração. Preserve o índice existente e valide a migração em uma cópia antes de atualizar uma instalação piloto. Reindexar os XMLs em um índice novo não recupera o histórico de entregas.
+
 ## Testes e build
 
 Os testes automatizados utilizam Pester e estão organizados em suítes unitárias e de integração. Os testes de integração incluem cenários que exercitam persistência e SQLite reais.
