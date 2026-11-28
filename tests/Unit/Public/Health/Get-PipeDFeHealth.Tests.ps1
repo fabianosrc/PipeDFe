@@ -15,7 +15,7 @@ Coverage includes:
   - All active companies checked when no CNPJ supplied
   - Healthy company
   - Unhealthy company - database/index does not exist
-  - Degraded company - outdated schema version
+  - Degraded company - legacy, unversioned, and newer schema guidance
   - Unexpected exception during company check
   - Overall status precedence - Unhealthy wins over Degraded
   - Overall status precedence - Degraded wins over Healthy
@@ -541,7 +541,7 @@ Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
                     return @($Script:CompanyA)
                 }
 
-                New-MockHealthyDatabase -SchemaVersion 1
+                New-MockHealthyDatabase -SchemaVersion 7
 
                 $Script:Result = Get-PipeDFeHealth
 
@@ -556,8 +556,15 @@ Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
                 $Script:CompanyResult.DbExists | Should -BeTrue
             }
 
-            It 'Sets DbVersion to 1' {
-                $Script:CompanyResult.DbVersion | Should -Be 1
+            It 'Reports schema 7 as the installed legacy version' {
+                $Script:CompanyResult.DbVersion | Should -Be 7
+            }
+
+            It 'Requires an explicit migration and preserves the existing index' {
+                $Script:CompanyResult.Issues[0] | Should -Match 'Index schema version is 7; expected 8'
+                $Script:CompanyResult.Issues[0] | Should -Match 'Automatic migration is not supported'
+                $Script:CompanyResult.Issues[0] | Should -Match 'Preserve the existing index'
+                $Script:CompanyResult.Issues[0] | Should -Match 'apply a validated migration before running Invoke-PipeDFe'
             }
 
             It 'Sets DbVersionOk to false' {
@@ -573,6 +580,29 @@ Describe 'Get-PipeDFeHealth' -Tag 'Unit' {
             }
         }
         #endregion
+
+        Context 'Degraded company - other non-current schema versions' {
+
+            It 'Provides the appropriate guidance for schema <Version>' -ForEach @(
+                @{ Version = 0; Guidance = 'empty or compatible before initializing' }
+                @{ Version = 1; Guidance = 'Automatic migration is not supported' }
+                @{ Version = 9; Guidance = 'Use a PipeDFe version that supports this index schema' }
+            ) {
+                Mock -CommandName Get-PipeCompany -MockWith {
+                    return @($Script:CompanyA)
+                }
+
+                New-MockHealthyDatabase -SchemaVersion $Version
+
+                $result = Get-PipeDFeHealth
+                $company = Get-CompanyResult -Result $result
+
+                $company.Status | Should -Be 'Degraded'
+                $company.DbVersion | Should -Be $Version
+                @($company.Issues) | Should -HaveCount 1
+                $company.Issues[0] | Should -Match $Guidance
+            }
+        }
 
         #region Unexpected exception
         Context 'Unexpected exception during company check' {

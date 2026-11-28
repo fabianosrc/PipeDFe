@@ -278,8 +278,9 @@ function Invoke-PipeDFe {
                     $auditExecutionId = Start-DFeAuditExecution @startAuditParams
 
                     $companyParams = @{
-                        Company   = $company
-                        DateRange = $dateRange
+                        Company          = $company
+                        DateRange        = $dateRange
+                        AuditExecutionId = $auditExecutionId
                     }
 
                     $companyResult = Invoke-PipeDFeCompany @companyParams

@@ -1232,6 +1232,7 @@
         </command:details>
         <maml:description>
             <maml:para>Checks whether the SQLite index exists and whether its schema version matches the expected version. Returns Healthy, Degraded, or Unhealthy status. Does not check SMTP connectivity.</maml:para>
+            <maml:para>Schema 7 indexes require explicit migration to schema 8. Preserve the existing index and validate the migration on a copy before running the closing workflow.</maml:para>
         </maml:description>
         <command:syntax>
             <command:syntaxItem>

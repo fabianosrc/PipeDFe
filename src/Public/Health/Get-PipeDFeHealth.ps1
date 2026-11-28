@@ -5,8 +5,8 @@ Returns a health summary of the PipeDFe installation.
 .DESCRIPTION
 Checks the health of every active registered company, or a single company
 when -Cnpj is supplied. For each company the function verifies whether the
-SQLite index exists and whether its schema version matches the current
-schema version matches the version supported by the module.
+SQLite index exists and whether its schema version matches the version
+supported by the module. Versioned legacy indexes require explicit migration.
 
 The function never throws. Any exception raised while inspecting a company
 is captured and reported as an issue on that company's health entry.
@@ -121,9 +121,18 @@ function Get-PipeDFeHealth {
                         $dbVersionOk         = $dbVersion -eq $expectedSchemaVersion
 
                         if (-not $dbVersionOk) {
+                            $guidance = if ($dbVersion -eq 0) {
+                                'Verify that the index is empty or compatible before initializing it.'
+                            } elseif ($dbVersion -lt $expectedSchemaVersion) {
+                                'Automatic migration is not supported. Preserve the existing index ' +
+                                'and apply a validated migration before running Invoke-PipeDFe.'
+                            } else {
+                                'Use a PipeDFe version that supports this index schema.'
+                            }
+
                             $issues.Add(
                                 "Index schema version is $dbVersion; expected $expectedSchemaVersion. " +
-                                'Run Invoke-PipeDFe to upgrade.'
+                                $guidance
                             )
                         }
                     } finally {

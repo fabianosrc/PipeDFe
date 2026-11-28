@@ -592,7 +592,7 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                 Should -Invoke @invokeParams
             }
 
-            It 'Passes the resolved DateRange to Invoke-PipeDFeCompany' {
+            It 'Passes the resolved DateRange and audit execution ID to Invoke-PipeDFeCompany' {
                 $invokeParams = @{
                     CommandName     = 'Invoke-PipeDFeCompany'
                     ModuleName      = 'PipeDFe'
@@ -601,7 +601,8 @@ Describe 'Invoke-PipeDFe' -Tag 'Unit' {
                     Times           = 1
                     ParameterFilter = {
                         $DateRange.Start -eq $Script:DateRange.Start -and
-                        $DateRange.End   -eq $Script:DateRange.End
+                        $DateRange.End   -eq $Script:DateRange.End -and
+                        $AuditExecutionId -eq '0123456789abcdef0123456789abcdef'
                     }
                 }
 
