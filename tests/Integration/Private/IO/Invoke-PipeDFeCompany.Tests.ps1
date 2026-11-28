@@ -350,6 +350,91 @@ SELECT COUNT(*) FROM dfe_delivery WHERE delivery_status = @status;
         }
         #endregion
 
+        Context 'Closing audit events' {
+
+            BeforeEach {
+                Initialize-DFeAudit -Cnpj $Script:Cnpj | Out-Null
+                $Script:AuditParams = $Script:ClosingParams.Clone()
+                $Script:AuditParams.AuditExecutionId = Start-DFeAuditExecution -Cnpj $Script:Cnpj -Mode 'Test'
+
+                Mock -CommandName New-DFePeriodReport -MockWith {
+                    'C:\Reports\RelatorioAnalitico.html'
+                }
+            }
+
+            It 'Records archives, report publication and the delivery outcome (<Outcome>)' -ForEach @(
+                @{ Outcome = 'Delivered'; ClosingStatus = 'OK'; Event = 'Delivery:Delivered' }
+                @{ Outcome = 'Indeterminate'; ClosingStatus = 'Falha'; Event = 'Send:Indeterminate' }
+            ) {
+                if ($Outcome -eq 'Indeterminate') {
+                    Mock -CommandName Send-DFeNotification -MockWith {
+                        [PSCustomObject]@{
+                            Success             = $false
+                            EmailsSent          = @()
+                            ErrorMessage        = 'Simulated raw SMTP diagnostic.'
+                            FailedAt            = 'Send'
+                            AcceptanceUncertain = $true
+                        }
+                    }
+                }
+
+                $result = Invoke-PipeDFeCompany @Script:AuditParams
+                $result.Status | Should -Be $ClosingStatus -Because $result.Erro
+
+                $auditPath = Get-StorePath -Scope Audit -Cnpj $Script:Cnpj
+                $connection = Open-SqliteConnection -Path $auditPath
+
+                try {
+                    $command = $connection.CreateCommand()
+                    try {
+                        $command.CommandText = @'
+SELECT event_type, status, message
+FROM audit_event
+WHERE execution_id = @execution_id
+ORDER BY event_id;
+'@
+                        $null = $command.Parameters.AddWithValue(
+                            '@execution_id',
+                            $Script:AuditParams.AuditExecutionId
+                        )
+                        $reader = $command.ExecuteReader()
+                        try {
+                            $events = @(
+                                while ($reader.Read()) {
+                                    [PSCustomObject]@{
+                                        Key = '{0}:{1}' -f $reader.GetString(0), $reader.GetString(1)
+                                        Message = $reader.GetString(2)
+                                    }
+                                }
+                            )
+                        } finally {
+                            $reader.Dispose()
+                        }
+                    } finally {
+                        $command.Dispose()
+                    }
+                } finally {
+                    $connection.Dispose()
+                }
+
+                $events | Should -HaveCount 3
+                ($events.Key -join ',') | Should -Be "Archives:Ready,Reports:Published,$Event"
+                $events[2].Message | Should -Match '^DeliveryId: [0-9a-f]{32}\.$'
+            }
+
+            It 'Still completes delivery if an event cannot be saved' {
+                Mock -CommandName Save-DFeAuditEvent -MockWith {
+                    throw 'Simulated audit write failure.'
+                }
+
+                $result = Invoke-PipeDFeCompany @Script:AuditParams
+
+                $result.Status | Should -Be 'OK' -Because $result.Erro
+                Should -Invoke -CommandName Save-DFeAuditEvent -Times 3 -Exactly -Scope It
+                Should -Invoke -CommandName Send-DFeNotification -Times 1 -Exactly -Scope It
+            }
+        }
+
         #region Idempotent reexecution
         Context 'Idempotent reexecution' {
 

@@ -39,9 +39,8 @@ Never throws. Any exception raised during the company pipeline is caught and
 surfaced as Status = 'Falha' in the returned object, allowing the caller to
 continue processing other companies.
 
-Non-fatal conditions such as no documents found, SMTP not configured, no
-recipients configured, or notification delivery failure are surfaced as
-Status = 'Aviso'.
+A period without documents returns Status = 'Aviso'. The caller can supply
+an audit execution ID to persist operational milestones and failures.
 
 .PARAMETER Company
 Company object as returned by Get-CompanyConfig. Must expose at minimum
@@ -50,6 +49,9 @@ Cnpj, RazaoSocial, NomeFantasia, XmlPath and Email.
 .PARAMETER DateRange
 PSCustomObject with Start and End [DateTimeOffset] representing the inclusive
 processing period, as returned by Resolve-DateRange.
+
+.PARAMETER AuditExecutionId
+Existing company audit execution identifier. Omit to skip event persistence.
 
 .OUTPUTS
 System.Management.Automation.PSCustomObject
@@ -86,6 +88,7 @@ Private dependencies:
   New-DFeNFSeArchive
   Resolve-DFeSmtp
   Invoke-DFeDelivery
+  Write-DFeClosingAuditEvent
 #>
 function Invoke-PipeDFeCompany {
     [CmdletBinding()]
@@ -97,7 +100,10 @@ function Invoke-PipeDFeCompany {
 
         [Parameter(Mandatory)]
         [ValidateNotNull()]
-        [pscustomobject]$DateRange
+        [pscustomobject]$DateRange,
+
+        [Parameter()]
+        [string]$AuditExecutionId
     )
 
     $cnpj   = $Company.Cnpj
@@ -110,6 +116,11 @@ function Invoke-PipeDFeCompany {
     $emailEnviado    = $false
     $scanResult      = $null
     $nfseScanResult  = $null
+
+    $audit = @{ Cnpj = $cnpj; ExecutionId = $AuditExecutionId }
+    $auditStage = 'Index'
+    $auditStatus = 'Failed'
+    $auditMessage = $null
 
     $periodoDisplay = (
         "$($DateRange.Start.ToString('dd/MM/yyyy')) a " +
@@ -140,6 +151,7 @@ function Invoke-PipeDFeCompany {
             )
         }
 
+        $auditStage = 'Scan'
         $scanParams = @{
             Cnpj    = $cnpj
             XmlPath = $Company.XmlPath
@@ -189,6 +201,7 @@ function Invoke-PipeDFeCompany {
         }
 
         if ($totalDocumentos -eq 0) {
+            Write-DFeClosingAuditEvent @audit -EventType 'Scan' -Status 'NoDocuments'
             $aviso = (
                 "Nenhum documento encontrado no período de $periodoDisplay. " +
                 'Verifique as pastas de XML ou ajuste o período.'
@@ -223,6 +236,7 @@ function Invoke-PipeDFeCompany {
         #
         # Only NF-e, NFC-e and NFCom have normalized fiscal processing.
         # -----------------------------------------------------------------
+        $auditStage = 'FiscalProcessing'
         $supportedEntries = @(
             $entries | Where-Object { [int]$_.modelo -in @(55, 62, 65) }
         )
@@ -301,6 +315,7 @@ function Invoke-PipeDFeCompany {
         # -----------------------------------------------------------------
         # Existing sequence/archive/delivery flow.
         # -----------------------------------------------------------------
+        $auditStage = 'Archives'
         $archives = @()
 
         if ($entries.Count -gt 0) {
@@ -393,9 +408,16 @@ function Invoke-PipeDFeCompany {
 
         $arquivos = @($archives | Select-Object -ExpandProperty FileName)
 
+        if ($archives.Count -gt 0) {
+            Write-DFeClosingAuditEvent @audit -EventType 'Archives' -Status 'Ready' -Message (
+                'ZIP archives available for delivery: {0}.' -f $archives.Count
+            )
+        }
+
         # -----------------------------------------------------------------
         # Notification
         # -----------------------------------------------------------------
+        $auditStage = 'SmtpConfiguration'
         $smtp = $null
         $smtpFailure = $null
 
@@ -428,17 +450,33 @@ function Invoke-PipeDFeCompany {
                 Archives              = $archives
                 Entries               = $entries
                 IncludeMonthlyReports = $true
+                AuditExecutionId      = $AuditExecutionId
             }
 
             if ($nfseEntries.Count -gt 0) {
                 $notificationParams.NFSeCount = $nfseEntries.Count
             }
 
+            $auditStage = 'Delivery'
             $notificationResult = Invoke-DFeDelivery @notificationParams
+            $deliveryIdProperty = $notificationResult.PSObject.Properties['DeliveryId']
+            if ($null -ne $deliveryIdProperty -and $deliveryIdProperty.Value -cmatch '^[0-9a-f]{32}$') {
+                $auditMessage = 'DeliveryId: {0}.' -f $deliveryIdProperty.Value
+            }
 
             if ($notificationResult.Success) {
+                Write-DFeClosingAuditEvent @audit -EventType 'Delivery' -Status 'Delivered' -Message $auditMessage
                 $emailEnviado = $true
             } else {
+                if ($notificationResult.FailedAt -in @('Validation', 'Persistence', 'Reports', 'State', 'Send', 'Render')) {
+                    $auditStage = $notificationResult.FailedAt
+                }
+
+                $deliveryStatusProperty = $notificationResult.PSObject.Properties['DeliveryStatus']
+                if ($null -ne $deliveryStatusProperty -and $deliveryStatusProperty.Value -eq 'Indeterminate') {
+                    $auditStatus = 'Indeterminate'
+                }
+
                 $aviso = (
                     'Falha no envio da notificação em ' +
                     "'$($notificationResult.FailedAt)': " +
@@ -450,6 +488,7 @@ function Invoke-PipeDFeCompany {
                 Write-Warning -Message "[$cnpj] $aviso"
             }
         } elseif ($null -ne $smtp -and $para.Count -eq 0) {
+            $auditStage = 'Recipients'
             $aviso = (
                 'Nenhum destinatário configurado - notificação por e-mail ignorada. ' +
                 'Configure os destinatários com Set-PipeCompany.'
@@ -497,6 +536,8 @@ function Invoke-PipeDFeCompany {
 
     } catch {
         $errorMessage = $_.Exception.Message
+
+        Write-DFeClosingAuditEvent @audit -EventType $auditStage -Status $auditStatus -Message $auditMessage
 
         Write-Warning -Message "[$cnpj] Falha no processamento - $errorMessage"
 

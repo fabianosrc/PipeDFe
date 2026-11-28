@@ -51,6 +51,9 @@ Number of national NFS-e documents in the period, for the email summary.
 Publishes and attaches the analytical HTML for NF-e and NFC-e before
 entering Sending. Already delivered or blocked deliveries do not generate reports.
 
+.PARAMETER AuditExecutionId
+Existing company audit execution identifier for report publication events.
+
 .OUTPUTS
 System.Management.Automation.PSCustomObject
 
@@ -101,7 +104,10 @@ function Invoke-DFeDelivery {
         [int]$NFSeCount = 0,
 
         [Parameter()]
-        [switch]$IncludeMonthlyReports
+        [switch]$IncludeMonthlyReports,
+
+        [Parameter()]
+        [string]$AuditExecutionId
     )
 
     $cnpj = [string]$Company.Cnpj
@@ -281,6 +287,18 @@ function Invoke-DFeDelivery {
                 DeliveryStatus = $delivery.DeliveryStatus
             }
         }
+    }
+
+    if ($reportPaths.Count -gt 0) {
+        $auditParams = @{
+            Cnpj        = $cnpj
+            ExecutionId = $AuditExecutionId
+            EventType   = 'Reports'
+            Status      = 'Published'
+            Message     = 'Analytical HTML report published.'
+        }
+
+        Write-DFeClosingAuditEvent @auditParams
     }
 
     #region Transition to Sending
