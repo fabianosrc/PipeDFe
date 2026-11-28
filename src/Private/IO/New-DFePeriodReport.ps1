@@ -11,8 +11,8 @@ company's OutputPath. Existing publications are not replaced. This
 function does not send email or change delivery state.
 
 .PARAMETER Company
-Company configuration with Cnpj, NomeFantasia, RazaoSocial, and
-OutputPath. OutputPath must be an existing filesystem directory.
+Company configuration with Cnpj, RazaoSocial, and OutputPath, plus optional Ie.
+OutputPath must be an existing filesystem directory.
 
 .PARAMETER DateRange
 Inclusive report period with Start and End DateTimeOffset values.
