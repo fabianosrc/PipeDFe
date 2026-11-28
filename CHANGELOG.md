@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Closing-stage audit events for indexing, fiscal processing, archives, reports and delivery.
+- Production deployment and recovery checklist.
 - Public `Get-PipeDFeHealth` command export and localized MAML help for all public commands in pt-BR and en-US.
 - Localized `about_PipeDFe` conceptual help topics and integration tests for real PowerShell help resolution.
 - Build artifact verification for module imports and localized help in separate PowerShell processes.
@@ -14,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Integration coverage for `Get-PipeDFeHealth`, including real company registration, SQLite schema validation, trade-name resolution, missing indexes, and output contracts.
 
 ### Changed
+- Closing reports are standalone HTML files; XLSX generation is outside the 1.0 scope.
+- Health guidance explicitly identifies unsupported index schema versions and the need to preserve delivery history during migration.
 - Module build now stages a versioned installation layout and a PowerShell Gallery-compatible `PipeDFe` directory, including localized help at the module root.
 - Release instructions now cover both layouts, validation, and explicit opt-in publishing.
 - Health diagnostics use the centralized SQLite index schema version instead of a hardcoded expected version.
